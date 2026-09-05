@@ -45,6 +45,23 @@ check '다른 커밋을 가리키는 승인은 무시' failure \
 check '커밋 없는 /approve 는 승인 아님' failure \
 	"$T1	COMMENT	/approve"
 
+# 안내 문구를 따옴표째 복사해 붙이는 일이 실제로 있었다. 사람이 쓴 승인을
+# 표기 때문에 놓치면 안 된다.
+check '따옴표로 감싼 승인' success \
+	"$T1	COMMENT	\"/approve 20ce5cc\""
+
+check '앞 따옴표만 붙은 승인' success \
+	"$T1	COMMENT	\"/approve 20ce5cc"
+
+check '백틱으로 감싼 승인' success \
+	"$T1	COMMENT	\`/approve 20ce5cc\`"
+
+check '굵게 표기한 승인' success \
+	"$T1	COMMENT	**/approve 20ce5cc**"
+
+check '따옴표로 감싼 거절' failure \
+	"$T1	COMMENT	\"/reject\""
+
 check '거절만' failure \
 	"$T1	COMMENT	/reject"
 

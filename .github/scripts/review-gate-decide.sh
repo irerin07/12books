@@ -46,8 +46,12 @@ while IFS=$'\t' read -r ts kind rest extra; do
 
 	case "${kind:-}" in
 	COMMENT)
-		cmd=$(printf '%s' "${rest:-}" | awk '{print $1}')
-		arg=$(printf '%s' "${rest:-}" | awk '{print $2}')
+		# 따옴표·백틱·굵게 표기를 걷어낸다. 안내 문구를 따옴표째 복사해 붙이는 일이
+		# 실제로 있었고, 표기 때문에 사람이 쓴 승인을 놓치면 안 된다.
+		line=$(printf '%s' "${rest:-}" | sed -e 's/^[][:space:]"`*'"'"']*//' -e 's/[[:space:]"`*'"'"']*$//')
+		cmd=$(printf '%s' "$line" | awk '{print $1}')
+		# SHA는 영숫자뿐이다. 뒤에 문장이 이어져 따옴표가 붙어 와도 잘라낸다.
+		arg=$(printf '%s' "$line" | awk '{print $2}' | tr -cd '[:alnum:]')
 
 		if [ "$cmd" = "/reject" ]; then
 			apply "$ts" failure "변경 요청됨 — 수정 후 /approve $short_sha"
@@ -76,7 +80,9 @@ done < <(sort)
 
 if [ -z "$verdict" ]; then
 	verdict="failure"
-	detail="승인 대기 중 — PR에 \"/approve $short_sha\" 코멘트를 남기면 자동 머지됩니다"
+	# 따옴표를 두르지 않는다. 이 문구를 그대로 복사해 붙이는 사람이 있고,
+	# 따옴표까지 딸려 오면 승인이 인식되지 않는다.
+	detail="승인 대기 중 — PR에 다음 코멘트를 남기면 자동 머지됩니다: /approve $short_sha"
 fi
 
 printf '%s\t%s\t%s\n' "$verdict" "$detail" "$bare_approve"
