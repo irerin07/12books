@@ -2,16 +2,21 @@
 #
 # stdin으로 훅 페이로드 JSON을 받아 stdout으로 결정 JSON을 돌려준다.
 #
-#   - 한 명령 안에서 main 전환 + git 쓰기 작업     -> deny (현재 브랜치와 무관하게)
-#   - main에서 소스/설정 파일 수정                 -> deny
-#   - main에서 git commit / push / merge / rebase  -> deny
+#   - 한 명령 안에서 main 전환 "뒤에" git 쓰기 작업  -> deny (현재 브랜치와 무관하게)
+#   - main에서 소스/설정 파일 수정                   -> deny
+#   - main에서 git commit / push / merge / rebase    -> deny
 #
 # 계획 문서(*.md)와 .claude/ 설정은 main에서도 손볼 수 있게 허용한다.
+#
+# 명령은 정규식으로 훑지 않고 셸 토큰으로 쪼개서 본다. 정규식으로는
+# git "switch" main, git switch 'main', git checkout refs/heads/main 같은
+# 정상적인 표기를 전부 따라갈 수 없고, 반대로 git 사용법을 설명하는 문장을 오탐한다.
+# 토큰으로 보면 "이 세그먼트의 첫 토큰이 git인가"를 물을 수 있어 둘 다 해결된다.
 #
 # --- 이 훅의 한계 ------------------------------------------------------------
 # 이건 에이전트를 위한 과속방지턱이지 보안 경계가 아니다. 훅은 도구 호출 "전"에
 # 한 번 판정할 뿐이라 실행 중의 상태 변화를 알 수 없고, 스크립트 파일을 만들어
-# 실행하는 식의 우회는 원리상 막지 못한다.
+# 실행하거나 별칭·환경변수로 우회하는 경로는 원리상 막지 못한다.
 # 진짜 방어선은 .githooks/pre-push(로컬)와 GitHub ruleset(서버)이다.
 # -----------------------------------------------------------------------------
 #
@@ -24,6 +29,17 @@ $ErrorActionPreference = 'Stop'
 
 # Claude Code는 훅의 stdout을 UTF-8로 읽는다. 콘솔 기본 인코딩(cp949)으로 내보내면 한글이 깨진다.
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+
+$script:WriteOps = @('commit', 'push', 'merge', 'rebase', 'revert', 'cherry-pick', 'reset', 'am', 'apply')
+
+# 값을 인자로 하나 더 먹는 git 전역 옵션
+$script:ValueOptions = @('-C', '-c', '--git-dir', '--work-tree', '--exec-path', '--namespace')
+
+# 인자로 받은 문자열을 다시 명령으로 실행하는 래퍼
+$script:Wrappers = '^(cmd|sh|bash|dash|zsh|powershell|pwsh)$'
+
+$script:Quotes = @([char]0x22, [char]0x27)
+$script:Breaks = @(';', '|', '&', '(', ')', [char]10, [char]13)
 
 function Allow {
     exit 0
@@ -50,21 +66,109 @@ main 브랜치에서는 이 작업을 할 수 없습니다.
 기능 하나를 통째로 시작한다면 /feature <설명> 을 쓰면 브랜치 생성부터 PR까지 처리합니다.
 "@
 
-# git 실행 파일. git.exe 로 부르면 빠져나가던 것을 막는다.
-$gitExe = '\bgit(?:\.exe)?\b'
+# 명령 문자열을 세그먼트(; | & 개행·서브셸로 나뉜 단위)의 토큰 배열로 쪼갠다.
+# 따옴표는 토큰 경계로만 쓰이고 값에는 남지 않는다 - "main" 과 main 이 같은 토큰이 된다.
+function ConvertTo-Segments([string]$text) {
+    $segments = @()
+    $tokens = @()
+    $current = ''
+    $hasCurrent = $false
+    $quote = ''
 
-# git 쓰기 작업. 토큰을 하나씩 먹으며 훑으므로 앞 공백, 따옴표에 공백이 든 인자
-# (git -C "path name" commit), cmd /c - powershell -Command 래퍼, 개행, 그리고
-# -C / -c 같은 전역 옵션을 전부 통과시키지 않는다.
-# ; & | 를 넘지 않으므로 `git log ... | grep commit` 같은 건 오탐하지 않는다.
-# switch/checkout/branch는 일부러 뺐다 - main에서 이걸 막으면 탈출구가 사라진다.
-$gitWriteOp = "(?is)$gitExe(?:\s+[^\s;&|]+)*\s+(commit|push|merge|rebase|revert|cherry-pick|reset)\b"
+    for ($i = 0; $i -lt $text.Length; $i++) {
+        $ch = $text[$i]
 
-# 한 명령 안에서 main으로 갈아타는 부분.
-# git 과 switch 사이의 전역 옵션(-C . / -c key=value)은 통과시키되, main 은 switch/checkout의
-# "인자"로 오는 형태만 본다 - 사이에 무엇이든 낄 수 있게 두면 git 예시가 섞인 긴 텍스트를
-# 통째로 오탐한다.
-$switchToMain = "(?is)$gitExe(?:\s+[^\s;&|]+)*?\s+(?:switch|checkout)\s+(?:-{1,2}[^\s]+\s+)*main\b"
+        if ($quote -ne '') {
+            if ($ch -eq $quote) { $quote = '' } else { $current += $ch }
+            continue
+        }
+
+        if ($script:Quotes -contains $ch) {
+            $quote = [string]$ch
+            $hasCurrent = $true
+            continue
+        }
+
+        if ($script:Breaks -contains $ch) {
+            if ($hasCurrent) { $tokens += $current; $current = ''; $hasCurrent = $false }
+            if ($tokens.Count -gt 0) { $segments += , $tokens; $tokens = @() }
+            continue
+        }
+
+        if ($ch -eq ' ' -or $ch -eq [char]9) {
+            if ($hasCurrent) { $tokens += $current; $current = ''; $hasCurrent = $false }
+            continue
+        }
+
+        $current += $ch
+        $hasCurrent = $true
+    }
+
+    if ($hasCurrent) { $tokens += $current }
+    if ($tokens.Count -gt 0) { $segments += , $tokens }
+
+    return , $segments
+}
+
+# cmd /c "..." 처럼 문자열을 다시 실행하는 래퍼는 그 안을 명령으로 펼쳐서 본다.
+function Expand-Wrappers($segments) {
+    $out = @()
+    foreach ($tokens in $segments) {
+        $expanded = $false
+        if ($tokens.Count -ge 2) {
+            $head = ([System.IO.Path]::GetFileName([string]$tokens[0])) -replace '\.exe$', ''
+            if ($head -match $script:Wrappers) {
+                foreach ($inner in (ConvertTo-Segments ([string]$tokens[-1]))) { $out += , $inner }
+                $expanded = $true
+            }
+        }
+        if (-not $expanded) { $out += , $tokens }
+    }
+    return , $out
+}
+
+# 세그먼트가 git 호출이면 하위 명령과 그 인자를 돌려준다. 아니면 $null.
+# 경로로 부르든(/usr/bin/git) 확장자를 붙이든(git.exe) 같게 본다.
+function Get-GitSubcommand($tokens) {
+    if ($null -eq $tokens -or $tokens.Count -lt 2) { return $null }
+
+    $exe = ([System.IO.Path]::GetFileName([string]$tokens[0])) -replace '\.exe$', ''
+    if ($exe -ne 'git') { return $null }
+
+    $i = 1
+    while ($i -lt $tokens.Count) {
+        $t = [string]$tokens[$i]
+        if ($script:ValueOptions -contains $t) { $i += 2; continue }
+        if ($t.StartsWith('-')) { $i += 1; continue }
+        break
+    }
+    if ($i -ge $tokens.Count) { return $null }
+
+    $rest = @()
+    if ($i + 1 -lt $tokens.Count) { $rest = $tokens[($i + 1)..($tokens.Count - 1)] }
+
+    return @{ Name = ([string]$tokens[$i]).ToLowerInvariant(); Args = $rest }
+}
+
+function Test-GitWrite($tokens) {
+    $sub = Get-GitSubcommand $tokens
+    if ($null -eq $sub) { return $false }
+    return ($script:WriteOps -contains $sub.Name)
+}
+
+function Test-SwitchToMain($tokens) {
+    $sub = Get-GitSubcommand $tokens
+    if ($null -eq $sub) { return $false }
+    if ($sub.Name -ne 'switch' -and $sub.Name -ne 'checkout') { return $false }
+
+    foreach ($a in $sub.Args) {
+        $arg = [string]$a
+        if ($arg.StartsWith('-')) { continue }
+        $branch = $arg -replace '^refs/heads/', '' -replace '^heads/', ''
+        if ($branch -eq 'main') { return $true }
+    }
+    return $false
+}
 
 # 훅이 어떤 이유로든 깨지면 작업을 막지 않는다. 보호 장치가 개발을 인질로 잡으면 안 된다.
 try {
@@ -77,38 +181,29 @@ try {
 
     $tool = [string]$payload.tool_name
     $isShell = ($tool -eq 'Bash' -or $tool -eq 'PowerShell')
-    $command = ''
-    if ($isShell) { $command = [string]$payload.tool_input.command }
 
-    # 인용부호 안의 내용은 보통 실행될 명령이 아니라 데이터다(PR 답글 본문, 커밋 메시지 등).
-    # 여기를 걷어내지 않으면 git 사용법을 설명하는 문장을 보내는 것만으로 차단된다.
-    #
-    # 단, cmd /c "..." 처럼 래퍼가 실행하는 문자열은 데이터가 아니라 명령이다.
-    # 그건 따옴표만 벗겨 본문을 살려둔 뒤에 나머지 인용부호를 걷어낸다.
-    #
-    # git "commit" 처럼 명령어 자체를 따옴표로 감싸는 회피는 여전히 통과한다 -
-    # 훅은 과속방지턱이지 셸 파서가 아니다.
-    $scan = $command
+    $segments = @()
     if ($isShell) {
-        $wrapper = '(?is)((?:cmd(?:\.exe)?\s+/[ck]|(?:ba)?sh\s+-c|(?:pwsh|powershell)(?:\.exe)?\s+(?:-[^\s]+\s+)*?-c(?:ommand)?)\s+)'
-        $scan = [regex]::Replace($scan, ($wrapper + '"([^"]*)"'), '$1$2')
-        $scan = [regex]::Replace($scan, ($wrapper + "'([^']*)'"), '$1$2')
-
-        $scan = [regex]::Replace($scan, '"[^"]*"', '""')
-        $scan = [regex]::Replace($scan, "'[^']*'", "''")
+        $command = [string]$payload.tool_input.command
+        if (-not [string]::IsNullOrWhiteSpace($command)) {
+            # @()로 감싸지 않는다. 세그먼트가 하나뿐일 때 배열이 한 겹 더 씌워져
+            # 토큰 배열이 통째로 토큰 하나로 보인다.
+            $segments = Expand-Wrappers (ConvertTo-Segments $command)
+        }
     }
 
     # 실행 전 브랜치만 보면, 작업 브랜치에서 "main으로 전환 후 커밋"을 한 번에 실행해
     # 훅을 통과할 수 있다(TOCTOU). 그래서 이 검사는 현재 브랜치와 무관하게 먼저 한다.
     # 순서를 본다: 전환이 "먼저" 오고 그 뒤에 쓰기 작업이 있을 때만 위험하다.
     # (커밋한 뒤 main으로 돌아가는 것은 정상적인 작업이다.)
-    if ($isShell) {
-        $switchMatch = [regex]::Match($scan, $switchToMain)
-        if ($switchMatch.Success) {
-            $afterSwitch = $scan.Substring($switchMatch.Index + $switchMatch.Length)
-            if ($afterSwitch -match $gitWriteOp) {
-                Deny "이 명령은 main으로 전환한 뒤 git 쓰기 작업을 수행합니다.`nmain에는 직접 커밋할 수 없습니다 - 브랜치에서 작업하고 PR로 올리세요."
-            }
+    $switched = $false
+    foreach ($tokens in $segments) {
+        if (-not $switched) {
+            if (Test-SwitchToMain $tokens) { $switched = $true }
+            continue
+        }
+        if (Test-GitWrite $tokens) {
+            Deny "이 명령은 main으로 전환한 뒤 git 쓰기 작업을 수행합니다.`nmain에는 직접 커밋할 수 없습니다 - 브랜치에서 작업하고 PR로 올리세요."
         }
     }
 
@@ -142,11 +237,11 @@ try {
     }
 
     if ($isShell) {
-        if ([string]::IsNullOrWhiteSpace($command)) { Allow }
-
-        if ($scan -match $gitWriteOp) {
-            $op = $Matches[1]
-            Deny "$branchHint`n(차단된 명령: git $op)"
+        foreach ($tokens in $segments) {
+            $sub = Get-GitSubcommand $tokens
+            if ($null -ne $sub -and ($script:WriteOps -contains $sub.Name)) {
+                Deny "$branchHint`n(차단된 명령: git $($sub.Name))"
+            }
         }
     }
 }

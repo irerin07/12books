@@ -90,6 +90,15 @@ try {
         @{ n = '작업브랜치 + 인용부호 안의 git';   r = $featRepo; p = (Run 'gh pr comment 1 --body "run git switch main then git commit"'); e = 'allow' }
         @{ n = 'main + 인용부호 안의 git commit';  r = $mainRepo; p = (Run 'gh pr comment 1 --body "git commit 설명"');                   e = 'allow' }
         @{ n = 'main + 따옴표 든 커밋 메시지';     r = $mainRepo; p = (Run 'git commit -m "메시지"');                                     e = 'deny' }
+
+        # --- 3차 리뷰: 따옴표로 감싼 토큰과 완전한 ref 이름 ---
+        @{ n = 'main전환 + "main" (큰따옴표)';    r = $featRepo; p = (Run 'git switch "main" && git commit -m x');                       e = 'deny' }
+        @{ n = "main전환 + 'main' (작은따옴표)";  r = $featRepo; p = (Run "git switch 'main' && git commit -m x");                       e = 'deny' }
+        @{ n = 'main전환 + "switch" 따옴표';      r = $featRepo; p = (Run 'git "switch" main && git commit -m x');                       e = 'deny' }
+        @{ n = 'main전환 + refs/heads/main';      r = $featRepo; p = (Run 'git checkout refs/heads/main && git commit -m x');            e = 'deny' }
+        @{ n = 'main전환 + sh -c 래퍼';           r = $featRepo; p = (Run "sh -c 'git switch main && git commit -m x'");                 e = 'deny' }
+        @{ n = 'main + 서브셸 안의 commit';       r = $mainRepo; p = (Run 'echo $(git commit -m x)');                                    e = 'deny' }
+        @{ n = 'main + git 경로로 호출';          r = $mainRepo; p = (Run '/usr/bin/git commit -m x');                                   e = 'deny' }
     )
 
     $failed = 0

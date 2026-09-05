@@ -65,7 +65,9 @@ feat: 감상평 작성 API
 `main`은 ruleset으로 보호된다. PR은 필수 체크 두 개가 모두 초록이어야 머지된다.
 
 - `build` — CI(빌드 + 전체 테스트)
-- `review-gate` — 사용자가 PR에 `/approve` 코멘트를 남겨야 초록이 된다
+- `review-gate` — 사용자가 PR에 `/approve <head 커밋 SHA>` 코멘트를 남겨야 초록이 된다.
+  SHA를 요구하는 이유는 승인을 그 코드에 묶기 위해서다 — 승인 직후 새 커밋이 올라와도
+  옛 승인이 새 코드를 승인하지 않는다
 
 `/feature`는 PR 생성 후 `gh pr merge --auto --squash`로 **머지를 예약만** 한다.
 승인이 들어오는 순간 GitHub이 알아서 머지한다. 사람이 직접 머지 버튼을 누를 일은 없다.
@@ -78,7 +80,7 @@ feat: 감상평 작성 API
 |---|---|
 | 새 기능 시작 | `/feature <설명>` |
 | PR에 리뷰가 달림 | `/review-fix [PR번호]` |
-| 리뷰 승인 | 사용자가 PR에 `/approve` 코멘트 → 자동 머지 |
+| 리뷰 승인 | 사용자가 PR에 `/approve <head SHA>` 코멘트 → 자동 머지 |
 | 급하게 자리 밖에서 | PR에 `@claude …` 멘션 → GitHub Action이 대응 |
 
 > `@claude` Action이 만든 커밋은 `GITHUB_TOKEN`으로 push되므로 **다른 워크플로를 트리거하지 않는다.**
