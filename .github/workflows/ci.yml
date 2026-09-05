@@ -55,3 +55,21 @@ jobs:
       - name: guard-main 훅 테스트
         shell: powershell
         run: .\.claude\hooks\guard-main.tests.ps1
+
+      # 워크플로 YAML이 깨지면 그 체크는 아예 나타나지 않는다. 머지는 막히지만(fail-safe)
+      # 원인이 보이지 않으니, 파싱만이라도 여기서 확인한다.
+      - name: 워크플로 YAML 파싱
+        shell: bash
+        run: |
+          python -m pip install --quiet pyyaml
+          python - <<'PY'
+          import pathlib, sys, yaml
+          bad = []
+          for p in sorted(pathlib.Path('.github/workflows').glob('*.yml')):
+              try:
+                  yaml.safe_load(p.read_text(encoding='utf-8'))
+                  print('OK  ', p)
+              except Exception as e:
+                  bad.append(p); print('FAIL', p, e)
+          sys.exit(1 if bad else 0)
+          PY

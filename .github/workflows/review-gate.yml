@@ -135,13 +135,10 @@ jobs:
             first_line=$(printf '%s' "$COMMENT_BODY" | head -n 1 | tr -d '\r' | sed 's/^[[:space:]]*//')
             case "$first_line" in
               /approve*)
-                gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "승인하려면 대상 커밋을 함께 적어주세요:
-
-\`\`\`
-/approve $short_sha
-\`\`\`
-
-커밋을 명시해야 하는 이유는 승인 직후 새 커밋이 올라왔을 때 옛 승인이 새 코드를 승인해버리는 것을 막기 위해서입니다."
+                # 본문을 파일로 만들어 넘긴다. run 블록 안에서 여러 줄 문자열을 그대로 쓰면
+                # 들여쓰기가 YAML 블록 스칼라를 벗어나 워크플로가 통째로 깨진다.
+                printf '%s\n' "승인하려면 대상 커밋을 함께 적어주세요:" "" '```' "/approve $short_sha" '```' "" "커밋을 명시해야 하는 이유는, 승인 직후 새 커밋이 올라왔을 때 옛 승인이 새 코드를 승인해버리는 것을 막기 위해서입니다." > approve-help.md
+                gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file approve-help.md
                 ;;
             esac
           fi
