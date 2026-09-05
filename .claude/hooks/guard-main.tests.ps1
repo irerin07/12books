@@ -77,6 +77,19 @@ try {
         # git 예시가 섞인 긴 텍스트(문서·PR 답글 본문)를 통째로 오탐하면 안 된다
         @{ n = '작업브랜치 + git 예시가 든 본문 전송'; r = $featRepo;
            p = (Run "gh pr comment 1 --body 'main에서 git switch -c feat/x 를 막으면 탈출구가 사라진다. git commit 도 마찬가지.'"); e = 'allow' }
+
+        # --- 2차 리뷰: 전역 옵션 / git.exe 우회 ---
+        @{ n = 'main전환 + -C 전역옵션';          r = $featRepo; p = (Run 'git -C . switch main && git commit -m x');                    e = 'deny' }
+        @{ n = 'main전환 + -c 전역옵션';          r = $featRepo; p = (Run 'git -c advice.detachedHead=false checkout main; git commit -m x'); e = 'deny' }
+        @{ n = 'main전환 + git.exe';              r = $featRepo; p = (Run 'git.exe switch main && git.exe commit -m x');                 e = 'deny' }
+        @{ n = 'main + git.exe commit';           r = $mainRepo; p = (Run 'git.exe commit -m x');                                        e = 'deny' }
+        @{ n = 'main + git -C . commit';          r = $mainRepo; p = (Run 'git -C . commit -m x');                                       e = 'deny' }
+
+        # --- 2차 리뷰: 등장 순서와 인용부호 ---
+        @{ n = '작업브랜치 + commit 후 main 전환'; r = $featRepo; p = (Run 'git commit -m x && git switch main');                         e = 'allow' }
+        @{ n = '작업브랜치 + 인용부호 안의 git';   r = $featRepo; p = (Run 'gh pr comment 1 --body "run git switch main then git commit"'); e = 'allow' }
+        @{ n = 'main + 인용부호 안의 git commit';  r = $mainRepo; p = (Run 'gh pr comment 1 --body "git commit 설명"');                   e = 'allow' }
+        @{ n = 'main + 따옴표 든 커밋 메시지';     r = $mainRepo; p = (Run 'git commit -m "메시지"');                                     e = 'deny' }
     )
 
     $failed = 0

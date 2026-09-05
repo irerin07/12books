@@ -43,3 +43,15 @@ jobs:
           path: build/reports/tests/test
           if-no-files-found: ignore
           retention-days: 7
+
+  # 브랜치 보호 훅도 코드다. 회귀하면 요구사항 3(브랜치 분리 강제)이 조용히 무너진다.
+  # Windows PowerShell 5.1에서 도는 스크립트라 windows 러너가 필요하다.
+  hook-tests:
+    name: hook-tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: guard-main 훅 테스트
+        shell: powershell
+        run: .\.claude\hooks\guard-main.tests.ps1

@@ -24,7 +24,7 @@ gh api graphql -f query='
         reviewThreads(first:100) {
           nodes {
             id isResolved isOutdated path line
-            comments(first:20) { nodes { author { login } body } }
+            comments(first:20) { nodes { databaseId author { login } body } }
           }
         }
       }
@@ -34,7 +34,9 @@ gh api graphql -f query='
 
 - **`isResolved: false`인 스레드만** 작업 대상이다.
 - `isOutdated: true`는 그 사이 코드가 바뀐 스레드다. 지적이 아직 유효한지 먼저 확인한다.
-- PR 본문에 달린 일반 리뷰 코멘트는 `gh pr view <번호> --json reviews`로 따로 본다.
+- `databaseId`는 5단계에서 답글을 달 때 쓰는 REST 코멘트 ID다. **스레드의 첫 코멘트 것**을 쓴다.
+- 라인에 걸리지 않은 리뷰 총평과 대화 탭의 일반 코멘트는 스레드에 안 잡힌다.
+  `gh pr view <번호> --json reviews,comments`로 **둘 다** 본다.
 
 추린 목록을 사용자에게 먼저 보여준다 — 몇 건이고 각각 무엇인지.
 **리뷰 코멘트가 가리키는 코드를 실제로 열어서 읽는다.** 코멘트 문구만 보고 고치지 않는다.

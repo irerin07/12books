@@ -22,6 +22,12 @@ permissions:
   statuses: write
   pull-requests: read
 
+# PR별로 직렬화한다. 승인 이벤트와 push 이벤트가 겹치면 어느 쪽이 마지막에 상태를 쓰느냐에
+# 따라 결과가 갈린다. 취소하지 않고 순서대로 흘린다 - 취소하면 잠그는 쪽을 놓칠 수 있다.
+concurrency:
+  group: review-gate-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
 jobs:
   gate:
     # issue_comment는 이슈에도 달리므로 PR에 달린 것만 처리한다
@@ -35,9 +41,11 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           COMMENT_BODY: ${{ github.event.comment.body }}
           COMMENT_ASSOC: ${{ github.event.comment.author_association }}
+          COMMENT_CREATED_AT: ${{ github.event.comment.created_at }}
           REVIEW_BODY: ${{ github.event.review.body }}
           REVIEW_STATE: ${{ github.event.review.state }}
           REVIEW_ASSOC: ${{ github.event.review.author_association }}
+          REVIEW_COMMIT_ID: ${{ github.event.review.commit_id }}
           REVIEW_ACTION: ${{ github.event.action }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -118,6 +126,29 @@ jobs:
 
           # github.sha는 이벤트에 따라 머지 커밋을 가리킨다. 상태는 반드시 PR head의 최신 커밋에 붙여야 한다.
           head_sha=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid)
+
+          # 승인은 "그 시점의 커밋"에 대한 것이다. 승인 직후 새 커밋이 올라오면 이 실행은
+          # 이미 바뀐 head를 보게 되고, 옛 승인이 새 커밋을 승인해버린다. 그래서 승인을
+          # 붙이기 전에 대상이 그대로인지 확인한다. 어긋나면 아무것도 하지 않는다 -
+          # push가 일으킨 synchronize 실행이 어차피 failure로 잠근다.
+          if [ "$state" = "success" ]; then
+            case "$EVENT_NAME" in
+              pull_request_review)
+                if [ "$REVIEW_COMMIT_ID" != "$head_sha" ]; then
+                  echo "리뷰 대상($REVIEW_COMMIT_ID)이 현재 head($head_sha)와 다르다. 승인을 반영하지 않는다."
+                  exit 0
+                fi
+                ;;
+              issue_comment)
+                head_date=$(gh api "repos/$GITHUB_REPOSITORY/commits/$head_sha" --jq .commit.committer.date)
+                # ISO8601 UTC라 사전순 비교가 곧 시간순 비교다
+                if [ "$head_date" \> "$COMMENT_CREATED_AT" ]; then
+                  echo "head 커밋($head_date)이 승인 코멘트($COMMENT_CREATED_AT)보다 나중이다. 승인을 반영하지 않는다."
+                  exit 0
+                fi
+                ;;
+            esac
+          fi
 
           echo "PR #$PR_NUMBER ($head_sha) -> $state: $description"
 

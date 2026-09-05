@@ -50,16 +50,21 @@ main 브랜치에서는 이 작업을 할 수 없습니다.
 기능 하나를 통째로 시작한다면 /feature <설명> 을 쓰면 브랜치 생성부터 PR까지 처리합니다.
 "@
 
+# git 실행 파일. git.exe 로 부르면 빠져나가던 것을 막는다.
+$gitExe = '\bgit(?:\.exe)?\b'
+
 # git 쓰기 작업. 토큰을 하나씩 먹으며 훑으므로 앞 공백, 따옴표에 공백이 든 인자
-# (git -C "path name" commit), cmd /c - powershell -Command 래퍼, 개행을 전부 잡는다.
+# (git -C "path name" commit), cmd /c - powershell -Command 래퍼, 개행, 그리고
+# -C / -c 같은 전역 옵션을 전부 통과시키지 않는다.
 # ; & | 를 넘지 않으므로 `git log ... | grep commit` 같은 건 오탐하지 않는다.
 # switch/checkout/branch는 일부러 뺐다 - main에서 이걸 막으면 탈출구가 사라진다.
-$gitWriteOp = '(?is)\bgit\b(?:\s+[^\s;&|]+)*\s+(commit|push|merge|rebase|revert|cherry-pick|reset)\b'
+$gitWriteOp = "(?is)$gitExe(?:\s+[^\s;&|]+)*\s+(commit|push|merge|rebase|revert|cherry-pick|reset)\b"
 
 # 한 명령 안에서 main으로 갈아타는 부분.
-# main이 switch/checkout의 "인자"로 오는 형태만 본다. 이전엔 switch와 main 사이에 무엇이
-# 끼어도 매치해서, git 예시가 섞인 긴 텍스트(문서·PR 답글 본문)를 통째로 오탐했다.
-$switchToMain = '(?is)\bgit\s+(?:switch|checkout)\s+(?:-{1,2}[^\s]+\s+)*main\b'
+# git 과 switch 사이의 전역 옵션(-C . / -c key=value)은 통과시키되, main 은 switch/checkout의
+# "인자"로 오는 형태만 본다 - 사이에 무엇이든 낄 수 있게 두면 git 예시가 섞인 긴 텍스트를
+# 통째로 오탐한다.
+$switchToMain = "(?is)$gitExe(?:\s+[^\s;&|]+)*?\s+(?:switch|checkout)\s+(?:-{1,2}[^\s]+\s+)*main\b"
 
 # 훅이 어떤 이유로든 깨지면 작업을 막지 않는다. 보호 장치가 개발을 인질로 잡으면 안 된다.
 try {
@@ -75,10 +80,36 @@ try {
     $command = ''
     if ($isShell) { $command = [string]$payload.tool_input.command }
 
-    # 실행 전 브랜치만 보면, 작업 브랜치에서 "git switch main && git commit"을 한 번에 실행해
+    # 인용부호 안의 내용은 보통 실행될 명령이 아니라 데이터다(PR 답글 본문, 커밋 메시지 등).
+    # 여기를 걷어내지 않으면 git 사용법을 설명하는 문장을 보내는 것만으로 차단된다.
+    #
+    # 단, cmd /c "..." 처럼 래퍼가 실행하는 문자열은 데이터가 아니라 명령이다.
+    # 그건 따옴표만 벗겨 본문을 살려둔 뒤에 나머지 인용부호를 걷어낸다.
+    #
+    # git "commit" 처럼 명령어 자체를 따옴표로 감싸는 회피는 여전히 통과한다 -
+    # 훅은 과속방지턱이지 셸 파서가 아니다.
+    $scan = $command
+    if ($isShell) {
+        $wrapper = '(?is)((?:cmd(?:\.exe)?\s+/[ck]|(?:ba)?sh\s+-c|(?:pwsh|powershell)(?:\.exe)?\s+(?:-[^\s]+\s+)*?-c(?:ommand)?)\s+)'
+        $scan = [regex]::Replace($scan, ($wrapper + '"([^"]*)"'), '$1$2')
+        $scan = [regex]::Replace($scan, ($wrapper + "'([^']*)'"), '$1$2')
+
+        $scan = [regex]::Replace($scan, '"[^"]*"', '""')
+        $scan = [regex]::Replace($scan, "'[^']*'", "''")
+    }
+
+    # 실행 전 브랜치만 보면, 작업 브랜치에서 "main으로 전환 후 커밋"을 한 번에 실행해
     # 훅을 통과할 수 있다(TOCTOU). 그래서 이 검사는 현재 브랜치와 무관하게 먼저 한다.
-    if ($isShell -and $command -match $switchToMain -and $command -match $gitWriteOp) {
-        Deny "이 명령은 main으로 전환한 뒤 git 쓰기 작업을 수행합니다.`nmain에는 직접 커밋할 수 없습니다 - 브랜치에서 작업하고 PR로 올리세요."
+    # 순서를 본다: 전환이 "먼저" 오고 그 뒤에 쓰기 작업이 있을 때만 위험하다.
+    # (커밋한 뒤 main으로 돌아가는 것은 정상적인 작업이다.)
+    if ($isShell) {
+        $switchMatch = [regex]::Match($scan, $switchToMain)
+        if ($switchMatch.Success) {
+            $afterSwitch = $scan.Substring($switchMatch.Index + $switchMatch.Length)
+            if ($afterSwitch -match $gitWriteOp) {
+                Deny "이 명령은 main으로 전환한 뒤 git 쓰기 작업을 수행합니다.`nmain에는 직접 커밋할 수 없습니다 - 브랜치에서 작업하고 PR로 올리세요."
+            }
+        }
     }
 
     $branch = (& git -C $root rev-parse --abbrev-ref HEAD 2>$null)
@@ -113,7 +144,7 @@ try {
     if ($isShell) {
         if ([string]::IsNullOrWhiteSpace($command)) { Allow }
 
-        if ($command -match $gitWriteOp) {
+        if ($scan -match $gitWriteOp) {
             $op = $Matches[1]
             Deny "$branchHint`n(차단된 명령: git $op)"
         }
