@@ -26,6 +26,11 @@ docker compose up -d                 # MySQL + Redis (통합 테스트에도 Doc
 모든 변경은 브랜치에서 시작한다. 브랜치명은 `feat/…`, `fix/…`, `chore/…`.
 main에서 `src/**`를 수정하거나 커밋·푸시를 시도하면 훅이 막는다.
 
+> `.claude/hooks/guard-main.ps1`은 **과속방지턱이지 보안 경계가 아니다.** 도구 호출 전에 한 번
+> 판정할 뿐이라 원리상 뚫리는 경로가 남는다. 실제 강제는 `.githooks/pre-push`(로컬)와
+> GitHub ruleset(서버)이 한다. 훅의 판정 로직은 `.claude/hooks/guard-main.tests.ps1`이 지킨다 —
+> 훅을 고치면 이 테스트를 먼저 돌린다.
+
 기능 하나를 시작할 때는 `/feature <설명>`을 쓴다. 브랜치 생성부터 PR 생성·자동 머지 예약까지 한다.
 
 ### 2. 테스트를 먼저 쓴다
