@@ -1,0 +1,129 @@
+name: review-gate
+
+# 사람의 승인 없이는 머지되지 않게 만드는 게이트.
+#
+# GitHub은 PR 작성자가 자기 PR을 approve하는 것을 금지한다. 1인 저장소에서
+# "필수 승인 1건"을 걸면 모든 PR이 영구히 막히므로, 승인 신호를 리뷰가 아니라
+# 저장소 소유자의 "/approve" 코멘트로 받아 커밋 상태(status)로 변환한다.
+#
+# 이 status(review-gate)를 ruleset의 필수 체크로 걸면 승인 전 머지가 서버에서 차단된다.
+# 새 커밋이 push되면(synchronize) 다시 잠기므로 stale approval이 생기지 않는다.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  statuses: write
+  pull-requests: read
+
+jobs:
+  gate:
+    # issue_comment는 이슈에도 달리므로 PR에 달린 것만 처리한다
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    steps:
+      - name: 승인 상태 판정 후 커밋 상태 반영
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_ASSOC: ${{ github.event.comment.author_association }}
+          REVIEW_BODY: ${{ github.event.review.body }}
+          REVIEW_STATE: ${{ github.event.review.state }}
+          REVIEW_ASSOC: ${{ github.event.review.author_association }}
+          REVIEW_ACTION: ${{ github.event.action }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          state=""
+          description=""
+
+          # 승인 권한이 있는 관계. 저장소 소유자와 쓰기 권한 협업자만.
+          is_authorized() {
+            case "$1" in
+              OWNER|MEMBER|COLLABORATOR) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          case "$EVENT_NAME" in
+            pull_request)
+              # PR이 열리거나 새 커밋이 올라오면 무조건 잠근다
+              state="failure"
+              description="승인 대기 중 — PR에 /approve 코멘트를 남기면 자동 머지됩니다"
+              ;;
+
+            issue_comment)
+              first_line=$(printf '%s' "$COMMENT_BODY" | head -n 1 | tr -d '\r')
+              case "$first_line" in
+                /approve*)
+                  if is_authorized "$COMMENT_ASSOC"; then
+                    state="success"
+                    description="승인됨 — $COMMENT_ASSOC"
+                  else
+                    echo "승인 권한이 없는 사용자($COMMENT_ASSOC)의 /approve. 무시한다."
+                    exit 0
+                  fi
+                  ;;
+                /reject*)
+                  if is_authorized "$COMMENT_ASSOC"; then
+                    state="failure"
+                    description="변경 요청됨 — 수정 후 다시 /approve 하세요"
+                  else
+                    exit 0
+                  fi
+                  ;;
+                *)
+                  # 일반 코멘트는 게이트를 건드리지 않는다
+                  exit 0
+                  ;;
+              esac
+              ;;
+
+            pull_request_review)
+              if [ "$REVIEW_ACTION" = "dismissed" ]; then
+                state="failure"
+                description="리뷰가 철회됨 — 재승인이 필요합니다"
+              else
+                case "$REVIEW_STATE" in
+                  approved)
+                    if is_authorized "$REVIEW_ASSOC"; then
+                      state="success"
+                      description="승인됨 — 리뷰 approve ($REVIEW_ASSOC)"
+                    else
+                      exit 0
+                    fi
+                    ;;
+                  changes_requested)
+                    state="failure"
+                    description="변경 요청됨 — 수정 후 다시 승인이 필요합니다"
+                    ;;
+                  *)
+                    exit 0
+                    ;;
+                esac
+              fi
+              ;;
+          esac
+
+          [ -n "$state" ] || exit 0
+
+          # github.sha는 이벤트에 따라 머지 커밋을 가리킨다. 상태는 반드시 PR head의 최신 커밋에 붙여야 한다.
+          head_sha=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid)
+
+          echo "PR #$PR_NUMBER ($head_sha) -> $state: $description"
+
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$head_sha" \
+            -f state="$state" \
+            -f context="review-gate" \
+            -f description="$description" \
+            -f target_url="$RUN_URL" \
+            --silent
