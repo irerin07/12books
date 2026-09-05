@@ -1,0 +1,26 @@
+#!/bin/sh
+#
+# main으로의 직접 push를 거부한다.
+#
+# Claude Code 훅(.claude/hooks/guard-main.ps1)은 에이전트 세션만 막지만,
+# 이 훅은 사람이 직접 치는 명령도 막는다.
+#
+# 활성화: git config core.hooksPath .githooks
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+	case "$remote_ref" in
+	refs/heads/main)
+		echo "" >&2
+		echo "거부: main으로 직접 push할 수 없습니다." >&2
+		echo "" >&2
+		echo "  브랜치에서 작업하고 PR로 올리세요:" >&2
+		echo "    git switch -c feat/<주제>" >&2
+		echo "" >&2
+		echo "  main은 GitHub ruleset으로도 보호되어 있어 어차피 거부됩니다." >&2
+		echo "" >&2
+		exit 1
+		;;
+	esac
+done
+
+exit 0

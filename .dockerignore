@@ -1,0 +1,11 @@
+.git
+.gradle
+build
+.idea
+.vscode
+.claude
+.githooks
+.github
+*.md
+docker-compose.yml
+Dockerfile

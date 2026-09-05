@@ -1,0 +1,41 @@
+name: claude
+
+# PR/이슈에 "@claude ..." 멘션이 달리면 Claude가 대응한다.
+# 자리에 없을 때의 보조 수단이고, 평소 리뷰 반영은 로컬 세션의 /review-fix가 기본 경로다.
+#
+# 필요한 시크릿: ANTHROPIC_API_KEY  (gh secret set ANTHROPIC_API_KEY)
+# 이 워크플로는 Anthropic API 사용료가 별도로 청구된다.
+#
+# 주의: 여기서 만들어진 커밋은 GITHUB_TOKEN으로 push되므로 다른 워크플로(ci, review-gate)를
+# 트리거하지 않는다. 그 커밋 뒤에 CI를 다시 돌리려면 로컬에서 빈 커밋을 하나 밀어야 한다.
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: |
+            --max-turns 20
