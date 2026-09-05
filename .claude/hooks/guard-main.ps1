@@ -56,8 +56,10 @@ main 브랜치에서는 이 작업을 할 수 없습니다.
 # switch/checkout/branch는 일부러 뺐다 - main에서 이걸 막으면 탈출구가 사라진다.
 $gitWriteOp = '(?is)\bgit\b(?:\s+[^\s;&|]+)*\s+(commit|push|merge|rebase|revert|cherry-pick|reset)\b'
 
-# 한 명령 안에서 main으로 갈아타는 부분
-$switchToMain = '(?is)\bgit\b[^;&|]*\b(switch|checkout)\b[^;&|]*\bmain\b'
+# 한 명령 안에서 main으로 갈아타는 부분.
+# main이 switch/checkout의 "인자"로 오는 형태만 본다. 이전엔 switch와 main 사이에 무엇이
+# 끼어도 매치해서, git 예시가 섞인 긴 텍스트(문서·PR 답글 본문)를 통째로 오탐했다.
+$switchToMain = '(?is)\bgit\s+(?:switch|checkout)\s+(?:-{1,2}[^\s]+\s+)*main\b'
 
 # 훅이 어떤 이유로든 깨지면 작업을 막지 않는다. 보호 장치가 개발을 인질로 잡으면 안 된다.
 try {

@@ -71,6 +71,12 @@ try {
 
         # --- 리뷰 1: TOCTOU (실행 전 브랜치만 보는 문제) ---
         @{ n = '작업브랜치 + main 전환 후 commit'; r = $featRepo; p = (Run 'git switch main && git commit -m x');             e = 'deny' }
+        @{ n = '작업브랜치 + checkout main 후 commit'; r = $featRepo; p = (Run 'git checkout main; git commit -m x');         e = 'deny' }
+        @{ n = '작업브랜치 + 새 브랜치 만들고 commit'; r = $featRepo; p = (Run 'git switch -c other && git commit -m x');     e = 'allow' }
+
+        # git 예시가 섞인 긴 텍스트(문서·PR 답글 본문)를 통째로 오탐하면 안 된다
+        @{ n = '작업브랜치 + git 예시가 든 본문 전송'; r = $featRepo;
+           p = (Run "gh pr comment 1 --body 'main에서 git switch -c feat/x 를 막으면 탈출구가 사라진다. git commit 도 마찬가지.'"); e = 'allow' }
     )
 
     $failed = 0
