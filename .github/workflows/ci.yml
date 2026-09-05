@@ -27,6 +27,10 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # review-gate의 승인 판정 로직. 워크플로에서 떼어낸 이유가 테스트하기 위해서다.
+      - name: review-gate 판정 로직 테스트
+        run: bash .github/scripts/review-gate-decide.tests.sh
+
       - name: 빌드 + 전체 테스트
         run: ./gradlew build --no-daemon
         env:
