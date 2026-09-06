@@ -51,6 +51,11 @@ public class User extends BaseTimeEntity {
 	/**
 	 * 프로필 수정. null인 필드는 "보내지 않았다"는 뜻이므로 건드리지 않는다.
 	 * handle과 email은 여기서 바꿀 수 없다 — 식별자와 자격증명은 프로필 수정의 대상이 아니다.
+	 *
+	 * <p>동시 수정은 <strong>last-write-wins</strong>다. dirty checking이 전체 UPDATE를 날리므로
+	 * 두 기기가 각각 다른 필드를 동시에 고치면 나중 쓰기가 먼저 것을 되돌린다. 같은 사용자의
+	 * 드문 상황이고 프로필은 갱신 유실을 감수할 수 있다고 보아 방어하지 않는다.
+	 * 자세한 판단과 도입 순서는 plan.md "의도적으로 하지 않는 것"에 있다.
 	 */
 	public void updateProfile(String displayName, String bio, String avatarUrl) {
 		if (displayName != null) {
