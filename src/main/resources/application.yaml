@@ -1,3 +1,22 @@
 spring:
   application:
     name: twelvebooks
+  jpa:
+    hibernate:
+      ddl-auto: validate          # 스키마의 단일 진실 공급원은 Flyway다
+    open-in-view: false           # 지연 로딩이 뷰까지 새는 것을 막는다
+    properties:
+      hibernate:
+        default_batch_fetch_size: 100   # N+1 1차 방어선
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+twelvebooks:
+  jwt:
+    secret: ${JWT_SECRET}
+    access-token-ttl: PT30M
+    refresh-token-ttl: P14D
+  kakao:
+    rest-api-key: ${KAKAO_REST_API_KEY}
+    base-url: https://dapi.kakao.com
