@@ -38,13 +38,18 @@ dependencies {
 
     // 테스트용 실 MySQL — 버전은 Boot 4.1.1 BOM이 관리하므로 명시하지 않는다
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
-    testImplementation 'org.testcontainers:mysql'
-    testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-mysql'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
 }
 ```
 
 > **주의**: `springdoc-openapi-starter-webmvc-ui`는 Maven Central 검색 UI에서 2.8.6이 최신처럼
 > 보이지만 그건 Boot 3 라인이다. 3.1.0의 부모 POM이 `spring-boot-starter-parent:4.1.0`임을 확인했다.
+
+> **주의**: Testcontainers는 흔히 보이는 `org.testcontainers:mysql` / `:junit-jupiter`가 아니다.
+> Boot 4.1.1 BOM이 관리하는 버전은 **2.0.5**이고, 2.x에서 아티팩트가 `testcontainers-` 접두사로,
+> 패키지가 `org.testcontainers.mysql`로 바뀌었다. `MySQLContainer`도 더 이상 제네릭이 아니라
+> `MySQLContainer<?>`로 선언하면 컴파일이 깨진다.
 
 ## T2. 로컬 인프라 — `docker-compose.yml`
 
@@ -82,7 +87,7 @@ spring:
     hibernate.ddl-auto: validate      # 스키마의 단일 진실 공급원은 Flyway
     open-in-view: false               # 지연 로딩이 뷰까지 새는 것을 막는다
     properties.hibernate.default_batch_fetch_size: 100   # N+1 1차 방어선
-  flyway: { enabled: true, baseline-on-migrate: true }
+  flyway: { enabled: true }         # baseline-on-migrate는 켜지 않는다 (아래 주의)
 
 twelvebooks:
   jwt:
@@ -93,6 +98,10 @@ twelvebooks:
     rest-api-key: ${KAKAO_REST_API_KEY}
     base-url: https://dapi.kakao.com
 ```
+
+> **주의**: `baseline-on-migrate`를 켜면 히스토리 테이블이 없는 DB에 붙었을 때 Flyway가
+> 현재 상태를 baseline으로 찍는다. 새로 시작하는 서비스에서 "히스토리가 없다"는 건 곧
+> "마이그레이션이 아직 하나도 적용되지 않았다"는 뜻이므로, baseline은 누락을 숨기는 쪽으로만 작동한다.
 
 `application-local.yaml` — docker-compose를 가리키는 datasource/redis 접속 정보.
 비밀값은 파일에 넣지 않고 환경변수(`JWT_SECRET`, `KAKAO_REST_API_KEY`)로만 주입한다.
@@ -160,10 +169,15 @@ void incrementLikeCount(@Param("id") Long id);
 
 ## T7. 테스트 전략
 
-- **`AbstractIntegrationTest`** — `@SpringBootTest` + `@Testcontainers` + `@ServiceConnection`으로
-  MySQL 컨테이너를 띄우고 **실제 Flyway 마이그레이션을 그대로 태운다**.
-  static 필드로 선언해 전체 테스트에서 컨테이너 하나를 재사용한다.
+- **`AbstractIntegrationTest`** — `@SpringBootTest` + `@ServiceConnection`으로 MySQL과 Redis
+  컨테이너를 띄우고 **실제 Flyway 마이그레이션을 그대로 태운다**.
   H2는 MySQL 전용 DDL과 호환되지 않으므로 쓰지 않는다.
+  Redis까지 띄우는 이유는 actuator health가 Redis 상태를 집계하기 때문이다 —
+  없으면 헬스 체크가 DOWN이 된다.
+  컨테이너는 `static` 필드에 두고 static 초기화 블록에서 직접 start해 JVM 하나 안의
+  모든 통합 테스트가 같은 컨테이너를 재사용한다. 라이프사이클을 이렇게 잡았으므로
+  `@Testcontainers`(+`@Container`)는 쓰지 않는다 — 그 조합은 컨테이너를 테스트 클래스
+  단위로 관리해 매 클래스마다 새로 띄운다.
 - **MockMvc E2E** — Phase마다 그 시점의 핵심 여정 하나를 끝까지 통과시킨다.
 - **단위 테스트** — `JwtProvider`, 해시태그 파서, 독서 상태 전이 등 순수 로직은 컨테이너 없이.
 - **카카오 API는 `MockRestServiceServer`로 스텁.** 테스트가 외부 네트워크·API 키에
@@ -194,8 +208,20 @@ void incrementLikeCount(@Param("id") Long id);
 - `AbstractIntegrationTest`
 
 **완료 기준**
-`docker compose up -d` 후 `.\gradlew.bat bootRun` → `GET /actuator/health` = `{"status":"UP"}`.
-컨텍스트 로딩 테스트 1개 통과.
+
+`docker compose up -d`로 인프라를 올린 뒤:
+
+```powershell
+$env:JWT_SECRET = "<32바이트 이상의 임의 문자열>"
+$env:KAKAO_REST_API_KEY = "<카카오 REST API 키>"
+.\gradlew.bat bootRun --args='--spring.profiles.active=local'
+```
+
+`GET /actuator/health` = `{"status":"UP"}`. 컨텍스트 로딩 테스트 1개 통과.
+
+`local` 프로필이 없으면 datasource 접속 정보가 없어 뜨지 않는다. 비밀값 두 개도
+`application.yaml`이 환경변수로만 받으므로 미리 넣어야 한다 — 애플리케이션에
+기본 프로필을 박는 대신 실행하는 쪽에서 명시한다.
 
 ---
 
