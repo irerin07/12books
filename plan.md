@@ -92,7 +92,7 @@ spring:
 twelvebooks:
   jwt:
     secret: ${JWT_SECRET}
-    access-token-ttl: PT30M
+    access-token-ttl: PT10M
     refresh-token-ttl: P14D
   kakao:
     rest-api-key: ${KAKAO_REST_API_KEY}
@@ -245,15 +245,30 @@ $env:KAKAO_REST_API_KEY = "<카카오 REST API 키>"
 - `UserController`: `GET /users/{handle}`, `PATCH /me`
 
 **기술 상세**
-- Refresh 토큰은 Redis에 `refresh:{userId}` 키로 TTL 14일 저장.
-  reissue 시 저장값과 대조하고 **새 refresh로 교체(rotation)**, logout 시 `DELETE`.
-  이렇게 해야 stateless를 유지하면서도 로그아웃이 즉시 유효해진다.
+- Access는 JWT로 응답 바디에, **Refresh는 불투명 랜덤 문자열(SecureRandom 32바이트)로
+  HttpOnly 쿠키**에 실어 보낸다 (`Secure`·`SameSite=Strict`·`Path=/api/v1/auth`).
+  refresh를 JS가 읽을 수 없게 해 XSS로 세션을 통째로 잃는 경로를 막는다.
+- Refresh는 서명하지 않는다. Redis와 대조해야만 유효하므로 서명·exp 검증이 중복이고,
+  진실 공급원이 하나(Redis)뿐이면 검증 경로가 단순해진다.
+- Redis에 `refresh:{토큰해시} → {userId, 발급시각}`을 TTL 14일로 저장한다.
+  **토큰은 SHA-256으로 해시해서 저장**한다 — Redis 덤프가 곧 세션 탈취가 되지 않게.
+  전체 로그아웃을 위해 역인덱스 `refresh:user:{userId} → 토큰해시 집합`도 둔다.
+- **기기별 다중 세션.** 키가 토큰 단위라 폰에서 로그인해도 노트북 세션이 끊기지 않는다.
+  reissue는 대조 후 **새 refresh로 교체(rotation)**하고 옛 해시를 지운다.
+  logout은 그 세션 하나만 지우고 쿠키를 만료시킨다.
+- Access 토큰 블랙리스트는 두지 않는다. 로그아웃 후 최대 10분간 기존 access가 살아있지만,
+  매 인증 요청에 Redis 왕복을 넣어 stateless를 포기하는 대가가 더 크다.
+- 쿠키를 쓰므로 `reissue`·`logout`이 CSRF 표적이 된다. `SameSite=Strict`와 POST 전용으로
+  막고 `csrf.disable()`은 유지한다 — 나머지 엔드포인트는 전부 Bearer라 무관하다.
+- 전체 기기 로그아웃 엔드포인트는 이 Phase에 만들지 않는다. 역인덱스만 준비해 둔다.
 - `handle` 검증: `^[a-z0-9_]{3,20}$`. 이메일/handle 중복은 DB 유니크 제약 + 사전 조회 둘 다.
 - 비밀번호는 어떤 DTO·로그·응답에도 절대 실리지 않게 한다.
 
 **완료 기준**
 E2E: 가입 → 로그인 → access 토큰으로 `PATCH /me` 성공 → 토큰 없이 호출 시 401 →
-reissue로 새 토큰 발급 → logout 후 같은 refresh로 reissue 시 401.
+refresh 쿠키로 reissue해 새 access와 **새 refresh 쿠키**를 받음 → 직전 refresh로 reissue 시 401
+→ logout 후 같은 refresh로 reissue 시 401.
+두 기기를 흉내 낸 로그인 두 번 뒤 한쪽만 logout해도 다른 쪽 reissue가 성공해야 한다.
 
 ---
 

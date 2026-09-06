@@ -16,7 +16,7 @@ spring:
 twelvebooks:
   jwt:
     secret: ${JWT_SECRET}
-    access-token-ttl: PT30M
+    access-token-ttl: PT10M
     refresh-token-ttl: P14D
   kakao:
     rest-api-key: ${KAKAO_REST_API_KEY}

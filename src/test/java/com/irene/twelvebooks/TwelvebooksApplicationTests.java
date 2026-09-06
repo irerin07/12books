@@ -38,7 +38,7 @@ class TwelvebooksApplicationTests extends AbstractIntegrationTest {
 	@DisplayName("설정 프로퍼티가 twelvebooks 네임스페이스로 바인딩된다")
 	void propertiesAreBound() {
 		assertThat(jwtProperties.secret()).isNotBlank();
-		assertThat(jwtProperties.accessTokenTtl()).isEqualTo(Duration.ofMinutes(30));
+		assertThat(jwtProperties.accessTokenTtl()).isEqualTo(Duration.ofMinutes(10));
 		assertThat(jwtProperties.refreshTokenTtl()).isEqualTo(Duration.ofDays(14));
 		assertThat(kakaoProperties.restApiKey()).isNotBlank();
 		assertThat(kakaoProperties.baseUrl()).isEqualTo("https://dapi.kakao.com");

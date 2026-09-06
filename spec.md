@@ -97,8 +97,17 @@
 
 - 이메일 형식 검증, 비밀번호 8자 이상. 저장은 BCrypt.
 - `handle`(예: `irene`)은 가입 시 지정하는 고유 URL 식별자. 영소문자·숫자·`_`, 3~20자.
-- Access 토큰 30분, Refresh 토큰 14일. Refresh는 Redis에 `refresh:{userId}` 로 저장하며
-  로그아웃 시 삭제하여 즉시 무효화한다.
+- Access 토큰 10분, Refresh 토큰 14일.
+- Access는 응답 바디로, **Refresh는 HttpOnly 쿠키**로 전달한다
+  (`Secure`·`SameSite=Strict`·`Path=/api/v1/auth`). XSS로 refresh를 훔칠 수 없게 한다.
+- Refresh는 불투명 랜덤 문자열이며 Redis가 유일한 진실 공급원이다.
+  `refresh:{토큰해시}`에 세션을 저장하고, 전체 로그아웃을 위한 역인덱스로
+  `refresh:user:{userId}`에 해시 집합을 둔다. **토큰은 해시해서 저장**한다 —
+  Redis 덤프가 곧 세션 탈취가 되지 않게.
+- **기기별 다중 세션**을 허용한다. 폰에서 로그인해도 노트북 세션이 끊기지 않는다.
+  reissue 때마다 refresh를 교체(rotation)하고, 로그아웃은 그 세션만 삭제한다.
+- Access 토큰 블랙리스트는 두지 않는다. 로그아웃 후 최대 10분간 기존 access가 살아있지만,
+  매 요청 Redis 조회를 넣어 stateless를 포기하는 대가가 더 크다.
 
 ### 4.2 책 (F2)
 
