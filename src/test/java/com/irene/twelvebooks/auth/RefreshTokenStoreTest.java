@@ -7,7 +7,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -20,6 +29,9 @@ class RefreshTokenStoreTest extends AbstractIntegrationTest {
 
 	@Autowired
 	StringRedisTemplate redis;
+
+	@Autowired
+	JwtProperties jwtProperties;
 
 	@BeforeEach
 	void clearRedis() {
@@ -76,7 +88,7 @@ class RefreshTokenStoreTest extends AbstractIntegrationTest {
 	void rotationInvalidatesPreviousToken() {
 		String old = store.issue(42L);
 
-		String rotated = store.rotate(old).orElseThrow();
+		String rotated = store.rotate(old).orElseThrow().token();
 
 		assertThat(rotated).isNotEqualTo(old);
 		assertThat(store.findUserId(rotated)).contains(42L);
@@ -118,10 +130,65 @@ class RefreshTokenStoreTest extends AbstractIntegrationTest {
 		store.issue(42L);
 		String laptop = store.issue(42L);
 
-		assertThat(redis.opsForSet().size("refresh:user:42")).isEqualTo(2);
+		assertThat(redis.opsForZSet().size("refresh:user:42")).isEqualTo(2);
 
 		store.revoke(laptop);
 
-		assertThat(redis.opsForSet().size("refresh:user:42")).isEqualTo(1);
+		assertThat(redis.opsForZSet().size("refresh:user:42")).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("rotation은 새 토큰과 함께 사용자를 알려준다 — 같은 값을 다시 읽지 않게")
+	void rotationReturnsOwner() {
+		String token = store.issue(42L);
+
+		RefreshTokenStore.Session session = store.rotate(token).orElseThrow();
+
+		assertThat(session.userId()).isEqualTo(42L);
+		assertThat(session.token()).isNotEqualTo(token);
+	}
+
+	@Test
+	@DisplayName("같은 토큰으로 동시에 재발급하면 하나만 성공한다")
+	void rotationIsAtomicUnderConcurrency() throws Exception {
+		String token = store.issue(42L);
+		int threads = 16;
+
+		ExecutorService pool = Executors.newFixedThreadPool(threads);
+		try {
+			List<Callable<Boolean>> attempts = new ArrayList<>();
+			for (int i = 0; i < threads; i++) {
+				attempts.add(() -> store.rotate(token).isPresent());
+			}
+			List<Future<Boolean>> results = pool.invokeAll(attempts);
+
+			long winners = 0;
+			for (Future<Boolean> result : results) {
+				if (result.get()) {
+					winners++;
+				}
+			}
+			assertThat(winners).isEqualTo(1);
+		}
+		finally {
+			pool.shutdownNow();
+		}
+	}
+
+	@Test
+	@DisplayName("역인덱스는 만료된 세션을 계속 쌓아두지 않는다")
+	void prunesExpiredSessionsFromIndex() {
+		// 이미 만료된 시점에 발급된 것처럼 보이는 세션을 심는다
+		RefreshTokenStore past = new RefreshTokenStore(redis, jwtProperties,
+				Clock.fixed(Instant.now().minus(Duration.ofDays(30)), ZoneOffset.UTC));
+		past.issue(42L);
+		past.issue(42L);
+
+		assertThat(redis.opsForZSet().size("refresh:user:42")).isEqualTo(2);
+
+		store.issue(42L);
+
+		// 새 세션 하나만 남는다 — 만료된 두 개는 정리된다
+		assertThat(redis.opsForZSet().size("refresh:user:42")).isEqualTo(1);
 	}
 }

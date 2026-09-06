@@ -202,6 +202,35 @@ class AuthControllerTest extends AbstractIntegrationTest {
 				.andExpect(status().isOk());
 	}
 
+	@Test
+	@DisplayName("한글 비밀번호가 72바이트를 넘으면 500이 아니라 400이다")
+	void rejectsPasswordLongerThanBcryptLimit() throws Exception {
+		// 한글 25자 = UTF-8 75바이트. 글자 수만 세면 통과하지만 BCrypt가 거부한다.
+		mockMvc.perform(post("/api/v1/auth/signup")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"email":"long@example.com","password":"%s","handle":"longpw","displayName":"아이린"}"""
+								.formatted("비".repeat(25))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.fieldErrors[0].field").value("password"));
+	}
+
+	@Test
+	@DisplayName("깨진 JSON은 500이 아니라 400이다")
+	void rejectsMalformedJson() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/signup")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"email\": "))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("C001"));
+
+		mockMvc.perform(post("/api/v1/auth/login")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("이건 JSON이 아니다"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("C001"));
+	}
+
 	private MvcResult login() throws Exception {
 		return mockMvc.perform(post("/api/v1/auth/login")
 						.contentType(MediaType.APPLICATION_JSON)

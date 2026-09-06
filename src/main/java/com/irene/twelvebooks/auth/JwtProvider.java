@@ -1,5 +1,6 @@
 package com.irene.twelvebooks.auth;
 
+import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.security.Keys;
@@ -25,6 +26,7 @@ public class JwtProvider {
 	private static final String HANDLE_CLAIM = "handle";
 
 	private final SecretKey key;
+	private final JwtParser parser;
 	private final java.time.Duration accessTokenTtl;
 	private final Clock clock;
 
@@ -36,6 +38,11 @@ public class JwtProvider {
 					"JWT secret은 최소 %d바이트여야 합니다. 현재 %d바이트".formatted(MINIMUM_SECRET_BYTES, secret.length));
 		}
 		this.key = Keys.hmacShaKeyFor(secret);
+		// 파서는 상태가 없고 스레드 안전하다. 매 요청마다 다시 만들 이유가 없다.
+		this.parser = Jwts.parser()
+				.verifyWith(this.key)
+				.clock(() -> Date.from(clock.instant()))
+				.build();
 		this.accessTokenTtl = properties.accessTokenTtl();
 		this.clock = clock;
 	}
@@ -60,12 +67,7 @@ public class JwtProvider {
 			return Optional.empty();
 		}
 		try {
-			var claims = Jwts.parser()
-					.verifyWith(key)
-					.clock(() -> Date.from(clock.instant()))
-					.build()
-					.parseSignedClaims(token)
-					.getPayload();
+			var claims = parser.parseSignedClaims(token).getPayload();
 			return Optional.of(new AuthPrincipal(
 					Long.valueOf(claims.getSubject()), claims.get(HANDLE_CLAIM, String.class)));
 		}

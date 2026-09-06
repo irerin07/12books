@@ -1,5 +1,6 @@
 package com.irene.twelvebooks.user.dto;
 
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -8,7 +9,8 @@ import jakarta.validation.constraints.Size;
  */
 public record UpdateProfileRequest(
 
-		@Size(min = 1, max = 50)
+		// 보내지 않는 것(null)은 허용하지만, 보냈다면 가입 때와 같이 공백만일 수 없다.
+		@Size(max = 50) @Pattern(regexp = ".*\\S.*", message = "displayName은 공백만으로 둘 수 없습니다")
 		String displayName,
 
 		@Size(max = 200)

@@ -134,4 +134,16 @@ class UserControllerTest extends AbstractIntegrationTest {
 								{"displayName":"아무개"}"""))
 				.andExpect(status().isUnauthorized());
 	}
+
+	@Test
+	@DisplayName("공백만 있는 displayName은 400 — 가입 때의 불변식과 같아야 한다")
+	void rejectsBlankDisplayName() throws Exception {
+		mockMvc.perform(patch("/api/v1/me")
+						.header("Authorization", bearer())
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"displayName":"   "}"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.fieldErrors[0].field").value("displayName"));
+	}
 }

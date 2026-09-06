@@ -1,6 +1,8 @@
 package com.irene.twelvebooks.auth;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -9,8 +11,10 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -18,6 +22,11 @@ import java.util.Optional;
  *
  * <p>키는 사용자가 아니라 <em>토큰</em> 단위다({@code refresh:{해시}}). 사용자당 하나였다면
  * 폰에서 로그인하는 순간 노트북 세션이 끊긴다.
+ *
+ * <p>발급과 교체는 각각 Lua 스크립트 한 번으로 끝낸다. Redis는 스크립트를 원자적으로 실행하므로
+ * 같은 토큰으로 동시에 재발급을 시도해도 <strong>하나만</strong> 성공한다. 명령을 나눠 보내면
+ * 두 요청이 모두 검증을 통과해 각자 새 토큰을 받아 갈 수 있고, HSET과 EXPIRE 사이에서
+ * 프로세스가 죽으면 만료되지 않는 세션이 남는다.
  */
 @Component
 public class RefreshTokenStore {
@@ -29,6 +38,38 @@ public class RefreshTokenStore {
 
 	/** 128비트로도 충분하지만, 재발급이 잦은 값이라 여유를 둔다. */
 	private static final int TOKEN_BYTES = 32;
+
+	/**
+	 * KEYS[1] 세션 키 · KEYS[2] 역인덱스
+	 * ARGV: 1 해시, 2 userId, 3 발급시각, 4 TTL(ms), 5 만료 score, 6 현재 score
+	 */
+	private static final RedisScript<Void> ISSUE_SCRIPT = new DefaultRedisScript<>("""
+			redis.call('HSET', KEYS[1], 'userId', ARGV[2], 'issuedAt', ARGV[3])
+			redis.call('PEXPIRE', KEYS[1], ARGV[4])
+			redis.call('ZADD', KEYS[2], ARGV[5], ARGV[1])
+			redis.call('PEXPIRE', KEYS[2], ARGV[4])
+			redis.call('ZREMRANGEBYSCORE', KEYS[2], 0, ARGV[6])
+			""", Void.class);
+
+	/**
+	 * KEYS[1] 옛 세션 키
+	 * ARGV: 1 옛 해시, 2 새 해시, 3 발급시각, 4 TTL(ms), 5 만료 score, 6 현재 score
+	 * 성공하면 userId를, 이미 쓰였거나 없으면 nil을 돌려준다.
+	 */
+	private static final RedisScript<String> ROTATE_SCRIPT = new DefaultRedisScript<>("""
+			local userId = redis.call('HGET', KEYS[1], 'userId')
+			if not userId then return nil end
+			redis.call('DEL', KEYS[1])
+			local index = 'refresh:user:' .. userId
+			redis.call('ZREM', index, ARGV[1])
+			local newKey = 'refresh:' .. ARGV[2]
+			redis.call('HSET', newKey, 'userId', userId, 'issuedAt', ARGV[3])
+			redis.call('PEXPIRE', newKey, ARGV[4])
+			redis.call('ZADD', index, ARGV[5], ARGV[2])
+			redis.call('PEXPIRE', index, ARGV[4])
+			redis.call('ZREMRANGEBYSCORE', index, 0, ARGV[6])
+			return userId
+			""", String.class);
 
 	private final StringRedisTemplate redis;
 	private final Duration refreshTokenTtl;
@@ -42,19 +83,16 @@ public class RefreshTokenStore {
 	}
 
 	public String issue(Long userId) {
-		byte[] bytes = new byte[TOKEN_BYTES];
-		random.nextBytes(bytes);
-		String rawToken = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-
+		String rawToken = newToken();
 		String hash = hash(rawToken);
-		redis.opsForHash().putAll(sessionKey(hash), java.util.Map.of(
-				USER_ID_FIELD, String.valueOf(userId),
-				ISSUED_AT_FIELD, clock.instant().toString()));
-		redis.expire(sessionKey(hash), refreshTokenTtl);
+		Instant now = clock.instant();
 
-		// 전체 로그아웃이 필요해질 때를 위한 역인덱스. 지금은 엔드포인트를 만들지 않는다.
-		redis.opsForSet().add(userIndexKey(userId), hash);
-		redis.expire(userIndexKey(userId), refreshTokenTtl);
+		redis.execute(ISSUE_SCRIPT,
+				List.of(sessionKey(hash), userIndexKey(userId)),
+				hash, String.valueOf(userId), now.toString(),
+				String.valueOf(refreshTokenTtl.toMillis()),
+				String.valueOf(now.plus(refreshTokenTtl).toEpochMilli()),
+				String.valueOf(now.toEpochMilli()));
 
 		return rawToken;
 	}
@@ -68,14 +106,26 @@ public class RefreshTokenStore {
 	}
 
 	/**
-	 * 옛 세션을 지우고 새 토큰을 발급한다. 훔친 토큰의 수명을 재발급 주기로 잘라내기 위해서다.
-	 * 이미 쓴 토큰이면 빈 값을 돌려준다.
+	 * 옛 세션을 지우고 새 토큰을 발급한다. 훔친 토큰이 살아 있는 창을 재발급 주기로 잘라낸다.
+	 * 새 토큰과 함께 주인을 돌려주므로 호출부가 같은 값을 다시 읽지 않아도 된다.
 	 */
-	public Optional<String> rotate(String rawToken) {
-		return findUserId(rawToken).map(userId -> {
-			revoke(rawToken);
-			return issue(userId);
-		});
+	public Optional<Session> rotate(String rawToken) {
+		if (rawToken == null || rawToken.isBlank()) {
+			return Optional.empty();
+		}
+		String oldHash = hash(rawToken);
+		String newToken = newToken();
+		String newHash = hash(newToken);
+		Instant now = clock.instant();
+
+		String userId = redis.execute(ROTATE_SCRIPT,
+				List.of(sessionKey(oldHash)),
+				oldHash, newHash, now.toString(),
+				String.valueOf(refreshTokenTtl.toMillis()),
+				String.valueOf(now.plus(refreshTokenTtl).toEpochMilli()),
+				String.valueOf(now.toEpochMilli()));
+
+		return Optional.ofNullable(userId).map(id -> new Session(Long.valueOf(id), newToken));
 	}
 
 	public void revoke(String rawToken) {
@@ -83,8 +133,14 @@ public class RefreshTokenStore {
 			return;
 		}
 		String hash = hash(rawToken);
-		findUserId(rawToken).ifPresent(userId -> redis.opsForSet().remove(userIndexKey(userId), hash));
+		findUserId(rawToken).ifPresent(userId -> redis.opsForZSet().remove(userIndexKey(userId), hash));
 		redis.delete(sessionKey(hash));
+	}
+
+	private String newToken() {
+		byte[] bytes = new byte[TOKEN_BYTES];
+		random.nextBytes(bytes);
+		return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
 	}
 
 	/**
@@ -107,5 +163,9 @@ public class RefreshTokenStore {
 
 	private String userIndexKey(Long userId) {
 		return USER_INDEX_KEY_PREFIX + userId;
+	}
+
+	/** 교체 결과. 주인을 함께 돌려줘 호출부의 중복 조회를 없앤다. */
+	public record Session(Long userId, String token) {
 	}
 }
