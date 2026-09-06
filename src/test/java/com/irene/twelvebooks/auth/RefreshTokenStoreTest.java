@@ -88,7 +88,7 @@ class RefreshTokenStoreTest extends AbstractIntegrationTest {
 	void rotationInvalidatesPreviousToken() {
 		String old = store.issue(42L);
 
-		String rotated = store.rotate(old).orElseThrow().token();
+		String rotated = store.rotate(old).orElseThrow();
 
 		assertThat(rotated).isNotEqualTo(old);
 		assertThat(store.findUserId(rotated)).contains(42L);
@@ -138,14 +138,13 @@ class RefreshTokenStoreTest extends AbstractIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("rotation은 새 토큰과 함께 사용자를 알려준다 — 같은 값을 다시 읽지 않게")
-	void rotationReturnsOwner() {
+	@DisplayName("교체된 세션은 같은 사용자의 것이다")
+	void rotationKeepsOwner() {
 		String token = store.issue(42L);
 
-		RefreshTokenStore.Session session = store.rotate(token).orElseThrow();
+		String rotated = store.rotate(token).orElseThrow();
 
-		assertThat(session.userId()).isEqualTo(42L);
-		assertThat(session.token()).isNotEqualTo(token);
+		assertThat(store.findUserId(rotated)).contains(42L);
 	}
 
 	@Test

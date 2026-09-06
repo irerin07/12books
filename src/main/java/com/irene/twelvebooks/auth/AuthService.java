@@ -72,8 +72,15 @@ public class AuthService {
 	}
 
 	/**
-	 * 사용자를 먼저 확인하고 <em>마지막에</em> 교체한다. 순서가 반대면 교체 직후 DB 조회가 실패했을 때
-	 * 옛 토큰은 이미 폐기되고 새 토큰은 클라이언트에 닿지 못해 세션만 사라진다.
+	 * 낙관적 검증이다 — Redis 조회로 주인을 얻고, DB로 사용자를 확인하고, 마지막에 교체한다.
+	 *
+	 * <p>순서가 핵심이다. 교체가 먼저면 직후 DB 조회가 실패했을 때 옛 토큰은 이미 폐기되고
+	 * 새 토큰은 클라이언트에 닿지 못해 세션만 사라진다. 지금 순서라면 DB가 실패해도 토큰이
+	 * 그대로라 그냥 다시 시도하면 된다.
+	 *
+	 * <p>사전 조회와 교체 사이에 다른 요청이 먼저 교체하더라도, 마지막 스크립트가 옛 키의 부재를
+	 * 확인하고 실패하므로 두 요청이 모두 성공하는 일은 없다. Redis 왕복 2회는 이 구조에서
+	 * 의도한 최소 비용이다 — 1회로 줄이려면 교체를 앞으로 당겨야 하고 위의 세션 유실이 되돌아온다.
 	 */
 	public Tokens reissue(String refreshToken) {
 		Long userId = refreshTokenStore.findUserId(refreshToken)
@@ -81,10 +88,10 @@ public class AuthService {
 		User user = userRepository.findById(userId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
 
-		RefreshTokenStore.Session rotated = refreshTokenStore.rotate(refreshToken)
+		String rotated = refreshTokenStore.rotate(refreshToken)
 				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
 
-		return new Tokens(jwtProvider.createAccessToken(user.getId(), user.getHandle()), rotated.token());
+		return new Tokens(jwtProvider.createAccessToken(user.getId(), user.getHandle()), rotated);
 	}
 
 	public void logout(String refreshToken) {
