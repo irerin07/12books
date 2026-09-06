@@ -1,6 +1,7 @@
 package com.irene.twelvebooks.user;
 
 import com.irene.twelvebooks.support.AbstractIntegrationTest;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +14,12 @@ class UserRepositoryTest extends AbstractIntegrationTest {
 
 	@Autowired
 	UserRepository userRepository;
+
+	@BeforeEach
+	void clean() {
+		// 컨테이너를 전체 테스트가 공유하므로 다른 클래스가 남긴 행이 유니크 제약에 걸린다.
+		userRepository.deleteAll();
+	}
 
 	private User newUser(String email, String handle) {
 		return User.create(email, "{bcrypt}해시된값", handle, "아이린");
