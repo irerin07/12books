@@ -38,13 +38,18 @@ dependencies {
 
     // 테스트용 실 MySQL — 버전은 Boot 4.1.1 BOM이 관리하므로 명시하지 않는다
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
-    testImplementation 'org.testcontainers:mysql'
-    testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-mysql'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
 }
 ```
 
 > **주의**: `springdoc-openapi-starter-webmvc-ui`는 Maven Central 검색 UI에서 2.8.6이 최신처럼
 > 보이지만 그건 Boot 3 라인이다. 3.1.0의 부모 POM이 `spring-boot-starter-parent:4.1.0`임을 확인했다.
+
+> **주의**: Testcontainers는 흔히 보이는 `org.testcontainers:mysql` / `:junit-jupiter`가 아니다.
+> Boot 4.1.1 BOM이 관리하는 버전은 **2.0.5**이고, 2.x에서 아티팩트가 `testcontainers-` 접두사로,
+> 패키지가 `org.testcontainers.mysql`로 바뀌었다. `MySQLContainer`도 더 이상 제네릭이 아니라
+> `MySQLContainer<?>`로 선언하면 컴파일이 깨진다.
 
 ## T2. 로컬 인프라 — `docker-compose.yml`
 
@@ -82,7 +87,7 @@ spring:
     hibernate.ddl-auto: validate      # 스키마의 단일 진실 공급원은 Flyway
     open-in-view: false               # 지연 로딩이 뷰까지 새는 것을 막는다
     properties.hibernate.default_batch_fetch_size: 100   # N+1 1차 방어선
-  flyway: { enabled: true, baseline-on-migrate: true }
+  flyway: { enabled: true }         # baseline-on-migrate는 켜지 않는다 (아래 주의)
 
 twelvebooks:
   jwt:
@@ -93,6 +98,10 @@ twelvebooks:
     rest-api-key: ${KAKAO_REST_API_KEY}
     base-url: https://dapi.kakao.com
 ```
+
+> **주의**: `baseline-on-migrate`를 켜면 히스토리 테이블이 없는 DB에 붙었을 때 Flyway가
+> 현재 상태를 baseline으로 찍는다. 새로 시작하는 서비스에서 "히스토리가 없다"는 건 곧
+> "마이그레이션이 아직 하나도 적용되지 않았다"는 뜻이므로, baseline은 누락을 숨기는 쪽으로만 작동한다.
 
 `application-local.yaml` — docker-compose를 가리키는 datasource/redis 접속 정보.
 비밀값은 파일에 넣지 않고 환경변수(`JWT_SECRET`, `KAKAO_REST_API_KEY`)로만 주입한다.
