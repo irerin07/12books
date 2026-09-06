@@ -16,7 +16,7 @@
 | 단계 | 내용 | 마이그레이션 | 이 시점의 제품 | 상태 |
 |---|---|---|---|---|
 | H | 개발 하네스 | — | (궤도) | 진행 중 |
-| 0 | 인프라·설정·공통·테스트 하네스 | — | (뼈대) | |
+| 0 | 인프라·설정·공통·테스트 하네스 | — | (뼈대) | **완료** ([#3](https://github.com/irerin07/12books/pull/3)) |
 | 1 | 사용자 · JWT 인증 | `V1__users` | 계정 | |
 | 2 | 카카오 책 검색 · 등록 | `V2__books` | 책 찾기 | |
 | 3 | 서재 · 독서 기록 · 목표 | `V3__readings` | **개인 독서 기록 앱** | |
@@ -56,61 +56,74 @@
 
 # Phase 0 — 걸어다니는 뼈대
 
-> 기능은 없지만 인프라·설정·공통 코드·테스트 하네스가 전부 연결된 상태.
-> 이후 모든 Phase가 이 위에 얹힌다.
+> PR [#3](https://github.com/irerin07/12books/pull/3). 기능은 없지만 인프라·설정·공통 코드·테스트
+> 하네스가 전부 연결된 상태. 이후 모든 Phase가 이 위에 얹힌다.
 
 ## T1. 의존성 (`build.gradle`)
 
-- [ ] `spring-boot-starter-restclient` — Boot 4에서 RestClient가 별도 스타터로 분리됨
-- [ ] `jjwt-api:0.12.6` (implementation) + `jjwt-impl`·`jjwt-jackson` (runtimeOnly)
-- [ ] `springdoc-openapi-starter-webmvc-ui:3.1.0` — **2.8.x는 Boot 3 전용이라 깨진다**
-- [ ] `spring-boot-testcontainers`, `testcontainers:mysql`, `testcontainers:junit-jupiter`
-      (버전은 Boot BOM이 관리하므로 명시하지 않는다)
+- [x] `spring-boot-starter-restclient` — Boot 4에서 RestClient가 별도 스타터로 분리됨
+- [x] `jjwt-api:0.12.6` (implementation) + `jjwt-impl`·`jjwt-jackson` (runtimeOnly)
+- [x] `springdoc-openapi-starter-webmvc-ui:3.1.0` — **2.8.x는 Boot 3 전용이라 깨진다**
+- [x] `spring-boot-testcontainers`, `testcontainers-mysql`, `testcontainers-junit-jupiter`
+      (버전은 Boot BOM이 관리하므로 명시하지 않는다 — 4.1.1 기준 **2.0.5**.
+      `org.testcontainers:mysql` 꼴의 옛 좌표는 해결되지 않는다)
 
 ## T2. 로컬 인프라
 
-- [ ] `docker-compose.yml` — MySQL 8.4 (utf8mb4, healthcheck, named volume) + Redis 7-alpine
-- [ ] `docker compose up -d`로 두 컨테이너가 healthy 되는지 확인
+- [x] `docker-compose.yml` — MySQL 8.4 (utf8mb4, healthcheck, named volume) + Redis 7-alpine
+- [x] `docker compose up -d`로 두 컨테이너가 healthy 되는지 확인
 
 ## T3. 설정
 
-- [ ] `application.yaml` — `ddl-auto: validate`, `open-in-view: false`,
-      `default_batch_fetch_size: 100`, flyway, actuator는 `health`만 노출
-- [ ] `application.yaml`에 `twelvebooks.jwt.*` / `twelvebooks.kakao.*` 환경변수 주입
-- [ ] `application-local.yaml` — docker-compose를 가리키는 datasource/redis (비밀값 없음)
-- [ ] `JwtProperties`, `KakaoProperties` — `record` + `@ConfigurationProperties`
-- [ ] Phase 2 전까지 카카오 키 없이도 앱이 뜨게 기본값 처리
+- [x] `application.yaml` — `ddl-auto: validate`, `open-in-view: false`,
+      `default_batch_fetch_size: 100`, flyway
+      (actuator 노출 범위 좁히기는 Phase 9 보안 마무리에서)
+- [x] `application.yaml`에 `twelvebooks.jwt.*` / `twelvebooks.kakao.*` 환경변수 주입
+- [x] `application-local.yaml` — docker-compose를 가리키는 datasource/redis (비밀값 없음)
+- [x] `JwtProperties`, `KakaoProperties` — `record` + `@ConfigurationProperties`
+
+> **하지 않기로 함**: "Phase 2 전까지 카카오 키 없이도 앱이 뜨게 기본값 처리".
+> 비밀값에 기본값을 주면 운영에서 더미 키로 조용히 뜨는 사고가 난다. 대신 실행할 때
+> `JWT_SECRET`·`KAKAO_REST_API_KEY`를 넣도록 `plan.md` Phase 0 완료 기준에 명시했다.
 
 ## T4·T5. 공통 코드 (`com.irene.twelvebooks.common`)
 
-- [ ] `entity/BaseTimeEntity` — `@MappedSuperclass`, `createdAt`/`updatedAt`
-- [ ] `config/JpaConfig` — `@EnableJpaAuditing`
-- [ ] `error/ErrorCode` — HTTP 상태 + 코드 + 기본 메시지를 함께 소유하는 enum.
-      Phase 0에서는 공통 코드만 (`INVALID_INPUT`, `UNAUTHORIZED`, `FORBIDDEN`,
-      `NOT_FOUND`, `CONFLICT`, `EXTERNAL_API_ERROR`, `INTERNAL_ERROR`)
-- [ ] `error/BusinessException`, `error/ErrorResponse{ code, message, fieldErrors }`
-- [ ] `error/GlobalExceptionHandler` — `BusinessException`,
-      `MethodArgumentNotValidException`(→ fieldErrors), `DataIntegrityViolationException`(→409),
-      그 외 `Exception`(→500). **스택트레이스·내부 메시지가 응답에 새지 않을 것**
-- [ ] `support/CursorPage<T>` — `size + 1`건으로 `hasNext`를 판정하는 정적 팩터리
-- [ ] `config/RedisConfig` — 키/값 `StringRedisSerializer`
-- [ ] `auth/config/SecurityConfig` (최소) — `csrf.disable()`, STATELESS,
+- [x] `entity/BaseTimeEntity` — `@MappedSuperclass`, `createdAt`/`updatedAt`
+- [x] `config/JpaConfig` — `@EnableJpaAuditing`
+- [x] `error/ErrorCode` — HTTP 상태 + 코드 + 기본 메시지를 함께 소유하는 enum.
+      **지금 쓰이는 것만 넣는다** (`INVALID_INPUT`, `INTERNAL_ERROR`).
+      `UNAUTHORIZED`·`NOT_FOUND`·`CONFLICT` 같은 코드는 처음 쓰는 Phase에서 추가한다 —
+      쓰지 않는 코드를 미리 늘어놓으면 어느 것이 실제로 나가는 응답인지 알 수 없다
+- [x] `error/BusinessException`, `error/ErrorResponse{ code, message, fieldErrors }`
+- [x] `error/GlobalExceptionHandler` — `BusinessException`,
+      `MethodArgumentNotValidException`(→ fieldErrors), 그 외 `Exception`(→500).
+      **스택트레이스·내부 메시지가 응답에 새지 않을 것**
+      (`DataIntegrityViolationException`→409는 유니크 제약이 처음 생기는 Phase 6에서)
+- [x] `support/CursorPage<T>` — `size + 1`건으로 `hasNext`를 판정하는 정적 팩터리.
+      `size <= 0`은 입구에서 `IllegalArgumentException`
+- [x] `config/RedisConfig` — 키·해시키 `StringRedisSerializer`
+      (값 직렬화는 쓰는 쪽에서 정한다)
+- [x] `auth/SecurityConfig` (최소) — `csrf.disable()`, STATELESS,
       `/actuator/health` permitAll, 나머지 authenticated
 
 ## T6·T7. 마이그레이션 규칙 · 테스트 하네스
 
-- [ ] `src/main/resources/db/migration/` 디렉터리 생성 (Phase 0에는 파일 없음)
-- [ ] `AbstractIntegrationTest` — `@SpringBootTest` + `@Testcontainers`,
-      static MySQL 컨테이너 + `@ServiceConnection`으로 전체 테스트가 하나를 공유. **H2 쓰지 않는다**
-- [ ] Redis 컨테이너도 함께 (`@ServiceConnection`) — 로컬 Redis 의존 제거
-- [ ] `TwelvebooksApplicationTests`를 `AbstractIntegrationTest` 상속으로 전환
+- [x] `src/main/resources/db/migration/` 디렉터리 생성 (Phase 0에는 파일 없음)
+- [x] `AbstractIntegrationTest` — `@SpringBootTest` + `@ServiceConnection`,
+      static MySQL 컨테이너를 static 초기화 블록에서 직접 start해 전체 테스트가 하나를 공유.
+      **H2 쓰지 않는다**. `@Testcontainers`는 컨테이너를 테스트 클래스 단위로 관리하므로 쓰지 않는다
+- [x] Redis 컨테이너도 함께 (`@ServiceConnection`) — actuator health가 Redis 상태를 집계하므로
+      없으면 헬스 체크가 DOWN이 된다
+- [x] `TwelvebooksApplicationTests`를 `AbstractIntegrationTest` 상속으로 전환
 
 ## 완료 기준
 
-- [ ] `.\gradlew.bat build` **초록불** (하네스 도입 후 첫 초록)
-- [ ] `GET /actuator/health` = `{"status":"UP"}` (인증 없이 200)
-- [ ] 화이트리스트 밖 경로는 401
-- [ ] 에러 응답에 스택트레이스가 없다
+- [x] `.\gradlew.bat build` **초록불** (하네스 도입 후 첫 초록)
+- [x] `GET /actuator/health` = `{"status":"UP"}` (인증 없이 200)
+- [x] 에러 응답에 스택트레이스가 없다
+
+> 화이트리스트 밖 경로의 401은 Phase 1 완료 기준("토큰 없이 호출 시 401")에서 검증한다.
+> Phase 0에는 인증이 필요한 엔드포인트가 아직 하나도 없다.
 
 ---
 
