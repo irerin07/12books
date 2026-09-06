@@ -140,8 +140,14 @@
 - [ ] `auth/SecurityConfig` 확장 — `BCryptPasswordEncoder`, 공개 경로
       (`/api/v1/auth/**`, `/actuator/health`, `/swagger-ui/**`, `/v3/api-docs/**`)
 - [ ] `auth/@AuthUser` + `HandlerMethodArgumentResolver`
-- [ ] `AuthController` — signup / login / reissue / logout
-- [ ] Refresh 토큰 Redis 저장 (`refresh:{userId}`, TTL 14일) + **rotation** + logout 시 삭제
+- [ ] `AuthController` — signup / login / reissue / logout (**reissue·logout은 POST 전용**)
+- [ ] Refresh 발급 — `SecureRandom` 32바이트 불투명 문자열, **HttpOnly 쿠키**로 전달
+      (`Secure`·`SameSite=Strict`·`Path=/api/v1/auth`). 서명하지 않는다
+- [ ] Refresh 저장 — `refresh:{토큰해시} → {userId, 발급시각}` TTL 14일.
+      **SHA-256 해시해서 저장**. 역인덱스 `refresh:user:{userId} → 해시 집합`
+- [ ] **기기별 다중 세션** — reissue 시 rotation(옛 해시 삭제), logout은 그 세션만 삭제
+- [ ] access 블랙리스트는 만들지 않는다 (로그아웃 후 최대 10분 잔존을 받아들인다)
+- [ ] 전체 기기 로그아웃 API는 이 Phase에 만들지 않는다 (역인덱스만 준비)
 - [ ] `UserController` — `GET /users/{handle}`, `PATCH /me`
 - [ ] handle 검증 `^[a-z0-9_]{3,20}$`, 이메일/handle 중복은 유니크 제약 + 사전 조회
 - [ ] **비밀번호가 어떤 DTO·로그·응답에도 실리지 않는지 확인**
@@ -150,6 +156,7 @@
 
 - [ ] E2E: 가입 → 로그인 → access로 `PATCH /me` 성공
 - [ ] 토큰 없이 호출 시 401
+- [ ] 두 번 로그인 후 한쪽만 logout해도 다른 쪽 reissue는 성공
 - [ ] reissue로 새 토큰 발급, logout 후 같은 refresh로 reissue 시 401
 
 ---
