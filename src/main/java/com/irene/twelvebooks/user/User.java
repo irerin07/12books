@@ -48,6 +48,22 @@ public class User extends BaseTimeEntity {
 		return new User(email, passwordHash, handle, displayName);
 	}
 
+	/**
+	 * 프로필 수정. null인 필드는 "보내지 않았다"는 뜻이므로 건드리지 않는다.
+	 * handle과 email은 여기서 바꿀 수 없다 — 식별자와 자격증명은 프로필 수정의 대상이 아니다.
+	 */
+	public void updateProfile(String displayName, String bio, String avatarUrl) {
+		if (displayName != null) {
+			this.displayName = displayName;
+		}
+		if (bio != null) {
+			this.bio = bio;
+		}
+		if (avatarUrl != null) {
+			this.avatarUrl = avatarUrl;
+		}
+	}
+
 	public Long getId() {
 		return id;
 	}

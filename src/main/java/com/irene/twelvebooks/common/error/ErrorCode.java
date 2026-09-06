@@ -10,6 +10,7 @@ public enum ErrorCode {
 	INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "A003", "다시 로그인해 주세요."),
 	EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "U001", "이미 사용 중인 이메일입니다."),
 	HANDLE_ALREADY_EXISTS(HttpStatus.CONFLICT, "U002", "이미 사용 중인 handle입니다."),
+	USER_NOT_FOUND(HttpStatus.NOT_FOUND, "U003", "사용자를 찾을 수 없습니다."),
 	INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "C002", "서버 오류가 발생했습니다.");
 
 	private final HttpStatus status;
