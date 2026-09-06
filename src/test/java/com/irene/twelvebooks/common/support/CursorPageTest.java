@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class CursorPageTest {
 
@@ -41,5 +42,16 @@ class CursorPageTest {
 		assertThat(page.items()).isEmpty();
 		assertThat(page.hasNext()).isFalse();
 		assertThat(page.nextCursor()).isNull();
+	}
+
+	@Test
+	@DisplayName("size가 0 이하면 페이지를 만들 수 없다")
+	void rejectsNonPositiveSize() {
+		List<Long> rows = List.of(30L);
+
+		assertThatThrownBy(() -> CursorPage.of(rows, 0, id -> id))
+				.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> CursorPage.of(rows, -1, id -> id))
+				.isInstanceOf(IllegalArgumentException.class);
 	}
 }

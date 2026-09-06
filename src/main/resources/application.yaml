@@ -10,7 +10,8 @@ spring:
         default_batch_fetch_size: 100   # N+1 1차 방어선
   flyway:
     enabled: true
-    baseline-on-migrate: true
+    # baseline-on-migrate는 켜지 않는다. 히스토리가 없는 DB를 baseline으로 찍어버리면
+    # 실제로는 적용된 적 없는 V1이 적용된 것으로 취급돼 마이그레이션 누락이 조용히 숨는다.
 
 twelvebooks:
   jwt:
