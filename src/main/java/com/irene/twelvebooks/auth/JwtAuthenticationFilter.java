@@ -12,6 +12,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Bearer 토큰이 유효하면 SecurityContext를 채우고, 아니면 <em>아무것도 하지 않고</em> 넘긴다.
@@ -42,12 +43,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 		chain.doFilter(request, response);
 	}
 
-	private java.util.Optional<String> resolveToken(HttpServletRequest request) {
+	private Optional<String> resolveToken(HttpServletRequest request) {
 		String header = request.getHeader(HttpHeaders.AUTHORIZATION);
 		if (header == null || !header.startsWith(BEARER_PREFIX)) {
-			return java.util.Optional.empty();
+			return Optional.empty();
 		}
 		String token = header.substring(BEARER_PREFIX.length()).trim();
-		return token.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(token);
+		return token.isEmpty() ? Optional.empty() : Optional.of(token);
 	}
 }

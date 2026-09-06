@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.Optional;
@@ -27,7 +28,7 @@ public class JwtProvider {
 
 	private final SecretKey key;
 	private final JwtParser parser;
-	private final java.time.Duration accessTokenTtl;
+	private final Duration accessTokenTtl;
 	private final Clock clock;
 
 	public JwtProvider(JwtProperties properties, Clock clock) {
