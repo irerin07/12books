@@ -194,8 +194,20 @@ void incrementLikeCount(@Param("id") Long id);
 - `AbstractIntegrationTest`
 
 **완료 기준**
-`docker compose up -d` 후 `.\gradlew.bat bootRun` → `GET /actuator/health` = `{"status":"UP"}`.
-컨텍스트 로딩 테스트 1개 통과.
+
+`docker compose up -d`로 인프라를 올린 뒤:
+
+```powershell
+$env:JWT_SECRET = "<32바이트 이상의 임의 문자열>"
+$env:KAKAO_REST_API_KEY = "<카카오 REST API 키>"
+.\gradlew.bat bootRun --args='--spring.profiles.active=local'
+```
+
+`GET /actuator/health` = `{"status":"UP"}`. 컨텍스트 로딩 테스트 1개 통과.
+
+`local` 프로필이 없으면 datasource 접속 정보가 없어 뜨지 않는다. 비밀값 두 개도
+`application.yaml`이 환경변수로만 받으므로 미리 넣어야 한다 — 애플리케이션에
+기본 프로필을 박는 대신 실행하는 쪽에서 명시한다.
 
 ---
 
