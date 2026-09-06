@@ -169,10 +169,15 @@ void incrementLikeCount(@Param("id") Long id);
 
 ## T7. 테스트 전략
 
-- **`AbstractIntegrationTest`** — `@SpringBootTest` + `@Testcontainers` + `@ServiceConnection`으로
-  MySQL 컨테이너를 띄우고 **실제 Flyway 마이그레이션을 그대로 태운다**.
-  static 필드로 선언해 전체 테스트에서 컨테이너 하나를 재사용한다.
+- **`AbstractIntegrationTest`** — `@SpringBootTest` + `@ServiceConnection`으로 MySQL과 Redis
+  컨테이너를 띄우고 **실제 Flyway 마이그레이션을 그대로 태운다**.
   H2는 MySQL 전용 DDL과 호환되지 않으므로 쓰지 않는다.
+  Redis까지 띄우는 이유는 actuator health가 Redis 상태를 집계하기 때문이다 —
+  없으면 헬스 체크가 DOWN이 된다.
+  컨테이너는 `static` 필드에 두고 static 초기화 블록에서 직접 start해 JVM 하나 안의
+  모든 통합 테스트가 같은 컨테이너를 재사용한다. 라이프사이클을 이렇게 잡았으므로
+  `@Testcontainers`(+`@Container`)는 쓰지 않는다 — 그 조합은 컨테이너를 테스트 클래스
+  단위로 관리해 매 클래스마다 새로 띄운다.
 - **MockMvc E2E** — Phase마다 그 시점의 핵심 여정 하나를 끝까지 통과시킨다.
 - **단위 테스트** — `JwtProvider`, 해시태그 파서, 독서 상태 전이 등 순수 로직은 컨테이너 없이.
 - **카카오 API는 `MockRestServiceServer`로 스텁.** 테스트가 외부 네트워크·API 키에
