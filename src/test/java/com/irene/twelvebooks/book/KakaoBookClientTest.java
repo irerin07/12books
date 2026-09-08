@@ -295,6 +295,19 @@ class KakaoBookClientTest {
 	}
 
 	@Test
+	@DisplayName("ISBN 두 개가 공백 아닌 여백으로 나뉘어 있어도 13자리를 찾는다")
+	void findsIsbn13AcrossAnyWhitespace() {
+		server.expect(requestTo(org.hamcrest.Matchers.startsWith(BASE_URL)))
+				.andRespond(withSuccess("""
+						{"documents":[{"title":"제목","authors":["저자"],"publisher":"출판사",
+						"isbn":"8960777331\\t9788960777330","thumbnail":"","datetime":""}],
+						"meta":{"is_end":true}}
+						""", MediaType.APPLICATION_JSON));
+
+		assertThat(client.search("코드", 1).getFirst().isbn13()).isEqualTo("9788960777330");
+	}
+
+	@Test
 	@DisplayName("카카오가 5xx를 주면 502로 바꾼다 — 원인을 그대로 흘리지 않는다")
 	void translatesServerErrorTo502() {
 		server.expect(requestTo(org.hamcrest.Matchers.startsWith(BASE_URL)))

@@ -156,12 +156,18 @@ public class KakaoBookClient {
 		return joined.isBlank() ? UNKNOWN_AUTHOR : joined;
 	}
 
-	/** 카카오의 isbn은 "ISBN10 ISBN13" 형태다. 둘 다 없을 수도, 하나만 있을 수도 있다. */
+	/**
+	 * 카카오의 isbn은 "ISBN10 ISBN13" 형태다. 둘 다 없을 수도, 하나만 있을 수도 있다.
+	 *
+	 * <p>구분자 패턴의 백슬래시는 두 번 적어야 한다. 한 번만 적으면 Java 15부터 {@code \s}가
+	 * <b>공백 문자 하나</b>를 뜻하는 문자열 이스케이프로 먼저 해석되어, 컴파일은 되지만 패턴이
+	 * " +"가 되고 탭 같은 다른 여백에서는 나뉘지 않는다.
+	 */
 	private static String isbn13Of(String isbn) {
 		if (isbn == null || isbn.isBlank()) {
 			return null;
 		}
-		for (String candidate : isbn.trim().split("\s+")) {
+		for (String candidate : isbn.trim().split("\\s+")) {
 			if (candidate.length() == ISBN13_LENGTH) {
 				return candidate;
 			}
