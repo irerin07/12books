@@ -18,8 +18,11 @@ public class BookService {
 
 	private final BookRepository bookRepository;
 
-	public BookService(BookRepository bookRepository) {
+	private final BookInserter bookInserter;
+
+	public BookService(BookRepository bookRepository, BookInserter bookInserter) {
 		this.bookRepository = bookRepository;
+		this.bookInserter = bookInserter;
 	}
 
 	/**
@@ -28,8 +31,11 @@ public class BookService {
 	 *
 	 * <p>사전 조회와 insert 사이는 비어 있다 — 두 요청이 함께 조회를 통과할 수 있다.
 	 * 락을 걸지 않고, 유니크 제약 위반을 "누가 먼저 넣었다"는 신호로 읽어 재조회한다.
+	 *
+	 * <p>이 메서드에 트랜잭션을 걸지 않는 이유는 재조회를 살리기 위해서다. insert 실패가
+	 * 같은 트랜잭션 안에서 일어나면 그 트랜잭션은 재조회도 커밋도 할 수 없다
+	 * ({@link BookInserter} 참고). 그래서 insert만 독립 트랜잭션으로 격리한다.
 	 */
-	@Transactional
 	public Book upsert(BookRegisterRequest request) {
 		String isbn13 = normalize(request.isbn13());
 		String sourceKey = isbn13 == null ? sourceKeyOf(request) : null;
@@ -39,7 +45,7 @@ public class BookService {
 			return existing.get();
 		}
 		try {
-			return bookRepository.saveAndFlush(Book.builder()
+			return bookInserter.insert(Book.builder()
 					.isbn13(isbn13)
 					.sourceKey(sourceKey)
 					.title(request.title())
