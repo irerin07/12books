@@ -203,9 +203,57 @@ class AuthControllerTest extends AbstractIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("한글 비밀번호가 72바이트를 넘으면 500이 아니라 400이다")
-	void rejectsPasswordLongerThanBcryptLimit() throws Exception {
-		// 한글 25자 = UTF-8 75바이트. 글자 수만 세면 통과하지만 BCrypt가 거부한다.
+	@DisplayName("한글이 섞인 주소는 이메일이 아니다")
+	void rejectsNonAsciiEmail() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/signup")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"email":"채ㅕㅜㅅㄷㄱ쵁ㅇ89@흐먀ㅣ.채ㅡ","password":"password123",
+								 "handle":"hangulmail","displayName":"아이린"}"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.fieldErrors[?(@.field == 'email')]").exists());
+	}
+
+	@Test
+	@DisplayName("최상위 도메인이 없는 주소도 이메일이 아니다")
+	void rejectsEmailWithoutTld() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/signup")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"email":"irene@localhost","password":"password123",
+								 "handle":"notld","displayName":"아이린"}"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.fieldErrors[?(@.field == 'email')]").exists());
+	}
+
+	@Test
+	@DisplayName("비밀번호가 20자를 넘으면 400이다")
+	void rejectsPasswordLongerThanMax() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/signup")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"email":"max@example.com","password":"%s","handle":"maxpw","displayName":"아이린"}"""
+								.formatted("a".repeat(21))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.fieldErrors[?(@.field == 'password')]").exists());
+	}
+
+	@Test
+	@DisplayName("20자 비밀번호는 통과한다 — 경계 바로 아래")
+	void acceptsPasswordAtMax() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/signup")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"email":"atmax@example.com","password":"%s","handle":"atmaxpw","displayName":"아이린"}"""
+								.formatted("a".repeat(20))))
+				.andExpect(status().isCreated());
+	}
+
+	@Test
+	@DisplayName("긴 한글 비밀번호도 500이 아니라 400이다")
+	void rejectsLongKoreanPassword() throws Exception {
+		// 한글 25자 = UTF-8 75바이트. 예전에는 이것이 BCrypt의 72바이트 제한에 걸리는
+		// 유일한 경로였다. 지금은 20자 상한이 먼저 잡지만, 어느 쪽이든 500이 아니라 400이어야 한다.
 		mockMvc.perform(post("/api/v1/auth/signup")
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
