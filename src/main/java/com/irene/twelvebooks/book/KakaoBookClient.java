@@ -107,7 +107,7 @@ public class KakaoBookClient {
 			if (response == null || response.documents() == null) {
 				// 빈 결과가 아니라 계약이 깨진 것이다. 빈 목록으로 숨기면 카카오 장애가
 				// "검색 결과 없음"으로 보여 원인을 영영 못 찾는다.
-				log.error("카카오 응답에 documents가 없습니다: query={}, page={}", query, page);
+				log.error("카카오 응답에 documents가 없습니다: queryLength={}, page={}", query.length(), page);
 				throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
 			}
 			return response.documents().stream().map(KakaoBookClient::toResult).toList();
@@ -115,7 +115,9 @@ public class KakaoBookClient {
 		catch (RestClientException | DateTimeParseException e) {
 			// 변환 실패도 카카오 쪽 문제다. 그대로 두면 500 + 스택트레이스가 되어
 			// "카카오 실패는 E001/502"라는 Phase 2의 계약이 깨진다.
-			log.error("카카오 책 검색 실패: query={}, page={}", query, page, e);
+			// 검색어 원문은 남기지 않는다. 사용자가 친 값이 그대로 로그에 들어가면 개행 한 줄로
+			// 로그 형태가 깨지고, 로그를 읽는 쪽에서 남의 검색어를 보게 된다.
+			log.error("카카오 책 검색 실패: queryLength={}, page={}", query.length(), page, e);
 			throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
 		}
 	}

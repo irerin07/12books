@@ -10,6 +10,9 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import java.time.LocalDate;
+
+import static com.irene.twelvebooks.support.SignedBookRequests.signatureOf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -30,6 +33,9 @@ class BookRegistrationGuardTest extends AbstractIntegrationTest {
 	@Autowired
 	JwtProvider jwtProvider;
 
+	@Autowired
+	BookSignature bookSignature;
+
 	private String bearer;
 
 	@BeforeEach
@@ -49,6 +55,57 @@ class BookRegistrationGuardTest extends AbstractIntegrationTest {
 				.andExpect(status().isBadRequest());
 
 		assertThat(bookRepository.count()).isZero();
+	}
+
+	@Test
+	@DisplayName("유효한 서명을 받아도 제목을 바꿔 보내면 거부된다")
+	void rejectsTamperedTitle() throws Exception {
+		// 검색이 내준 그대로의 서명. 이 조합에 대해서만 유효하다.
+		String signature = signatureOf(bookSignature, "9788960777330", "코드 컴플리트",
+				"스티브 맥코넬", "위키북스", null, LocalDate.of(2017, 5, 10));
+
+		mockMvc.perform(post("/api/v1/books").header("Authorization", bearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"isbn13":"9788960777330","title":"조작된 제목","authors":"스티브 맥코넬",
+								 "publisher":"위키북스","publishedAt":"2017-05-10","signature":"%s"}"""
+								.formatted(signature)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("B002"));
+
+		assertThat(bookRepository.count()).isZero();
+	}
+
+	@Test
+	@DisplayName("서명 자리에 거대한 문자열을 보내면 검증까지 가지 않고 400이다")
+	void rejectsOversizedSignature() throws Exception {
+		mockMvc.perform(post("/api/v1/books").header("Authorization", bearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"isbn13":"9788960777330","title":"제목","authors":"저자","signature":"%s"}"""
+								.formatted("v1." + "A".repeat(5000))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.fieldErrors[?(@.field == 'signature')]").exists());
+	}
+
+	@Test
+	@DisplayName("서명 형식이 아니면 검증까지 가지 않고 400이다")
+	void rejectsMalformedSignature() throws Exception {
+		mockMvc.perform(post("/api/v1/books").header("Authorization", bearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"isbn13":"9788960777330","title":"제목","authors":"저자","signature":"not a signature"}"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.fieldErrors[?(@.field == 'signature')]").exists());
+	}
+
+	@Test
+	@DisplayName("검색어가 지나치게 길면 카카오까지 가지 않고 400이다")
+	void rejectsOversizedQuery() throws Exception {
+		mockMvc.perform(get("/api/v1/books/search").param("q", "가".repeat(101))
+						.header("Authorization", bearer))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("C001"));
 	}
 
 	@Test

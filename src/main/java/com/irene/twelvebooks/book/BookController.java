@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,6 +27,12 @@ public class BookController {
 	/** 카카오 검색이 받는 page의 상한. 넘겨봐야 카카오가 4xx를 준다. */
 	private static final int MAX_PAGE = 50;
 
+	/**
+	 * 검색어 길이 상한. 사람이 치는 검색어는 이보다 훨씬 짧다. 상한이 없으면 긴 문자열이
+	 * 그대로 외부 URI와 오류 로그로 흘러 들어간다.
+	 */
+	private static final int MAX_QUERY_LENGTH = 100;
+
 	private final BookService bookService;
 	private final KakaoBookClient kakaoBookClient;
 	private final BookSignature bookSignature;
@@ -44,9 +51,10 @@ public class BookController {
 	 * E001/502로 번역되어 <b>클라이언트 실수가 외부 장애로 둔갑</b>한다.
 	 */
 	@GetMapping("/search")
-	public List<BookSearchResult> search(@RequestParam("q") @NotBlank String query,
+	public List<BookSearchResult> search(@RequestParam("q") @NotBlank @Size(max = MAX_QUERY_LENGTH) String query,
 			@RequestParam(name = "page", defaultValue = "1") @Min(1) @Max(MAX_PAGE) int page) {
-		return kakaoBookClient.search(query, page).stream().map(bookSignature::signed).toList();
+		// 앞뒤 공백은 검색 의도가 아니다. 그대로 넘기면 외부로 나가는 URI만 길어진다.
+		return kakaoBookClient.search(query.strip(), page).stream().map(bookSignature::signed).toList();
 	}
 
 	@PostMapping

@@ -32,6 +32,16 @@ public record BookRegisterRequest(
 
 		LocalDate publishedAt,
 
+		/*
+		 * 서명은 검증 이전에 형식으로 먼저 걸러낸다. HMAC 대조는 어차피 상수 시간이라 빠르지만,
+		 * 그 앞에서 임의 길이 문자열을 그대로 받아들일 이유가 없다.
+		 *
+		 * 길이를 정확히 46으로 못박지 않은 것은 그 숫자가 "v1 + SHA-256 + base64url"이라는
+		 * 지금의 조합에서만 나오는 값이기 때문이다. 버전을 올리면 함께 고쳐야 하는데, 대형 입력을
+		 * 막는 역할은 상한만으로 이미 끝난다.
+		 */
 		@NotBlank
+		@Size(max = 64)
+		@Pattern(regexp = "^v[0-9]+[.][A-Za-z0-9_-]{16,}$", message = "서명 형식이 올바르지 않습니다")
 		String signature) {
 }

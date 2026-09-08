@@ -127,6 +127,24 @@ class BookJourneyE2ETest extends AbstractIntegrationTest {
 				.andExpect(status().isCreated());
 	}
 
+	@Test
+	@DisplayName("검색어 앞뒤 공백은 카카오로 나가기 전에 잘린다")
+	void stripsQueryBeforeCallingKakao() throws Exception {
+		StubbedKakao.server.expect(requestTo(org.hamcrest.Matchers.containsString("/v3/search/book")))
+				.andExpect(request -> assertThat(java.net.URLDecoder.decode(
+						request.getURI().getQuery(), java.nio.charset.StandardCharsets.UTF_8))
+						.contains("query=코드 컴플리트&"))
+				.andRespond(withSuccess("""
+						{"documents":[],"meta":{"is_end":true}}
+						""", MediaType.APPLICATION_JSON));
+
+		mockMvc.perform(get("/api/v1/books/search").param("q", "  코드 컴플리트  ")
+						.header("Authorization", bearer))
+				.andExpect(status().isOk());
+
+		StubbedKakao.server.verify();
+	}
+
 	@TestConfiguration
 	static class StubbedKakao {
 
