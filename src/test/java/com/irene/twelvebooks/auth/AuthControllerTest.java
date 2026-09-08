@@ -203,6 +203,30 @@ class AuthControllerTest extends AbstractIntegrationTest {
 	}
 
 	@Test
+	@DisplayName("한글이 섞인 주소는 이메일이 아니다")
+	void rejectsNonAsciiEmail() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/signup")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"email":"채ㅕㅜㅅㄷㄱ쵁ㅇ89@흐먀ㅣ.채ㅡ","password":"password123",
+								 "handle":"hangulmail","displayName":"아이린"}"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.fieldErrors[?(@.field == 'email')]").exists());
+	}
+
+	@Test
+	@DisplayName("최상위 도메인이 없는 주소도 이메일이 아니다")
+	void rejectsEmailWithoutTld() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/signup")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"email":"irene@localhost","password":"password123",
+								 "handle":"notld","displayName":"아이린"}"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.fieldErrors[?(@.field == 'email')]").exists());
+	}
+
+	@Test
 	@DisplayName("비밀번호가 20자를 넘으면 400이다")
 	void rejectsPasswordLongerThanMax() throws Exception {
 		mockMvc.perform(post("/api/v1/auth/signup")

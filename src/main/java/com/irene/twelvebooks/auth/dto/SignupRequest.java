@@ -8,7 +8,13 @@ import jakarta.validation.constraints.Size;
 
 public record SignupRequest(
 
-		@NotBlank @Email @Size(max = 255)
+		// @Email 기본 검증은 "@와 점이 있으면" 통과라 한글이 섞인 주소나 TLD 없는
+		// irene@localhost도 받아들인다. 실재하는 주소인지는 확인 메일만이 알 수 있지만,
+		// 최소한 보낼 수조차 없는 형태는 여기서 거른다.
+		@NotBlank
+		@Email(regexp = "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}$",
+				message = "이메일 형식이 올바르지 않습니다")
+		@Size(max = 255)
 		String email,
 
 		// BCrypt는 UTF-8 72바이트를 넘기면 예외를 던진다. 글자 수만 세면 한글 25자가
