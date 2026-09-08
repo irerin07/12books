@@ -10,8 +10,22 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.client.AbstractClientHttpRequest;
+import org.springframework.http.client.ClientHttpRequest;
+import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.ClientHttpResponse;
+import org.springframework.web.client.ResourceAccessException;
+
+import java.io.OutputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -51,7 +65,7 @@ class KakaoBookClientTest {
 	void setUp() {
 		RestClient.Builder builder = RestClient.builder();
 		server = MockRestServiceServer.bindTo(builder).build();
-		client = new KakaoBookClient(builder.build(), new KakaoProperties(API_KEY, BASE_URL));
+		client = new KakaoBookClient(builder.build(), new KakaoProperties(API_KEY, BASE_URL, 8));
 	}
 
 	@Test
@@ -105,6 +119,118 @@ class KakaoBookClientTest {
 						""", MediaType.APPLICATION_JSON));
 
 		assertThat(client.search("없음", 1).getFirst().isbn13()).isNull();
+	}
+
+	@Test
+	@DisplayName("documents가 없는 응답은 빈 결과가 아니라 502다 — 계약이 깨진 것이다")
+	void translatesMalformedBodyTo502() {
+		server.expect(requestTo(org.hamcrest.Matchers.startsWith(BASE_URL)))
+				.andRespond(withSuccess("""
+						{"meta":{"is_end":true}}
+						""", MediaType.APPLICATION_JSON));
+
+		assertThatThrownBy(() -> client.search("코드", 1))
+				.isInstanceOf(BusinessException.class)
+				.extracting(e -> ((BusinessException) e).getErrorCode())
+				.isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
+	}
+
+	@Test
+	@DisplayName("datetime을 읽지 못해도 500이 아니라 502다")
+	void translatesUnparsableDatetimeTo502() {
+		server.expect(requestTo(org.hamcrest.Matchers.startsWith(BASE_URL)))
+				.andRespond(withSuccess("""
+						{"documents":[{"title":"제목","authors":["저자"],"publisher":"출판사",
+						"isbn":"","thumbnail":"","datetime":"어제"}],"meta":{"is_end":true}}
+						""", MediaType.APPLICATION_JSON));
+
+		assertThatThrownBy(() -> client.search("코드", 1))
+				.isInstanceOf(BusinessException.class)
+				.extracting(e -> ((BusinessException) e).getErrorCode())
+				.isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
+	}
+
+	@Test
+	@DisplayName("저자가 없는 결과도 등록 가능한 형태로 나온다 — 빈 문자열은 등록에서 거부된다")
+	void fillsMissingAuthors() {
+		server.expect(requestTo(org.hamcrest.Matchers.startsWith(BASE_URL)))
+				.andRespond(withSuccess("""
+						{"documents":[{"title":"저자 없음","authors":[],"publisher":"출판사",
+						"isbn":"","thumbnail":"","datetime":"2020-01-02T00:00:00.000+09:00"}],
+						"meta":{"is_end":true}}
+						""", MediaType.APPLICATION_JSON));
+
+		assertThat(client.search("없음", 1).getFirst().authors()).isEqualTo("작자 미상");
+	}
+
+	@Test
+	@DisplayName("동시 호출 상한을 넘으면 기다리지 않고 즉시 502다 — 느린 검색이 톰캣 스레드를 다 먹지 않는다")
+	void failsFastWhenConcurrencyLimitExceeded() throws Exception {
+		int limit = 2;
+		KakaoBookClient limited = new KakaoBookClient(RestClient.builder()
+				.requestFactory(new BlockingRequestFactory()).build(),
+				new KakaoProperties(API_KEY, BASE_URL, limit));
+
+		CountDownLatch inFlight = new CountDownLatch(limit);
+		ExecutorService pool = Executors.newFixedThreadPool(limit);
+		try {
+			for (int i = 0; i < limit; i++) {
+				pool.submit(() -> {
+					inFlight.countDown();
+					return limited.search("코드", 1);
+				});
+			}
+			assertThat(inFlight.await(5, TimeUnit.SECONDS)).isTrue();
+			Thread.sleep(200); // 두 요청이 상한을 채울 때까지
+
+			// 핵심은 502가 아니라 "기다리지 않는다"는 것이다. 상한이 없으면 이 호출도
+			// 앞의 둘처럼 묶여 있다가 타임아웃으로 502가 되므로, 걸린 시간을 함께 본다.
+			long startedAt = System.nanoTime();
+			assertThatThrownBy(() -> limited.search("코드", 1))
+					.isInstanceOf(BusinessException.class)
+					.extracting(e -> ((BusinessException) e).getErrorCode())
+					.isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
+			assertThat(Duration.ofNanos(System.nanoTime() - startedAt)).isLessThan(Duration.ofSeconds(3));
+		}
+		finally {
+			pool.shutdownNow();
+		}
+	}
+
+	/** 응답을 주지 않고 붙잡고 있는 카카오. 스레드가 묶이는 상황을 만든다. */
+	private static class BlockingRequestFactory implements ClientHttpRequestFactory {
+
+		@Override
+		public ClientHttpRequest createRequest(java.net.URI uri, HttpMethod httpMethod) {
+			return new AbstractClientHttpRequest() {
+
+				@Override
+				public HttpMethod getMethod() {
+					return httpMethod;
+				}
+
+				@Override
+				public java.net.URI getURI() {
+					return uri;
+				}
+
+				@Override
+				protected OutputStream getBodyInternal(HttpHeaders headers) {
+					return OutputStream.nullOutputStream();
+				}
+
+				@Override
+				protected ClientHttpResponse executeInternal(HttpHeaders headers) {
+					try {
+						Thread.sleep(Duration.ofSeconds(30));
+					}
+					catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+					}
+					throw new ResourceAccessException("중단됨");
+				}
+			};
+		}
 	}
 
 	@Test

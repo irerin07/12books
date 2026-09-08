@@ -155,8 +155,23 @@ public class Book extends BaseTimeEntity {
 			return this;
 		}
 
+		/**
+		 * 컬럼 제약을 DB까지 내려가서 알게 되면 원인을 짚기 어렵다. 여기서 먼저 막는다.
+		 * 특히 isbn13과 sourceKey는 "둘 중 하나"가 스키마의 전제인데, 둘 다 비면 어느 쪽으로도
+		 * 유일성이 지켜지지 않아 같은 책이 무한히 쌓인다.
+		 */
 		public Book build() {
+			require(title != null && !title.isBlank(), "title은 비어 있을 수 없습니다");
+			require(authors != null && !authors.isBlank(), "authors는 비어 있을 수 없습니다");
+			require((isbn13 == null) != (sourceKey == null),
+					"isbn13과 sourceKey 중 정확히 하나여야 합니다");
 			return new Book(this);
+		}
+
+		private static void require(boolean condition, String message) {
+			if (!condition) {
+				throw new IllegalArgumentException(message);
+			}
 		}
 	}
 }

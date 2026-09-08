@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.LocalDate;
 
+import static com.irene.twelvebooks.support.SignedBookRequests.signed;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class BookServiceTest extends AbstractIntegrationTest {
@@ -19,13 +20,16 @@ class BookServiceTest extends AbstractIntegrationTest {
 	@Autowired
 	BookRepository bookRepository;
 
+	@Autowired
+	BookSignature bookSignature;
+
 	@BeforeEach
 	void clean() {
 		bookRepository.deleteAll();
 	}
 
 	private BookRegisterRequest request(String isbn13) {
-		return new BookRegisterRequest(isbn13, "코드 컴플리트", "스티브 맥코넬", "위키북스",
+		return signed(bookSignature, isbn13, "코드 컴플리트", "스티브 맥코넬", "위키북스",
 				"https://example.com/c.jpg", LocalDate.of(2017, 5, 10));
 	}
 
@@ -72,9 +76,31 @@ class BookServiceTest extends AbstractIntegrationTest {
 	@DisplayName("제목이 다르면 다른 책이다")
 	void differentTitleIsDifferentBook() {
 		bookService.upsert(request(null));
-		bookService.upsert(new BookRegisterRequest(null, "다른 책", "스티브 맥코넬", "위키북스", null, null));
+		bookService.upsert(signed(bookSignature, null, "다른 책", "스티브 맥코넬", "위키북스", null, null));
 
 		assertThat(bookRepository.count()).isEqualTo(2);
+	}
+
+	@Test
+	@DisplayName("구분자가 섞인 제목·저자는 서로 다른 책으로 남는다")
+	void doesNotMergeAcrossFieldBoundaries() {
+		bookService.upsert(signed(bookSignature, null, "제목|저자", "출판사", "위키북스", null, null));
+		bookService.upsert(signed(bookSignature, null, "제목", "저자|출판사", "위키북스", null, null));
+
+		// 단순 문자열 결합이면 둘 다 "제목|저자|출판사|위키북스"가 되어 한 행으로 합쳐진다
+		assertThat(bookRepository.count()).isEqualTo(2);
+	}
+
+	@Test
+	@DisplayName("앞뒤 공백과 겹공백만 다른 책은 같은 책이다")
+	void normalizesWhitespaceInSourceKey() {
+		Long first = bookService.upsert(
+				signed(bookSignature, null, "코드 컴플리트", "스티브 맥코넬", "위키북스", null, null)).getId();
+		Long second = bookService.upsert(
+				signed(bookSignature, null, "  코드  컴플리트 ", "스티브  맥코넬", "위키북스", null, null)).getId();
+
+		assertThat(second).isEqualTo(first);
+		assertThat(bookRepository.count()).isEqualTo(1);
 	}
 
 	@Test

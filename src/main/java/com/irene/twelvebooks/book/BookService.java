@@ -20,9 +20,13 @@ public class BookService {
 
 	private final BookInserter bookInserter;
 
-	public BookService(BookRepository bookRepository, BookInserter bookInserter) {
+	private final BookSignature bookSignature;
+
+	public BookService(BookRepository bookRepository, BookInserter bookInserter,
+			BookSignature bookSignature) {
 		this.bookRepository = bookRepository;
 		this.bookInserter = bookInserter;
+		this.bookSignature = bookSignature;
 	}
 
 	/**
@@ -37,6 +41,11 @@ public class BookService {
 	 * ({@link BookInserter} 참고). 그래서 insert만 독립 트랜잭션으로 격리한다.
 	 */
 	public Book upsert(BookRegisterRequest request) {
+		if (!bookSignature.matches(request)) {
+			// 검색을 거치지 않았거나 값을 고쳐 보냈다. books는 공용이라 여기서 막지 않으면
+			// 먼저 등록한 사람의 조작이 이후 모든 사용자에게 그대로 간다.
+			throw new BusinessException(ErrorCode.BOOK_SIGNATURE_MISMATCH);
+		}
 		String isbn13 = normalize(request.isbn13());
 		String sourceKey = isbn13 == null ? sourceKeyOf(request) : null;
 
@@ -78,10 +87,14 @@ public class BookService {
 	/**
 	 * ISBN이 없는 책의 대체 유일 키. 카카오가 같은 책을 항상 같은 문자열로 주므로
 	 * 제목·저자·출판사 조합이면 실질적으로 구분된다.
+	 *
+	 * <p>필드를 이을 때 {@link Canonical}을 쓴다 — 구분자로 단순히 이으면 제목에 그 구분자가
+	 * 들어간 순간 필드 경계가 사라져 서로 다른 책이 한 행으로 합쳐진다.
 	 */
 	private static String sourceKeyOf(BookRegisterRequest request) {
-		String seed = "%s|%s|%s".formatted(request.title(), request.authors(),
-				request.publisher() == null ? "" : request.publisher());
+		String seed = Canonical.join(Canonical.normalized(request.title()),
+				Canonical.normalized(request.authors()),
+				Canonical.normalized(request.publisher()));
 		try {
 			MessageDigest digest = MessageDigest.getInstance("SHA-256");
 			return HexFormat.of().formatHex(digest.digest(seed.getBytes(StandardCharsets.UTF_8)));

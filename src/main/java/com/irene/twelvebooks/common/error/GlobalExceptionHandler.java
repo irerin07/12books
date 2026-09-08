@@ -7,6 +7,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 
 import java.util.List;
 
@@ -26,6 +27,23 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException e) {
 		List<ErrorResponse.FieldError> fieldErrors = e.getBindingResult().getFieldErrors().stream()
 				.map(error -> new ErrorResponse.FieldError(error.getField(), error.getDefaultMessage()))
+				.toList();
+		ErrorCode errorCode = ErrorCode.INVALID_INPUT;
+		return ResponseEntity.status(errorCode.getStatus())
+				.body(new ErrorResponse(errorCode.getCode(), errorCode.getMessage(), fieldErrors));
+	}
+
+	/**
+	 * {@code @RequestParam}·{@code @PathVariable}에 걸린 제약이 깨진 경우. 본문 검증과 달리
+	 * 이쪽은 {@link HandlerMethodValidationException}으로 오기 때문에 따로 받지 않으면
+	 * catch-all로 흘러 <b>클라이언트 실수가 500</b>이 된다.
+	 */
+	@ExceptionHandler(HandlerMethodValidationException.class)
+	public ResponseEntity<ErrorResponse> handleParameterValidation(HandlerMethodValidationException e) {
+		List<ErrorResponse.FieldError> fieldErrors = e.getParameterValidationResults().stream()
+				.flatMap(result -> result.getResolvableErrors().stream()
+						.map(error -> new ErrorResponse.FieldError(
+								result.getMethodParameter().getParameterName(), error.getDefaultMessage())))
 				.toList();
 		ErrorCode errorCode = ErrorCode.INVALID_INPUT;
 		return ResponseEntity.status(errorCode.getStatus())

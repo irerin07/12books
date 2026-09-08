@@ -11,7 +11,9 @@ import org.springframework.web.client.RestClientException;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.concurrent.Semaphore;
 
 /**
  * 카카오 책 검색 프록시.
@@ -29,15 +31,42 @@ public class KakaoBookClient {
 	private static final String AUTHORIZATION_PREFIX = "KakaoAK ";
 	private static final int ISBN13_LENGTH = 13;
 
+	/** 카카오가 저자를 주지 않는 책이 있다. 등록 DTO는 저자를 요구하므로 여기서 표준값으로 맞춘다. */
+	private static final String UNKNOWN_AUTHOR = "작자 미상";
+
 	private final RestClient restClient;
 	private final KakaoProperties properties;
+
+	/**
+	 * 카카오를 동시에 부를 수 있는 요청 수의 상한.
+	 *
+	 * <p>타임아웃만으로는 장애가 격리되지 않는다. 카카오가 읽기 타임아웃 직전까지 끄는 상태가
+	 * 되면 검색 요청 하나하나가 톰캣 스레드를 3초씩 붙잡고, 트래픽이 조금만 몰려도 스레드 풀이
+	 * 말라 로그인·책 조회까지 함께 멈춘다. 상한을 넘은 요청은 <b>기다리지 않고</b> 즉시 실패시켜
+	 * 검색의 장애가 검색 안에서 끝나게 한다.
+	 */
+	private final Semaphore permits;
 
 	public KakaoBookClient(RestClient restClient, KakaoProperties properties) {
 		this.restClient = restClient;
 		this.properties = properties;
+		this.permits = new Semaphore(properties.maxConcurrentCalls());
 	}
 
 	public List<BookSearchResult> search(String query, int page) {
+		if (!permits.tryAcquire()) {
+			log.warn("카카오 동시 호출 상한({}) 초과 — 대기하지 않고 실패시킨다", properties.maxConcurrentCalls());
+			throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+		}
+		try {
+			return doSearch(query, page);
+		}
+		finally {
+			permits.release();
+		}
+	}
+
+	private List<BookSearchResult> doSearch(String query, int page) {
 		try {
 			KakaoSearchResponse response = restClient.get()
 					.uri(properties.baseUrl() + SEARCH_PATH, uri -> uri
@@ -49,11 +78,16 @@ public class KakaoBookClient {
 					.body(KakaoSearchResponse.class);
 
 			if (response == null || response.documents() == null) {
-				return List.of();
+				// 빈 결과가 아니라 계약이 깨진 것이다. 빈 목록으로 숨기면 카카오 장애가
+				// "검색 결과 없음"으로 보여 원인을 영영 못 찾는다.
+				log.error("카카오 응답에 documents가 없습니다: query={}, page={}", query, page);
+				throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
 			}
 			return response.documents().stream().map(KakaoBookClient::toResult).toList();
 		}
-		catch (RestClientException e) {
+		catch (RestClientException | DateTimeParseException e) {
+			// 변환 실패도 카카오 쪽 문제다. 그대로 두면 500 + 스택트레이스가 되어
+			// "카카오 실패는 E001/502"라는 Phase 2의 계약이 깨진다.
 			log.error("카카오 책 검색 실패: query={}, page={}", query, page, e);
 			throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
 		}
@@ -63,11 +97,21 @@ public class KakaoBookClient {
 		return new BookSearchResult(
 				isbn13Of(document.isbn()),
 				document.title(),
-				// 배열이지만 정렬·검색 요구가 없어 콤마로 합쳐 다룬다
-				document.authors() == null ? "" : String.join(", ", document.authors()),
+				authorsOf(document.authors()),
 				document.publisher(),
 				document.thumbnail(),
-				publishedDateOf(document.datetime()));
+				publishedDateOf(document.datetime()),
+				// 서명은 컨트롤러에서 붙인다. 카카오 응답을 옮기는 일과 출처를 보증하는 일은 다르다.
+				null);
+	}
+
+	/** 배열이지만 정렬·검색 요구가 없어 콤마로 합쳐 다룬다. */
+	private static String authorsOf(List<String> authors) {
+		if (authors == null) {
+			return UNKNOWN_AUTHOR;
+		}
+		String joined = String.join(", ", authors);
+		return joined.isBlank() ? UNKNOWN_AUTHOR : joined;
 	}
 
 	/** 카카오의 isbn은 "ISBN10 ISBN13" 형태다. 둘 다 없을 수도, 하나만 있을 수도 있다. */

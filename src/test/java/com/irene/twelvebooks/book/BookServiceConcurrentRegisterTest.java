@@ -13,6 +13,7 @@ import java.time.LocalDate;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.irene.twelvebooks.support.SignedBookRequests.signed;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.willAnswer;
 
@@ -38,6 +39,9 @@ class BookServiceConcurrentRegisterTest extends AbstractIntegrationTest {
 	@MockitoSpyBean
 	BookRepository bookRepository;
 
+	@Autowired
+	BookSignature bookSignature;
+
 	@BeforeEach
 	void clean() {
 		bookRepository.deleteAll();
@@ -58,7 +62,7 @@ class BookServiceConcurrentRegisterTest extends AbstractIntegrationTest {
 						.getResultList().stream().findFirst()) // 제약 위반 후 재조회
 				.given(bookRepository).findByIsbn13(ISBN);
 
-		Book result = bookService.upsert(new BookRegisterRequest(ISBN, "코드 컴플리트",
+		Book result = bookService.upsert(signed(bookSignature, ISBN, "코드 컴플리트",
 				"스티브 맥코넬", "위키북스", null, LocalDate.of(2017, 5, 10)));
 
 		assertThat(result.getId()).isEqualTo(winner.getId());

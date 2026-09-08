@@ -2,6 +2,7 @@ package com.irene.twelvebooks.e2e;
 
 import com.irene.twelvebooks.auth.JwtProvider;
 import com.irene.twelvebooks.book.BookRepository;
+import com.irene.twelvebooks.book.BookSignature;
 import com.irene.twelvebooks.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,6 +17,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.client.RestClient;
 
+import static com.irene.twelvebooks.support.SignedBookRequests.signatureOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -40,6 +42,9 @@ class BookJourneyE2ETest extends AbstractIntegrationTest {
 	@Autowired
 	JwtProvider jwtProvider;
 
+	@Autowired
+	BookSignature bookSignature;
+
 	private String bearer;
 
 	@BeforeEach
@@ -61,20 +66,26 @@ class BookJourneyE2ETest extends AbstractIntegrationTest {
 						""", MediaType.APPLICATION_JSON));
 
 		// 1. 검색 — 결과는 저장되지 않는다
-		mockMvc.perform(get("/api/v1/books/search").param("q", "코드").header("Authorization", bearer))
+		String searched = mockMvc.perform(get("/api/v1/books/search").param("q", "코드")
+						.header("Authorization", bearer))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$[0].isbn13").value("9788960777330"))
-				.andExpect(jsonPath("$[0].authors").value("스티브 맥코넬"));
+				.andExpect(jsonPath("$[0].authors").value("스티브 맥코넬"))
+				// 서명이 붙어 나온다. 이 값이 있어야 등록할 수 있다.
+				.andExpect(jsonPath("$[0].signature").isNotEmpty())
+				.andReturn().getResponse().getContentAsString();
 
 		assertThat(bookRepository.count()).isZero();
 
-		// 2. 고른 책을 등록 — 이때 처음 내부에 확정된다
+		// 2. 고른 책을 그대로 되돌려보내 등록 — 이때 처음 내부에 확정된다
+		String signature = com.jayway.jsonpath.JsonPath.parse(searched).read("$[0].signature");
+		String chosen = """
+				{"isbn13":"9788960777330","title":"코드 컴플리트","authors":"스티브 맥코넬",
+				 "publisher":"위키북스","thumbnailUrl":"https://example.com/c.jpg",
+				 "publishedAt":"2017-05-10","signature":"%s"}""".formatted(signature);
+
 		String registered = mockMvc.perform(post("/api/v1/books").header("Authorization", bearer)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{"isbn13":"9788960777330","title":"코드 컴플리트","authors":"스티브 맥코넬",
-								 "publisher":"위키북스","thumbnailUrl":"https://example.com/c.jpg",
-								 "publishedAt":"2017-05-10"}"""))
+						.contentType(MediaType.APPLICATION_JSON).content(chosen))
 				.andExpect(status().isCreated())
 				.andReturn().getResponse().getContentAsString();
 
@@ -83,10 +94,7 @@ class BookJourneyE2ETest extends AbstractIntegrationTest {
 
 		// 3. 다른 사람이 같은 책을 담아도 행이 늘지 않는다
 		mockMvc.perform(post("/api/v1/books").header("Authorization", bearer)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("""
-								{"isbn13":"9788960777330","title":"코드 컴플리트","authors":"스티브 맥코넬",
-								 "publisher":"위키북스"}"""))
+						.contentType(MediaType.APPLICATION_JSON).content(chosen))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.id").value(bookId));
 
@@ -108,12 +116,14 @@ class BookJourneyE2ETest extends AbstractIntegrationTest {
 				.andExpect(status().isBadGateway())
 				.andExpect(jsonPath("$.code").value("E001"));
 
-		// 검색이 죽은 뒤에도 등록·조회는 그대로 동작한다
+		// 검색이 죽은 뒤에도 등록·조회는 그대로 동작한다 — 서명 검증은 카카오를 부르지 않는다
 		mockMvc.perform(post("/api/v1/books").header("Authorization", bearer)
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{"isbn13":"9788960777330","title":"코드 컴플리트","authors":"스티브 맥코넬",
-								 "publisher":"위키북스"}"""))
+								 "publisher":"위키북스","signature":"%s"}"""
+								.formatted(signatureOf(bookSignature, "9788960777330", "코드 컴플리트",
+										"스티브 맥코넬", "위키북스", null, null))))
 				.andExpect(status().isCreated());
 	}
 
