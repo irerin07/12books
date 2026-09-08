@@ -35,11 +35,36 @@ final class Canonical {
 	/**
 	 * 같은 책을 묶기 위한 정규화. 앞뒤 공백과 겹공백, 그리고 자모가 분리된 한글처럼
 	 * 눈에는 같지만 코드포인트가 다른 표기를 하나로 모은다.
+	 *
+	 * <p>정규식을 쓰지 않는다. 자바 문자열에 백슬래시를 한 번만 적으면 Java 15부터
+	 * {@code \s}가 <b>공백 문자 하나</b>를 뜻하는 문자열 이스케이프로 먼저 해석되어,
+	 * 컴파일은 되지만 패턴이 " +"가 되고 탭과 개행은 그대로 남는다. 조용히 반만 동작하는
+	 * 종류의 실수라, 여기서는 문자를 직접 훑는다.
 	 */
 	static String normalized(String value) {
 		if (value == null) {
 			return null;
 		}
-		return Normalizer.normalize(value.trim().replaceAll("\s+", " "), Normalizer.Form.NFC);
+		StringBuilder collapsed = new StringBuilder(value.length());
+		boolean pendingSpace = false;
+		for (int i = 0; i < value.length(); i++) {
+			char each = value.charAt(i);
+			if (isSpace(each)) {
+				// 앞이 비어 있으면 여는 공백이라 버린다. 닫는 공백은 끝내 붙이지 않는다.
+				pendingSpace = !collapsed.isEmpty();
+				continue;
+			}
+			if (pendingSpace) {
+				collapsed.append(' ');
+				pendingSpace = false;
+			}
+			collapsed.append(each);
+		}
+		return Normalizer.normalize(collapsed, Normalizer.Form.NFC);
+	}
+
+	/** 탭·개행에 더해 줄바꿈 없는 공백(U+00A0)처럼 눈에 보이지 않는 공백까지 공백으로 본다. */
+	private static boolean isSpace(char each) {
+		return Character.isWhitespace(each) || Character.getType(each) == Character.SPACE_SEPARATOR;
 	}
 }

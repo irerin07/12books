@@ -3,6 +3,8 @@ package com.irene.twelvebooks.book;
 import com.irene.twelvebooks.book.dto.BookSearchResult;
 import com.irene.twelvebooks.common.error.BusinessException;
 import com.irene.twelvebooks.common.error.ErrorCode;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -11,9 +13,11 @@ import org.springframework.web.client.RestClientException;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.Duration;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 카카오 책 검색 프록시.
@@ -47,15 +51,24 @@ public class KakaoBookClient {
 	 */
 	private final Semaphore permits;
 
-	public KakaoBookClient(RestClient restClient, KakaoProperties properties) {
+	private final Counter rejected;
+
+	/** 거부 로그를 남기는 최소 간격. */
+	private static final Duration REJECTION_LOG_INTERVAL = Duration.ofSeconds(10);
+
+	private final AtomicLong lastRejectionLoggedAt = new AtomicLong(0);
+
+	public KakaoBookClient(RestClient restClient, KakaoProperties properties, MeterRegistry meterRegistry) {
 		this.restClient = restClient;
 		this.properties = properties;
 		this.permits = new Semaphore(properties.maxConcurrentCalls());
+		this.rejected = meterRegistry.counter("kakao.search.rejected");
 	}
 
 	public List<BookSearchResult> search(String query, int page) {
 		if (!permits.tryAcquire()) {
-			log.warn("카카오 동시 호출 상한({}) 초과 — 대기하지 않고 실패시킨다", properties.maxConcurrentCalls());
+			rejected.increment();
+			logRejectionSparingly();
 			throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
 		}
 		try {
@@ -63,6 +76,20 @@ public class KakaoBookClient {
 		}
 		finally {
 			permits.release();
+		}
+	}
+
+	/**
+	 * 거부는 카운터로 세고 로그는 드물게 남긴다. 상한 초과마다 WARN을 찍으면 카카오가 느려진
+	 * 바로 그 순간 로그가 폭주해, 장애 대응에 쓸 로그가 묻히고 로깅 자체가 병목이 된다.
+	 * 얼마나 거부됐는지는 {@code kakao.search.rejected} 카운터가 정확히 알고 있다.
+	 */
+	private void logRejectionSparingly() {
+		long now = System.nanoTime();
+		long last = lastRejectionLoggedAt.get();
+		if (now - last >= REJECTION_LOG_INTERVAL.toNanos() && lastRejectionLoggedAt.compareAndSet(last, now)) {
+			log.warn("카카오 동시 호출 상한({}) 초과 — 대기하지 않고 실패시킨다. 누적 거부 {}건",
+					properties.maxConcurrentCalls(), (long) rejected.count());
 		}
 	}
 
@@ -94,6 +121,11 @@ public class KakaoBookClient {
 	}
 
 	private static BookSearchResult toResult(KakaoDocument document) {
+		if (document == null || document.title() == null || document.title().isBlank()) {
+			// 제목은 not null 컬럼이다. 여기서 걸러내지 않으면 검색은 통과하고 등록에서
+			// 터지거나, null document가 그대로 NPE가 되어 500으로 새어 나간다.
+			throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
+		}
 		return new BookSearchResult(
 				isbn13Of(document.isbn()),
 				document.title(),
@@ -105,12 +137,20 @@ public class KakaoBookClient {
 				null);
 	}
 
-	/** 배열이지만 정렬·검색 요구가 없어 콤마로 합쳐 다룬다. */
+	/**
+	 * 배열이지만 정렬·검색 요구가 없어 콤마로 합쳐 다룬다.
+	 *
+	 * <p>원소에 null이 섞여 올 수 있다. 그대로 {@code String.join}에 넘기면 저자 이름이
+	 * 문자열 {@code "null"}로 저장된다.
+	 */
 	private static String authorsOf(List<String> authors) {
 		if (authors == null) {
 			return UNKNOWN_AUTHOR;
 		}
-		String joined = String.join(", ", authors);
+		String joined = authors.stream()
+				.filter(each -> each != null && !each.isBlank())
+				.map(String::trim)
+				.collect(java.util.stream.Collectors.joining(", "));
 		return joined.isBlank() ? UNKNOWN_AUTHOR : joined;
 	}
 

@@ -10,6 +10,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.client.AbstractClientHttpRequest;
@@ -60,12 +62,14 @@ class KakaoBookClientTest {
 
 	private KakaoBookClient client;
 	private MockRestServiceServer server;
+	private MeterRegistry registry;
 
 	@BeforeEach
 	void setUp() {
 		RestClient.Builder builder = RestClient.builder();
 		server = MockRestServiceServer.bindTo(builder).build();
-		client = new KakaoBookClient(builder.build(), new KakaoProperties(API_KEY, BASE_URL, 8));
+		registry = new SimpleMeterRegistry();
+		client = new KakaoBookClient(builder.build(), new KakaoProperties(API_KEY, BASE_URL, 8), registry);
 	}
 
 	@Test
@@ -164,12 +168,65 @@ class KakaoBookClientTest {
 	}
 
 	@Test
+	@DisplayName("documents에 null이 섞여 있으면 NPE로 죽지 않고 502다")
+	void translatesNullDocumentTo502() {
+		server.expect(requestTo(org.hamcrest.Matchers.startsWith(BASE_URL)))
+				.andRespond(withSuccess("""
+						{"documents":[null],"meta":{"is_end":true}}
+						""", MediaType.APPLICATION_JSON));
+
+		assertThatThrownBy(() -> client.search("코드", 1))
+				.isInstanceOf(BusinessException.class)
+				.extracting(e -> ((BusinessException) e).getErrorCode())
+				.isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
+	}
+
+	@Test
+	@DisplayName("제목 없는 문서는 502다 — title은 not null 컬럼이라 등록에서 터진다")
+	void translatesTitlelessDocumentTo502() {
+		server.expect(requestTo(org.hamcrest.Matchers.startsWith(BASE_URL)))
+				.andRespond(withSuccess("""
+						{"documents":[{"title":null,"authors":["저자"],"publisher":"출판사",
+						"isbn":"","thumbnail":"","datetime":""}],"meta":{"is_end":true}}
+						""", MediaType.APPLICATION_JSON));
+
+		assertThatThrownBy(() -> client.search("코드", 1))
+				.isInstanceOf(BusinessException.class)
+				.extracting(e -> ((BusinessException) e).getErrorCode())
+				.isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
+	}
+
+	@Test
+	@DisplayName("저자 배열의 null·빈 원소는 버린다 — \"null\"이 저자로 저장되지 않는다")
+	void dropsBlankAuthorElements() {
+		server.expect(requestTo(org.hamcrest.Matchers.startsWith(BASE_URL)))
+				.andRespond(withSuccess("""
+						{"documents":[{"title":"제목","authors":["김",null,"  "],"publisher":"출판사",
+						"isbn":"","thumbnail":"","datetime":""}],"meta":{"is_end":true}}
+						""", MediaType.APPLICATION_JSON));
+
+		assertThat(client.search("코드", 1).getFirst().authors()).isEqualTo("김");
+	}
+
+	@Test
+	@DisplayName("저자가 전부 비어 있으면 작자 미상이다")
+	void fallsBackWhenEveryAuthorIsBlank() {
+		server.expect(requestTo(org.hamcrest.Matchers.startsWith(BASE_URL)))
+				.andRespond(withSuccess("""
+						{"documents":[{"title":"제목","authors":[null,""],"publisher":"출판사",
+						"isbn":"","thumbnail":"","datetime":""}],"meta":{"is_end":true}}
+						""", MediaType.APPLICATION_JSON));
+
+		assertThat(client.search("코드", 1).getFirst().authors()).isEqualTo("작자 미상");
+	}
+
+	@Test
 	@DisplayName("동시 호출 상한을 넘으면 기다리지 않고 즉시 502다 — 느린 검색이 톰캣 스레드를 다 먹지 않는다")
 	void failsFastWhenConcurrencyLimitExceeded() throws Exception {
 		int limit = 2;
 		KakaoBookClient limited = new KakaoBookClient(RestClient.builder()
 				.requestFactory(new BlockingRequestFactory()).build(),
-				new KakaoProperties(API_KEY, BASE_URL, limit));
+				new KakaoProperties(API_KEY, BASE_URL, limit), registry);
 
 		CountDownLatch inFlight = new CountDownLatch(limit);
 		ExecutorService pool = Executors.newFixedThreadPool(limit);
@@ -191,6 +248,10 @@ class KakaoBookClientTest {
 					.extracting(e -> ((BusinessException) e).getErrorCode())
 					.isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
 			assertThat(Duration.ofNanos(System.nanoTime() - startedAt)).isLessThan(Duration.ofSeconds(3));
+
+			// 거부는 로그가 아니라 카운터로 센다. 상한 초과마다 WARN을 남기면 장애 중
+			// 로그가 폭주해 그 자체가 병목이 된다.
+			assertThat(registry.counter("kakao.search.rejected").count()).isEqualTo(1.0);
 		}
 		finally {
 			pool.shutdownNow();

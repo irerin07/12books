@@ -72,6 +72,31 @@ class BookRegistrationGuardTest extends AbstractIntegrationTest {
 	}
 
 	@Test
+	@DisplayName("page가 숫자가 아니면 400이다 — 변환 실패는 클라이언트 잘못이다")
+	void rejectsNonNumericPage() throws Exception {
+		mockMvc.perform(get("/api/v1/books/search").param("q", "코드").param("page", "abc")
+						.header("Authorization", bearer))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("C001"));
+	}
+
+	@Test
+	@DisplayName("검색어 파라미터가 아예 없으면 400이다")
+	void rejectsMissingQuery() throws Exception {
+		mockMvc.perform(get("/api/v1/books/search").header("Authorization", bearer))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("C001"));
+	}
+
+	@Test
+	@DisplayName("책 id가 숫자가 아니면 400이다")
+	void rejectsNonNumericPathVariable() throws Exception {
+		mockMvc.perform(get("/api/v1/books/not-a-number").header("Authorization", bearer))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("C001"));
+	}
+
+	@Test
 	@DisplayName("검색어가 비면 카카오까지 가지 않고 400이다")
 	void rejectsBlankQuery() throws Exception {
 		mockMvc.perform(get("/api/v1/books/search").param("q", " ")

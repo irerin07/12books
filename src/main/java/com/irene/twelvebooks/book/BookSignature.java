@@ -29,10 +29,23 @@ public class BookSignature {
 	/** 키나 직렬화 방식을 바꿀 때 옛 서명과 구분하기 위한 접두사. */
 	private static final String VERSION = "v1";
 
+	/**
+	 * HMAC-SHA256의 블록에 맞춘 최소 키 길이. 이 키가 뚫리면 등록 경로의 방어선이 통째로
+	 * 사라지므로, 짧은 키로 조용히 기동하느니 부팅에서 죽는 편이 낫다.
+	 */
+	private static final int MINIMUM_SECRET_BYTES = 32;
+
 	private final SecretKeySpec key;
 
 	BookSignature(BookProperties properties) {
-		this.key = new SecretKeySpec(properties.signatureSecret().getBytes(StandardCharsets.UTF_8), ALGORITHM);
+		byte[] secret = properties.signatureSecret().getBytes(StandardCharsets.UTF_8);
+		if (secret.length < MINIMUM_SECRET_BYTES) {
+			// 값 자체는 남기지 않는다. 길이만으로 무엇이 잘못됐는지 충분히 알 수 있다.
+			throw new IllegalStateException(
+					"twelvebooks.book.signature-secret은 UTF-8 기준 %d바이트 이상이어야 합니다 (현재 %d바이트)"
+							.formatted(MINIMUM_SECRET_BYTES, secret.length));
+		}
+		this.key = new SecretKeySpec(secret, ALGORITHM);
 	}
 
 	public BookSearchResult signed(BookSearchResult result) {
