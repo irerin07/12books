@@ -14,6 +14,8 @@ spring:
     # 실제로는 적용된 적 없는 V1이 적용된 것으로 취급돼 마이그레이션 누락이 조용히 숨는다.
 
 twelvebooks:
+  book:
+    signature-secret: ${BOOK_SIGNATURE_SECRET}
   jwt:
     secret: ${JWT_SECRET}
     access-token-ttl: PT10M
@@ -21,3 +23,4 @@ twelvebooks:
   kakao:
     rest-api-key: ${KAKAO_REST_API_KEY}
     base-url: https://dapi.kakao.com
+    max-concurrent-calls: 8

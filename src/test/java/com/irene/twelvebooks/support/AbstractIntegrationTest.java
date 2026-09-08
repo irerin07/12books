@@ -14,7 +14,8 @@ import org.testcontainers.utility.DockerImageName;
 @SpringBootTest(properties = {
 		// 비밀값은 운영에서 환경변수로만 주입한다. 테스트는 고정 더미 값으로 바인딩만 확인한다.
 		"twelvebooks.jwt.secret=test-secret-key-for-integration-tests-0123456789",
-		"twelvebooks.kakao.rest-api-key=test-kakao-rest-api-key"
+		"twelvebooks.kakao.rest-api-key=test-kakao-rest-api-key",
+		"twelvebooks.book.signature-secret=test-book-signature-secret-0123456789"
 })
 @AutoConfigureMockMvc
 @SuppressWarnings("resource")

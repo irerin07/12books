@@ -7,6 +7,9 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.List;
 
@@ -30,6 +33,42 @@ public class GlobalExceptionHandler {
 		ErrorCode errorCode = ErrorCode.INVALID_INPUT;
 		return ResponseEntity.status(errorCode.getStatus())
 				.body(new ErrorResponse(errorCode.getCode(), errorCode.getMessage(), fieldErrors));
+	}
+
+	/**
+	 * {@code @RequestParam}·{@code @PathVariable}에 걸린 제약이 깨진 경우. 본문 검증과 달리
+	 * 이쪽은 {@link HandlerMethodValidationException}으로 오기 때문에 따로 받지 않으면
+	 * catch-all로 흘러 <b>클라이언트 실수가 500</b>이 된다.
+	 */
+	@ExceptionHandler(HandlerMethodValidationException.class)
+	public ResponseEntity<ErrorResponse> handleParameterValidation(HandlerMethodValidationException e) {
+		List<ErrorResponse.FieldError> fieldErrors = e.getParameterValidationResults().stream()
+				.flatMap(result -> result.getResolvableErrors().stream()
+						.map(error -> new ErrorResponse.FieldError(
+								result.getMethodParameter().getParameterName(), error.getDefaultMessage())))
+				.toList();
+		ErrorCode errorCode = ErrorCode.INVALID_INPUT;
+		return ResponseEntity.status(errorCode.getStatus())
+				.body(new ErrorResponse(errorCode.getCode(), errorCode.getMessage(), fieldErrors));
+	}
+
+	/**
+	 * 파라미터를 아예 안 보냈거나({@code q} 누락), 보낸 값을 선언한 타입으로 바꿀 수 없는 경우
+	 * ({@code page=abc}, {@code /books/not-a-number}). 제약 위반과 달리 이쪽은 검증까지 가지도
+	 * 못하고 바인딩에서 끝나므로 예외 타입이 다르다 — 따로 받지 않으면 catch-all로 흘러 500이 된다.
+	 *
+	 * <p>어떤 타입을 기대했는지는 응답에 싣지 않는다. 필드 이름까지가 클라이언트가 고칠 수 있는
+	 * 정보이고, 그 뒤는 내부 구조다.
+	 */
+	@ExceptionHandler({ MissingServletRequestParameterException.class, MethodArgumentTypeMismatchException.class })
+	public ResponseEntity<ErrorResponse> handleUnbindableParameter(Exception e) {
+		String field = e instanceof MissingServletRequestParameterException missing
+				? missing.getParameterName()
+				: ((MethodArgumentTypeMismatchException) e).getName();
+		ErrorCode errorCode = ErrorCode.INVALID_INPUT;
+		return ResponseEntity.status(errorCode.getStatus())
+				.body(new ErrorResponse(errorCode.getCode(), errorCode.getMessage(),
+						List.of(new ErrorResponse.FieldError(field, "값을 확인해 주세요."))));
 	}
 
 	/**
