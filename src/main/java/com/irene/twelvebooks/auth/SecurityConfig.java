@@ -42,6 +42,10 @@ public class SecurityConfig {
 						.requestMatchers("/api/v1/auth/**").permitAll()
 						.requestMatchers(HttpMethod.GET, "/actuator/health/**").permitAll()
 						.requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
+						// Phase 0~2를 눌러 확인하는 정적 검증 콘솔. 토큰을 받기 전에 열려야 하므로
+						// 공개한다. 페이지 자체는 비밀을 담지 않고, 여기서 부르는 API는 아래
+						// anyRequest().authenticated()가 그대로 지킨다.
+						.requestMatchers(HttpMethod.GET, "/", "/index.html").permitAll()
 						.anyRequest().authenticated())
 				.exceptionHandling(handling -> handling.authenticationEntryPoint(authenticationEntryPoint))
 				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
