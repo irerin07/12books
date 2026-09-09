@@ -50,9 +50,8 @@ class BookServiceConcurrentRegisterTest extends AbstractIntegrationTest {
 	@Test
 	@DisplayName("먼저 등록된 책이 있으면 제약 위반 뒤에도 그 행을 돌려주고 커밋된다")
 	void returnsWinnerRowAfterConstraintViolation() {
-		Book winner = bookRepository.saveAndFlush(Book.builder()
-				.isbn13(ISBN).title("코드 컴플리트").authors("스티브 맥코넬")
-				.publisher("위키북스").publishedAt(LocalDate.of(2017, 5, 10)).build());
+		Book winner = bookRepository.saveAndFlush(Book.withIsbn13(ISBN, "코드 컴플리트", "스티브 맥코넬", "위키북스", null,
+				LocalDate.of(2017, 5, 10)));
 
 		AtomicInteger calls = new AtomicInteger();
 		willAnswer(invocation -> calls.getAndIncrement() == 0

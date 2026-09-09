@@ -54,15 +54,12 @@ public class BookService {
 			return existing.get();
 		}
 		try {
-			return bookInserter.insert(Book.builder()
-					.isbn13(isbn13)
-					.sourceKey(sourceKey)
-					.title(request.title())
-					.authors(request.authors())
-					.publisher(request.publisher())
-					.thumbnailUrl(request.thumbnailUrl())
-					.publishedAt(request.publishedAt())
-					.build());
+			Book book = isbn13 == null
+					? Book.withSourceKey(sourceKey, request.title(), request.authors(),
+							request.publisher(), request.thumbnailUrl(), request.publishedAt())
+					: Book.withIsbn13(isbn13, request.title(), request.authors(),
+							request.publisher(), request.thumbnailUrl(), request.publishedAt());
+			return bookInserter.insert(book);
 		}
 		catch (DataIntegrityViolationException e) {
 			// 사전 조회를 함께 통과한 다른 요청이 먼저 넣었다. 그 행이 정답이다.

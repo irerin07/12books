@@ -55,8 +55,7 @@ class BookControllerTest extends AbstractIntegrationTest {
 						.contentType(MediaType.APPLICATION_JSON).content(bookJson))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.id").isNumber())
-				.andExpect(jsonPath("$.title").value("코드 컴플리트"))
-				.andExpect(jsonPath("$.pageCount").doesNotExist());
+				.andExpect(jsonPath("$.title").value("코드 컴플리트"));
 	}
 
 	@Test
@@ -76,8 +75,7 @@ class BookControllerTest extends AbstractIntegrationTest {
 	@Test
 	@DisplayName("등록한 책을 id로 조회한다")
 	void readsBook() throws Exception {
-		Long id = bookRepository.save(Book.builder().isbn13("9788960777330")
-				.title("코드 컴플리트").authors("스티브 맥코넬").publisher("위키북스").build()).getId();
+		Long id = bookRepository.save(Book.withIsbn13("9788960777330", "코드 컴플리트", "스티브 맥코넬", "위키북스", null, null)).getId();
 
 		mockMvc.perform(get("/api/v1/books/" + id).header("Authorization", bearer))
 				.andExpect(status().isOk())
