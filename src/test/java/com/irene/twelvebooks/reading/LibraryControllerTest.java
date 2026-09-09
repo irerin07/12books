@@ -187,8 +187,8 @@ class LibraryControllerTest extends AbstractIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("목표를 세우지 않은 해는 기본 12권으로 답한다")
-	void defaultsGoalToTwelve() throws Exception {
+	@DisplayName("목표를 세우면 그 값과 그 해 완독 수를 함께 돌려준다")
+	void setsGoalAndReturnsFinishedCount() throws Exception {
 		mockMvc.perform(put("/api/v1/me/goals/2026").header("Authorization", bearer)
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""

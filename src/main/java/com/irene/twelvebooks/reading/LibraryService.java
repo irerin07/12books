@@ -13,6 +13,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -46,8 +47,10 @@ public class LibraryService {
 				.orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
 		List<Reading> rows = readingRepository.findLibraryPage(owner.getId(), filter.status(),
-				filter.year(), filter.startedYear(), filter.finishedYear(), cursor,
-				PageRequest.ofSize(size + 1));
+				filter.from(filter.year()), filter.to(filter.year()),
+				filter.from(filter.startedYear()), filter.to(filter.startedYear()),
+				filter.from(filter.finishedYear()), filter.to(filter.finishedYear()),
+				cursor, PageRequest.ofSize(size + 1));
 
 		CursorPage<Reading> page = CursorPage.of(rows, size, Reading::getId);
 		Map<Long, Book> books = booksOf(page.items());
@@ -66,14 +69,17 @@ public class LibraryService {
 	}
 
 	/**
-	 * 연간 목표를 세우거나 고친다. 같은 해에 다시 세우면 행을 늘리지 않고 덮어쓴다 —
-	 * uk(user_id, year)가 그것을 강제하기도 하지만, 목표는 "그 해에 하나"라는 개념 자체가 그렇다.
+	 * 연간 목표를 세우거나 고친다.
+	 *
+	 * <p>"조회해서 없으면 만든다"가 아니라 한 문장의 upsert로 처리한다. 전자는 같은 사용자·연도에
+	 * 두 요청이 동시에 들어올 때 둘 다 "없음"을 보고 하나가 유니크 제약에 걸려 500이 된다.
+	 * PUT은 본래 멱등이므로 DB에게 그대로 시키는 편이 단순하고 정확하다.
 	 */
 	@Transactional
 	public GoalResponse setGoal(Long userId, int year, int targetCount) {
-		ReadingGoal goal = readingGoalRepository.findByUserIdAndYear(userId, year)
-				.orElseGet(() -> readingGoalRepository.save(ReadingGoal.of(userId, year, targetCount)));
-		goal.updateTargetCount(targetCount);
-		return new GoalResponse(year, goal.getTargetCount(), readingRepository.countFinishedIn(userId, year));
+		readingGoalRepository.upsert(userId, year, targetCount);
+		long finished = readingRepository.countFinishedBetween(userId,
+				LocalDateTime.of(year, 1, 1, 0, 0), LocalDateTime.of(year + 1, 1, 1, 0, 0));
+		return new GoalResponse(year, targetCount, finished);
 	}
 }

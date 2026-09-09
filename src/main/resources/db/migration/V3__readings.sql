@@ -22,12 +22,19 @@ create table readings
     constraint fk_readings_book foreign key (book_id) references books (id),
     constraint ck_readings_current_page check (current_page >= 0),
     constraint ck_readings_page_count check (page_count is null or page_count > 0),
+    -- 진도가 총 쪽수를 넘지 않는다는 규칙은 엔티티도 지키지만, 배치나 JDBC처럼 엔티티를
+    -- 거치지 않는 쓰기가 생겨도 스키마가 마지막으로 막는다.
+    constraint ck_readings_progress check (page_count is null or current_page <= page_count),
     constraint ck_readings_rating check (rating is null or rating between 1 and 5)
 ) engine = InnoDB
   default charset = utf8mb4;
 
 -- 서재 조회는 "그 사람의 서재를 상태로 거른다"가 기본 형태다.
 create index idx_readings_user_status on readings (user_id, status);
+
+-- 필터 없는 서재 조회는 user_id로 좁히고 id desc로 정렬한다. 위 인덱스는 status가 앞에 있어
+-- 이 경로를 돕지 못한다.
+create index idx_readings_user_id_desc on readings (user_id, id desc);
 
 -- 연간 목표. 설정하지 않은 해는 행이 없고, 조회 계층이 기본 12권으로 간주한다.
 create table reading_goals

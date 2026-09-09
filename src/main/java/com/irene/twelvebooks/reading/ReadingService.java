@@ -54,19 +54,15 @@ public class ReadingService {
 	/**
 	 * 진도·상태·별점의 부분 수정. 보내지 않은 필드는 건드리지 않는다.
 	 *
-	 * <p>총 쪽수를 진도보다 먼저 적용한다. 한 요청에 둘 다 들어오면 새 상한을 기준으로 진도를
-	 * 검증해야 하기 때문이다 — 순서가 반대면 "320쪽 책의 300쪽"이 옛 상한에 걸려 거부된다.
+	 * <p>총 쪽수와 진도는 {@link Reading#applyProgress}에 함께 넘겨 최종 조합으로 검증한다.
 	 */
 	@Transactional
 	public Reading update(Long userId, Long readingId, ReadingUpdateRequest request) {
 		Reading reading = mine(userId, readingId);
 		try {
-			if (request.pageCount() != null) {
-				reading.updatePageCount(request.pageCount());
-			}
-			if (request.currentPage() != null) {
-				reading.updateProgress(request.currentPage());
-			}
+			// 총 쪽수와 진도는 한 번에 넘긴다. 하나씩 적용하면 최종 상태가 멀쩡한 요청도
+			// 중간 상태에 걸려 거부된다.
+			reading.applyProgress(request.pageCount(), request.currentPage());
 			if (request.rating() != null) {
 				reading.updateRating(request.rating());
 			}

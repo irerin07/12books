@@ -61,8 +61,7 @@ class ReadingTest {
 	void finishingRecordsFinishedAtAndCompletesProgress() {
 		Reading reading = want();
 		reading.changeStatus(ReadingStatus.READING, FIRST);
-		reading.updatePageCount(320);
-		reading.updateProgress(100);
+		reading.applyProgress(320, 100);
 
 		reading.changeStatus(ReadingStatus.FINISHED, LATER);
 
@@ -74,7 +73,7 @@ class ReadingTest {
 	@DisplayName("총 쪽수를 모르면 완독해도 진도는 건드리지 않는다")
 	void finishingWithoutPageCountLeavesProgress() {
 		Reading reading = want();
-		reading.updateProgress(80);
+		reading.applyProgress(null, 80);
 
 		reading.changeStatus(ReadingStatus.FINISHED, LATER);
 
@@ -94,12 +93,60 @@ class ReadingTest {
 	}
 
 	@Test
+	@DisplayName("이미 완독인데 같은 상태를 다시 보내도 완독일은 그대로다")
+	void refinishingKeepsTheOriginalFinishedAt() {
+		Reading reading = want();
+		reading.changeStatus(ReadingStatus.FINISHED, FIRST);
+
+		reading.changeStatus(ReadingStatus.FINISHED, LATER);
+
+		// 다 읽은 날은 한 번 정해지면 재시도로 바뀌지 않는다.
+		assertThat(reading.getFinishedAt()).isEqualTo(FIRST);
+	}
+
+	@Test
+	@DisplayName("완독 상태에서는 진도를 중간으로 되돌릴 수 없다")
+	void finishedProgressStaysAtTheEnd() {
+		Reading reading = want();
+		reading.applyProgress(320, null);
+		reading.changeStatus(ReadingStatus.FINISHED, LATER);
+
+		reading.applyProgress(null, 100);
+
+		assertThat(reading.getCurrentPage()).isEqualTo(320);
+	}
+
+	@Test
+	@DisplayName("쪽수를 모른 채 완독한 뒤 쪽수를 넣으면 진도가 끝으로 간다")
+	void fillingPageCountAfterFinishingCompletesProgress() {
+		Reading reading = want();
+		reading.changeStatus(ReadingStatus.FINISHED, LATER);
+
+		reading.applyProgress(300, null);
+
+		assertThat(reading.getCurrentPage()).isEqualTo(300);
+	}
+
+	@Test
+	@DisplayName("총 쪽수와 진도를 함께 줄이면 최종 조합으로 판단한다")
+	void validatesTheFinalCombination() {
+		Reading reading = want();
+		reading.applyProgress(320, 300);
+
+		// 200쪽짜리로 고치면서 진도도 150으로 내린다 — 중간값(200 < 300)이 아니라 최종 조합을 본다
+		reading.applyProgress(200, 150);
+
+		assertThat(reading.getPageCount()).isEqualTo(200);
+		assertThat(reading.getCurrentPage()).isEqualTo(150);
+	}
+
+	@Test
 	@DisplayName("진도는 되돌아갈 수 있다")
 	void progressCanGoBackwards() {
 		Reading reading = want();
-		reading.updateProgress(120);
+		reading.applyProgress(null, 120);
 
-		reading.updateProgress(80);
+		reading.applyProgress(null, 80);
 
 		assertThat(reading.getCurrentPage()).isEqualTo(80);
 	}
@@ -109,11 +156,11 @@ class ReadingTest {
 	void progressStaysWithinBounds() {
 		Reading reading = want();
 
-		assertThatThrownBy(() -> reading.updateProgress(-1))
+		assertThatThrownBy(() -> reading.applyProgress(null, -1))
 				.isInstanceOf(IllegalArgumentException.class);
 
-		reading.updatePageCount(320);
-		assertThatThrownBy(() -> reading.updateProgress(321))
+		reading.applyProgress(320, null);
+		assertThatThrownBy(() -> reading.applyProgress(null, 321))
 				.isInstanceOf(IllegalArgumentException.class);
 	}
 
@@ -121,9 +168,10 @@ class ReadingTest {
 	@DisplayName("총 쪽수를 이미 읽은 쪽수보다 작게 줄일 수 없다")
 	void pageCountCannotDropBelowProgress() {
 		Reading reading = want();
-		reading.updateProgress(200);
+		reading.applyProgress(null, 200);
 
-		assertThatThrownBy(() -> reading.updatePageCount(100))
+		// 진도를 함께 내리지 않고 총 쪽수만 줄이면 최종 조합이 어긋난다
+		assertThatThrownBy(() -> reading.applyProgress(100, null))
 				.isInstanceOf(IllegalArgumentException.class);
 	}
 

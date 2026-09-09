@@ -56,6 +56,9 @@ class LibraryJourneyE2ETest extends AbstractIntegrationTest {
 	@Autowired
 	JwtProvider jwtProvider;
 
+	@Autowired
+	java.time.Clock clock;
+
 	private String bearer;
 	private String otherBearer;
 
@@ -142,7 +145,8 @@ class LibraryJourneyE2ETest extends AbstractIntegrationTest {
 				.andExpect(jsonPath("$.items[0].book.thumbnailUrl").isNotEmpty());
 
 		// 8. 올해 목표에 완독 한 권이 잡힌다
-		int thisYear = java.time.Year.now().getValue();
+		// 서비스와 같은 시계를 쓴다. 연말·연초에 서버 시간대가 다르면 다른 해를 묻게 된다.
+		int thisYear = java.time.Year.now(clock).getValue();
 		mockMvc.perform(put("/api/v1/me/goals/" + thisYear).header("Authorization", bearer)
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""

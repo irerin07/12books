@@ -3,6 +3,7 @@ package com.irene.twelvebooks.support;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -10,6 +11,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.mysql.MySQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
+import java.sql.Statement;
 import java.util.List;
 
 /**
@@ -64,18 +66,29 @@ public abstract class AbstractIntegrationTest {
 				where table_schema = database() and table_name <> 'flyway_schema_history'
 				""", String.class);
 
-		jdbcTemplate.execute("set foreign_key_checks = 0");
-		try {
-			for (String table : tables) {
-				// 우리 스키마에서 읽은 이름이지만 SQL에 이어 붙이므로 형태를 확인하고 쓴다.
-				if (!table.matches("[A-Za-z0-9_]+")) {
-					throw new IllegalStateException("예상치 못한 테이블 이름: " + table);
-				}
-				jdbcTemplate.execute("truncate table `" + table + "`");
+		for (String table : tables) {
+			// 우리 스키마에서 읽은 이름이지만 SQL에 이어 붙이므로 형태를 확인하고 쓴다.
+			if (!table.matches("[A-Za-z0-9_]+")) {
+				throw new IllegalStateException("예상치 못한 테이블 이름: " + table);
 			}
 		}
-		finally {
-			jdbcTemplate.execute("set foreign_key_checks = 1");
-		}
+
+		// foreign_key_checks는 커넥션 단위 설정이다. JdbcTemplate 호출마다 풀에서 커넥션을
+		// 새로 받으면 "끈 커넥션"과 "truncate하는 커넥션"이 달라져 FK가 그대로 살아 있을 수
+		// 있다. 하나의 커넥션 안에서 끄고-비우고-켠다.
+		jdbcTemplate.execute((ConnectionCallback<Void>) connection -> {
+			try (Statement statement = connection.createStatement()) {
+				statement.execute("set foreign_key_checks = 0");
+				try {
+					for (String table : tables) {
+						statement.execute("truncate table `" + table + "`");
+					}
+				}
+				finally {
+					statement.execute("set foreign_key_checks = 1");
+				}
+			}
+			return null;
+		});
 	}
 }
