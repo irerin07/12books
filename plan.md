@@ -313,7 +313,7 @@ refresh 쿠키로 reissue해 새 access와 **새 refresh 쿠키**를 받음 → 
   — userId, bookId, status, currentPage, pageCount, startedAt, finishedAt, rating
 - `reading/domain/ReadingGoal` — userId, year, targetCount
 - `ReadingController`: `POST /readings`, `PATCH /readings/{id}`, `DELETE /readings/{id}`
-- `GET /users/{handle}/library?year=&status=`
+- `GET /users/{handle}/library?year=&startedYear=&finishedYear=&status=`
 - `PUT /me/goals/{year}`
 
 **기술 상세**
@@ -328,16 +328,40 @@ refresh 쿠키로 reissue해 새 access와 **새 refresh 쿠키**를 받음 → 
 - 수정·삭제는 소유자 검증 필수 (`reading.userId != authUserId` → 403).
 
 **총 쪽수는 `readings`가 갖는다.** `page_count`를 `books`가 아니라 `readings`에 두고 사용자가
-직접 입력한다 — spec.md §5의 `readings` 스키마에는 없는 컬럼이라 `V3`에서 더한다. 카카오가 총 쪽수를 주지 않아 누군가는
+직접 입력한다 — spec.md §5의 `readings` 스키마에는 없는 컬럼이라 `V3`에서 더한다.
+같은 마이그레이션에서 **`books.page_count`는 지운다.** `V2`에 만들어졌지만 카카오가 값을 주지
+않아 한 번도 채워진 적이 없고, 남겨두면 "책 쪽수는 어느 쪽인가"를 매번 되묻게 된다. 지금 전부
+null이라 잃는 데이터도 없다. 나중에 다른 출처로 채우게 되면 그때 다시 만든다. 카카오가 총 쪽수를 주지 않아 누군가는
 채워야 하는데, 공용 `books`를 사용자가 고치게 하면 Phase 2에서 서명으로 막은 오염 경로가 그대로
 되살아난다. 판본마다 쪽수가 다르다는 점에서도 이쪽이 맞다 — 같은 책을 읽어도 내 책의 쪽수는
 내 것이다. 진도 상한과 `FINISHED` 전환 시 `currentPage` 자동 맞춤은 모두 이 값을 기준으로 한다.
 
-**서재는 `id desc`로 정렬하고 `year`는 완독 연도로만 거른다.** 커서는 `id` 하나라 단순하다.
-`finished_at desc` 정렬이 "올해 읽은 순서"로는 더 자연스럽지만 커서가 `(finished_at, id)` 복합이
-되고, `finished_at`이 없는 상태(`READING` 등)의 정렬 위치를 따로 정해야 한다. 주 용도인
-"올해 읽은 책 표지 그리드 + 달성률"은 `year` + `status=FINISHED` 조합이고 이 정렬로 충분하다.
-대신 `year`를 주면 아직 안 끝낸 책은 빠진다 — 의도된 동작이다.
+**서재는 `id desc`로 정렬한다.** 커서는 `id` 하나라 단순하다. `finished_at desc` 정렬이
+"올해 읽은 순서"로는 더 자연스럽지만 커서가 `(finished_at, id)` 복합이 되고, `finished_at`이
+없는 상태(`READING` 등)의 정렬 위치를 따로 정해야 한다.
+
+**연도 필터는 셋으로 나눈다.** 값은 모두 연도(`2026`)다.
+
+| 파라미터 | 거르는 것 |
+|---|---|
+| `startedYear` | `started_at`의 연도 — 그 해에 읽기 시작한 책 |
+| `finishedYear` | `finished_at`의 연도 — 그 해에 다 읽은 책 |
+| `year` | 위 둘 중 **하나라도** 그 해인 책 — 그 해에 손댄 책 전부 |
+
+하나로 뭉치면 조합이 조용히 무의미해진다. `year`를 완독 연도로만 두면 `year=2026&status=READING`
+— 사람이 보기엔 "올해 읽고 있는 책"이라는 자연스러운 요청 — 이 **항상 빈 목록**이 된다. 읽는
+중인 책은 `finished_at`이 없어 연도 조건에 걸릴 수가 없기 때문이다. 셋으로 나누면 각 파라미터가
+스스로 무엇을 거르는지 이름으로 말하고, `year`가 그 둘을 합친 편의 필터가 된다.
+
+주어진 필터는 전부 AND로 묶는다. `startedYear=2025&finishedYear=2026`은 "재작년에 시작해 작년에
+끝낸 책"이고, 이건 하나짜리 파라미터로는 표현할 수 없던 질문이다.
+
+연간 목표 달성률은 이 필터와 무관하게 **완독 기준으로만** 센다. `year`가 시작을 포함하게 되면서
+"`year`로 조회한 권수"와 "달성률의 분자"가 달라질 수 있는데, 후자의 정의는 처음부터
+"그 해에 다 읽은 책 수"다.
+
+이름을 `started_at`이 아니라 `startedYear`로 둔 것은 값이 날짜가 아니라 연도이기 때문이다.
+컬럼명 그대로가 낫다면 바꾸겠다.
 
 **별점은 이 Phase에 포함한다.** `readings.rating`은 nullable 정수 1~5이고 `PATCH`에서 함께 받는다.
 컬럼만 만들고 API를 미루면 쓰이지 않는 컬럼이 남고, 나중에 더하면 마이그레이션이 하나 늘어난다.
