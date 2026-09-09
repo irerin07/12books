@@ -310,7 +310,8 @@ refresh 쿠키로 reissue해 새 access와 **새 refresh 쿠키**를 받음 → 
 - `V3__readings.sql` (`readings`, `reading_goals`)
 - `reading/domain/Reading` + `ReadingStatus` enum
   (`WANT_TO_READ / READING / FINISHED / PAUSED / DROPPED`)
-- `reading/domain/ReadingGoal`
+  — userId, bookId, status, currentPage, pageCount, startedAt, finishedAt, rating
+- `reading/domain/ReadingGoal` — userId, year, targetCount
 - `ReadingController`: `POST /readings`, `PATCH /readings/{id}`, `DELETE /readings/{id}`
 - `GET /users/{handle}/library?year=&status=`
 - `PUT /me/goals/{year}`
@@ -325,6 +326,31 @@ refresh 쿠키로 reissue해 새 access와 **새 refresh 쿠키**를 받음 → 
 - `currentPage`는 **감소도 허용**한다(되돌아가 읽기). 0 이상, `pageCount`가 있으면 그 이하.
 - 연간 목표 미설정 시 조회 계층에서 **기본 12권**으로 간주한다. 가입 시 행을 미리 만들지 않는다.
 - 수정·삭제는 소유자 검증 필수 (`reading.userId != authUserId` → 403).
+
+**총 쪽수는 `readings`가 갖는다.** `page_count`를 `books`가 아니라 `readings`에 두고 사용자가
+직접 입력한다 — spec.md §5의 `readings` 스키마에는 없는 컬럼이라 `V3`에서 더한다. 카카오가 총 쪽수를 주지 않아 누군가는
+채워야 하는데, 공용 `books`를 사용자가 고치게 하면 Phase 2에서 서명으로 막은 오염 경로가 그대로
+되살아난다. 판본마다 쪽수가 다르다는 점에서도 이쪽이 맞다 — 같은 책을 읽어도 내 책의 쪽수는
+내 것이다. 진도 상한과 `FINISHED` 전환 시 `currentPage` 자동 맞춤은 모두 이 값을 기준으로 한다.
+
+**서재는 `id desc`로 정렬하고 `year`는 완독 연도로만 거른다.** 커서는 `id` 하나라 단순하다.
+`finished_at desc` 정렬이 "올해 읽은 순서"로는 더 자연스럽지만 커서가 `(finished_at, id)` 복합이
+되고, `finished_at`이 없는 상태(`READING` 등)의 정렬 위치를 따로 정해야 한다. 주 용도인
+"올해 읽은 책 표지 그리드 + 달성률"은 `year` + `status=FINISHED` 조합이고 이 정렬로 충분하다.
+대신 `year`를 주면 아직 안 끝낸 책은 빠진다 — 의도된 동작이다.
+
+**별점은 이 Phase에 포함한다.** `readings.rating`은 nullable 정수 1~5이고 `PATCH`에서 함께 받는다.
+컬럼만 만들고 API를 미루면 쓰이지 않는 컬럼이 남고, 나중에 더하면 마이그레이션이 하나 늘어난다.
+
+**엔티티는 정적 팩토리로 통일한다.** `Reading.want(userId, bookId)`처럼 의미 있는 이름을 주고,
+생성자는 private으로 둔다. Lombok은 `build.gradle`에 선언만 되어 있고 쓰는 파일이 없었는데,
+여기서 도입하면 이후 모든 엔티티의 선례가 된다 — 새 의존성 없이 `User.create(...)`라는 현재
+다수파에 맞추는 쪽을 택했다. 이 Phase에서 `Book`의 수기 Builder도 함께 옮긴다.
+
+**나머지 규약** — 중복 담기는 유니크 제약을 1차 방어선으로 두고 `409`. `PATCH`는 프로필과 같은
+부분 수정이라 보내지 않은 필드(null)는 바꾸지 않는다. `DELETE`는 행을 지운다(Phase 4에서
+감상평이 `reading`을 참조하기 시작하면 그때 다시 본다). `PUT /me/goals/{year}`의 `targetCount`는
+1~1000, `year`는 2000~2100.
 
 **완료 기준**
 책 담기 → 진도 갱신 → `FINISHED` 전환 시 `finishedAt` 채워짐 → `READING`으로 되돌리면 비워짐 →
