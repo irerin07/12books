@@ -9,7 +9,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import org.hibernate.annotations.DynamicUpdate;
 
 import java.time.LocalDateTime;
 
@@ -23,13 +22,12 @@ import java.time.LocalDateTime;
  *
  * <p>시간은 인자로 받는다. 엔티티가 시계를 직접 읽으면 테스트가 sleep에 기대게 된다.
  *
- * <p>{@code @DynamicUpdate}는 바뀐 컬럼만 UPDATE한다. 폰에서 진도를, 노트북에서 별점을
- * 동시에 고쳐도 둘 다 살아남는다 — 전체 UPDATE를 날리면 나중 쓰기가 먼저 반영된 값을
- * 되돌린다. 같은 필드를 동시에 고치면 나중 쓰기가 이기는데, 진도라면 나중 위치가 맞는 값이다.
- * 충돌을 오류로 알려야 할 만큼 잦아지면 그때 {@code @Version} + 409로 올린다.
+ * <p>동시 수정은 컬럼 단위 부분 UPDATE로 풀 수 없다. {@code status}와 {@code currentPage}는
+ * "완독이면서 총 쪽수를 알면 진도는 끝"이라는 규칙으로 묶여 있어, 각 컬럼의 마지막 쓰기가
+ * 그대로 남으면 합쳐진 결과가 규칙을 깬다. 쓰기 경로가 행 잠금으로 읽기-수정-쓰기를
+ * 직렬화한다 — {@link ReadingRepository#findByIdForUpdate} 참고.
  */
 @Entity
-@DynamicUpdate
 @Table(name = "readings")
 public class Reading extends BaseTimeEntity {
 
@@ -65,15 +63,22 @@ public class Reading extends BaseTimeEntity {
 	protected Reading() {
 	}
 
-	private Reading(Long userId, Long bookId, ReadingStatus status) {
+	private Reading(Long userId, Long bookId) {
 		this.userId = userId;
 		this.bookId = bookId;
-		this.status = status;
+		this.status = ReadingStatus.WANT_TO_READ;
 		this.currentPage = 0;
 	}
 
+	/**
+	 * 서재에 담는다.
+	 *
+	 * <p>중립 상태로 만든 뒤 <b>실제 전이</b>로 요청 상태에 들어간다. 생성자가 요청 상태를
+	 * 미리 넣어두면 전이가 "이미 그 상태"로 보여 시작일·완독일이 채워지지 않는다 —
+	 * 처음부터 완독으로 담은 책이 완독일 없이 남아 연간 집계에서 통째로 빠진다.
+	 */
 	public static Reading of(Long userId, Long bookId, ReadingStatus status, LocalDateTime now) {
-		Reading reading = new Reading(userId, bookId, status);
+		Reading reading = new Reading(userId, bookId);
 		reading.changeStatus(status, now);
 		return reading;
 	}
@@ -102,6 +107,20 @@ public class Reading extends BaseTimeEntity {
 		}
 		this.status = next;
 		settleProgress();
+	}
+
+	/**
+	 * 상태·총 쪽수·진도를 한 번에 반영한다. null은 "안 보냈다"는 뜻이라 기존 값을 유지한다.
+	 *
+	 * <p><b>상태를 먼저 확정한 뒤</b> 그 상태를 기준으로 진도를 판단한다. 순서가 반대면
+	 * 완독한 책에 {@code {status: READING, currentPage: 10}}을 보낼 때 아직 완독 상태라
+	 * 진도가 끝으로 되돌아가고, 그다음 상태만 바뀌어 "읽는 중인데 마지막 쪽"이 된다.
+	 */
+	public void apply(ReadingStatus next, Integer newPageCount, Integer newCurrentPage, LocalDateTime now) {
+		if (next != null) {
+			changeStatus(next, now);
+		}
+		applyProgress(newPageCount, newCurrentPage);
 	}
 
 	/**

@@ -34,6 +34,49 @@ class ReadingTest {
 	}
 
 	@Test
+	@DisplayName("처음부터 완독으로 담아도 완독일이 남는다")
+	void creatingAsFinishedRecordsFinishedAt() {
+		Reading reading = Reading.of(USER, BOOK, ReadingStatus.FINISHED, FIRST);
+
+		assertThat(reading.getStatus()).isEqualTo(ReadingStatus.FINISHED);
+		// 완독일이 없으면 연간 완독 집계에서 통째로 빠진다.
+		assertThat(reading.getFinishedAt()).isEqualTo(FIRST);
+	}
+
+	@Test
+	@DisplayName("처음부터 읽는 중으로 담으면 시작일이 남는다")
+	void creatingAsReadingRecordsStartedAt() {
+		Reading reading = Reading.of(USER, BOOK, ReadingStatus.READING, FIRST);
+
+		assertThat(reading.getStartedAt()).isEqualTo(FIRST);
+	}
+
+	@Test
+	@DisplayName("재독을 시작하면서 진도를 함께 되돌릴 수 있다")
+	void reopeningWithProgressKeepsTheGivenPage() {
+		Reading reading = want();
+		reading.apply(ReadingStatus.FINISHED, 320, null, FIRST);
+
+		reading.apply(ReadingStatus.READING, null, 10, LATER);
+
+		assertThat(reading.getStatus()).isEqualTo(ReadingStatus.READING);
+		// 새 상태가 READING이므로 완독 보정이 걸리면 안 된다.
+		assertThat(reading.getCurrentPage()).isEqualTo(10);
+		assertThat(reading.getFinishedAt()).isNull();
+	}
+
+	@Test
+	@DisplayName("완독으로 바꾸면서 진도를 보내도 끝으로 맞춰진다")
+	void finishingWithProgressStillCompletes() {
+		Reading reading = want();
+		reading.apply(null, 320, 100, FIRST);
+
+		reading.apply(ReadingStatus.FINISHED, null, 100, LATER);
+
+		assertThat(reading.getCurrentPage()).isEqualTo(320);
+	}
+
+	@Test
 	@DisplayName("읽는 중으로 바꾸면 시작일이 채워진다")
 	void startingFillsStartedAt() {
 		Reading reading = want();

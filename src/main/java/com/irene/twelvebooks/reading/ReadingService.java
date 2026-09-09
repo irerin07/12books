@@ -54,15 +54,18 @@ public class ReadingService {
 	/**
 	 * 진도·상태·별점의 부분 수정. 보내지 않은 필드는 건드리지 않는다.
 	 *
-	 * <p>총 쪽수와 진도는 {@link Reading#applyProgress}에 함께 넘겨 최종 조합으로 검증한다.
+	 * <p>상태·총 쪽수·진도는 {@link Reading#apply}에 함께 넘겨 최종 조합으로 판단한다.
+	 *
+	 * <p>읽기는 행 잠금을 건다. 이 셋은 서로 얽힌 필드라 두 요청이 각자의 스냅샷 위에서
+	 * 옳게 고쳐도 합쳐진 결과가 규칙을 깰 수 있다.
 	 */
 	@Transactional
 	public Reading update(Long userId, Long readingId, ReadingUpdateRequest request) {
 		Reading reading = mine(userId, readingId);
 		try {
-			// 총 쪽수와 진도는 한 번에 넘긴다. 하나씩 적용하면 최종 상태가 멀쩡한 요청도
-			// 중간 상태에 걸려 거부된다.
-			reading.applyProgress(request.pageCount(), request.currentPage());
+			// 상태·총 쪽수·진도를 한 번에 넘긴다. 셋은 서로 얽혀 있어 따로 적용하면
+			// 최종 상태가 멀쩡한 요청도 중간 상태에 걸리거나, 보낸 값이 조용히 덮인다.
+			reading.apply(request.status(), request.pageCount(), request.currentPage(), now());
 			if (request.rating() != null) {
 				reading.updateRating(request.rating());
 			}
@@ -73,9 +76,6 @@ public class ReadingService {
 			// 구체적인 사유는 로그에만 남긴다 — 응답에 내부 메시지를 싣지 않는다.
 			log.debug("서재 기록 수정이 불변식에 걸렸습니다: readingId={}", readingId, e);
 			throw new BusinessException(ErrorCode.INVALID_INPUT);
-		}
-		if (request.status() != null) {
-			reading.changeStatus(request.status(), now());
 		}
 		return reading;
 	}
@@ -92,7 +92,7 @@ public class ReadingService {
 	 * 비밀이 아니고, 404로 감추면 "내 기록인데 왜 없다고 하지"라는 혼란만 만든다.
 	 */
 	private Reading mine(Long userId, Long readingId) {
-		Reading reading = readingRepository.findById(readingId)
+		Reading reading = readingRepository.findByIdForUpdate(readingId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.READING_NOT_FOUND));
 		if (!reading.ownedBy(userId)) {
 			throw new BusinessException(ErrorCode.FORBIDDEN);

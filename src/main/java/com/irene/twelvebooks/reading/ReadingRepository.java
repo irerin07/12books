@@ -1,7 +1,9 @@
 package com.irene.twelvebooks.reading;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -12,6 +14,22 @@ import java.util.Optional;
 public interface ReadingRepository extends JpaRepository<Reading, Long> {
 
 	Optional<Reading> findByUserIdAndBookId(Long userId, Long bookId);
+
+	/**
+	 * 수정·삭제가 읽어 가는 경로. 행에 쓰기 잠금을 건다.
+	 *
+	 * <p>{@code status}와 {@code currentPage}는 독립 필드가 아니다 — "완독이면서 총 쪽수를
+	 * 알면 진도는 끝"이라는 규칙이 둘을 묶는다. 한쪽이 완독으로 바꾸고 다른 쪽이 진도를
+	 * 중간으로 옮기면 각자는 자기 스냅샷에서 옳지만 합쳐진 결과가 규칙을 깬다. 컬럼 단위
+	 * 부분 UPDATE도, {@code current_page <= page_count} CHECK도 이것을 막지 못한다(150 ≤ 300).
+	 *
+	 * <p>그래서 읽기-수정-쓰기를 직렬화한다. 뒤에 온 요청은 앞의 결과를 보고 다시 판단하므로
+	 * 규칙이 유지되고, 낙관적 잠금과 달리 사용자에게 409를 돌려주지 않는다 — 진도 자동 저장에
+	 * 충돌 오류가 뜨는 것은 고칠 방법이 없는 오류다.
+	 */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select r from Reading r where r.id = :id")
+	Optional<Reading> findByIdForUpdate(@Param("id") Long id);
 
 	/**
 	 * 서재 한 페이지. 주어진 필터는 전부 AND로 묶이고, 주지 않은 것은 조건에서 빠진다.
