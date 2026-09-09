@@ -63,6 +63,11 @@
   pre { margin: 6px 0 0; font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto; }
   .check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-top: 10px; }
   .check input { margin: 0; }
+  .note { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+  select {
+    width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--bg); color: var(--fg); font: inherit; font-size: 13px;
+  }
   footer { color: var(--muted); font-size: 12px; }
 </style>
 </head>
@@ -146,6 +151,95 @@
         </div>
       </section>
 
+      <section>
+        <h2>5. 서재에 담기 <span class="hint">POST /readings</span></h2>
+        <div class="row">
+          <div><label>bookId</label><input type="text" id="rdBookId" placeholder="책을 담으면 자동으로 채워진다"></div>
+          <div style="flex:0 0 150px">
+            <label>처음 상태</label>
+            <select id="rdInitialStatus">
+              <option value="">보내지 않음 (읽고싶다)</option>
+              <option value="WANT_TO_READ">WANT_TO_READ</option>
+              <option value="READING">READING</option>
+              <option value="FINISHED">FINISHED</option>
+            </select>
+          </div>
+          <div style="flex:0 0 auto"><button id="btnShelve">담기</button></div>
+        </div>
+        <p class="note">같은 책을 두 번 담으면 409, 없는 책이면 404다.</p>
+      </section>
+
+      <section>
+        <h2>6. 진도 · 상태 · 별점 <span class="hint">PATCH /readings/{id} · DELETE</span></h2>
+        <div class="row">
+          <div><label>readingId</label><input type="text" id="rdId" placeholder="담으면 자동으로 채워진다"></div>
+          <div style="flex:0 0 150px">
+            <label>상태</label>
+            <select id="rdStatus">
+              <option value="">안 바꿈</option>
+              <option value="WANT_TO_READ">WANT_TO_READ</option>
+              <option value="READING">READING</option>
+              <option value="FINISHED">FINISHED</option>
+              <option value="PAUSED">PAUSED</option>
+              <option value="DROPPED">DROPPED</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div><label>총 쪽수</label><input type="number" id="rdPageCount" placeholder="안 바꿈" min="1"></div>
+          <div><label>현재 쪽수</label><input type="number" id="rdCurrentPage" placeholder="안 바꿈" min="0"></div>
+          <div><label>별점 1~5</label><input type="number" id="rdRating" placeholder="안 바꿈" min="1" max="5"></div>
+        </div>
+        <div class="btns">
+          <button id="btnPatchReading">수정</button>
+          <button class="ghost" id="btnDeleteReading">서재에서 빼기</button>
+        </div>
+        <p class="note">
+          비운 칸은 보내지 않는다 — 안 바뀐다. 완독으로 바꾸면 총 쪽수를 아는 경우 진도가 끝으로 간다.
+        </p>
+      </section>
+
+      <section>
+        <h2>7. 서재 조회 <span class="hint">GET /users/{handle}/library</span></h2>
+        <div class="row">
+          <div><label>handle</label><input type="text" id="libHandle" value="irene"></div>
+          <div style="flex:0 0 150px">
+            <label>status</label>
+            <select id="libStatus">
+              <option value="">전체</option>
+              <option value="WANT_TO_READ">WANT_TO_READ</option>
+              <option value="READING">READING</option>
+              <option value="FINISHED">FINISHED</option>
+              <option value="PAUSED">PAUSED</option>
+              <option value="DROPPED">DROPPED</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div><label>year <span class="pill">시작·완독 둘 중 하나</span></label><input type="number" id="libYear" placeholder="비움"></div>
+          <div><label>startedYear</label><input type="number" id="libStartedYear" placeholder="비움"></div>
+          <div><label>finishedYear</label><input type="number" id="libFinishedYear" placeholder="비움"></div>
+          <div style="flex:0 0 80px"><label>size</label><input type="number" id="libSize" value="20" min="1" max="50"></div>
+        </div>
+        <div class="btns">
+          <button id="btnLibrary">조회</button>
+          <button class="ghost" id="btnLibraryNext" disabled>다음 장</button>
+        </div>
+        <div class="results" id="libraryResults"></div>
+      </section>
+
+      <section>
+        <h2>8. 연간 목표 <span class="hint">PUT /me/goals/{year}</span></h2>
+        <div class="row">
+          <div><label>연도</label><input type="number" id="goalYear" value="2026" min="2000" max="2100"></div>
+          <div><label>목표 권수 <span class="pill">1~1000</span></label><input type="number" id="goalTarget" value="12" min="1" max="1000"></div>
+          <div style="flex:0 0 auto"><button id="btnGoal">설정</button></div>
+        </div>
+        <p class="note">
+          응답의 finishedCount는 그 해에 <b>다 읽은</b> 책 수다 — 서재 조회의 연도 필터와 무관하게 완독 기준이다.
+        </p>
+      </section>
+
     </div>
 
     <section>
@@ -157,6 +251,7 @@
   <footer>
     검색이 502(E001)로 오면 <span class="pill">KAKAO_REST_API_KEY</span>가 없거나 잘못된 것이다.
     등록이 400(B002)이면 검색 응답의 <span class="pill">signature</span>가 그대로 오지 않은 것이다.
+    서재는 <span class="pill">id desc</span> 순이고, 연도 필터 셋은 AND로 묶인다.
   </footer>
 
 </div>
@@ -336,11 +431,126 @@ async function register(item) {
   if ($('tamper').checked) payload.title = payload.title + ' (조작)';
 
   const r = await call('POST', '/api/v1/books', payload);
-  if (r.ok && r.body && r.body.id) $('bookId').value = r.body.id;
+  if (r.ok && r.body && r.body.id) {
+    $('bookId').value = r.body.id;
+    // 바로 서재에 담아볼 수 있게 다음 칸까지 채워준다
+    $('rdBookId').value = r.body.id;
+  }
 }
 
 $('btnGetBook').onclick = async () => {
   await call('GET', '/api/v1/books/' + encodeURIComponent($('bookId').value));
+};
+
+// ---- 서재 ----
+
+$('btnShelve').onclick = async () => {
+  const body = { bookId: Number($('rdBookId').value) };
+  const initial = $('rdInitialStatus').value;
+  if (initial) body.status = initial;
+
+  const r = await call('POST', '/api/v1/readings', body);
+  if (r.ok && r.body && r.body.id) $('rdId').value = r.body.id;
+};
+
+$('btnPatchReading').onclick = async () => {
+  // 비운 칸은 아예 보내지 않는다. 서버가 null을 "안 바꿈"으로 읽는지 확인하는 자리다.
+  const body = {};
+  if ($('rdStatus').value) body.status = $('rdStatus').value;
+  if ($('rdPageCount').value !== '') body.pageCount = Number($('rdPageCount').value);
+  if ($('rdCurrentPage').value !== '') body.currentPage = Number($('rdCurrentPage').value);
+  if ($('rdRating').value !== '') body.rating = Number($('rdRating').value);
+
+  await call('PATCH', '/api/v1/readings/' + encodeURIComponent($('rdId').value), body);
+};
+
+$('btnDeleteReading').onclick = async () => {
+  await call('DELETE', '/api/v1/readings/' + encodeURIComponent($('rdId').value));
+};
+
+let libraryCursor = null;
+
+function libraryPath(cursor) {
+  const params = new URLSearchParams();
+  if ($('libStatus').value) params.set('status', $('libStatus').value);
+  ['libYear:year', 'libStartedYear:startedYear', 'libFinishedYear:finishedYear'].forEach((pair) => {
+    const [id, name] = pair.split(':');
+    if ($(id).value !== '') params.set(name, $(id).value);
+  });
+  params.set('size', $('libSize').value || '20');
+  if (cursor !== null && cursor !== undefined) params.set('cursor', cursor);
+
+  return '/api/v1/users/' + encodeURIComponent($('libHandle').value) + '/library?' + params.toString();
+}
+
+async function loadLibrary(cursor) {
+  const r = await call('GET', libraryPath(cursor));
+  if (!r.ok || !r.body) return;
+
+  renderLibrary(r.body.items || [], cursor === null || cursor === undefined);
+  libraryCursor = r.body.nextCursor;
+  $('btnLibraryNext').disabled = !r.body.hasNext;
+}
+
+$('btnLibrary').onclick = () => loadLibrary(null);
+$('btnLibraryNext').onclick = () => loadLibrary(libraryCursor);
+
+function renderLibrary(items, replace) {
+  const box = $('libraryResults');
+  if (replace) box.textContent = '';
+  if (!items.length && replace) {
+    const empty = document.createElement('div');
+    empty.className = 'note';
+    empty.textContent = '비어 있다.';
+    box.appendChild(empty);
+    return;
+  }
+
+  items.forEach((item) => {
+    const card = document.createElement('div');
+    card.className = 'book';
+
+    if (item.book.thumbnailUrl) {
+      const img = document.createElement('img');
+      img.src = item.book.thumbnailUrl;
+      img.alt = '';
+      card.appendChild(img);
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const t = document.createElement('div');
+    t.className = 't';
+    t.textContent = item.book.title;
+
+    const progress = item.reading.pageCount
+      ? item.reading.currentPage + ' / ' + item.reading.pageCount + '쪽'
+      : item.reading.currentPage + '쪽';
+    const bits = [item.reading.status, progress];
+    if (item.reading.rating) bits.push('★' + item.reading.rating);
+    if (item.reading.finishedAt) bits.push('완독 ' + item.reading.finishedAt.slice(0, 10));
+    else if (item.reading.startedAt) bits.push('시작 ' + item.reading.startedAt.slice(0, 10));
+
+    const a = document.createElement('div');
+    a.className = 'a';
+    a.textContent = bits.join(' · ');
+    meta.appendChild(t);
+    meta.appendChild(a);
+    card.appendChild(meta);
+
+    const btn = document.createElement('button');
+    btn.className = 'ghost';
+    btn.textContent = '고르기';
+    btn.onclick = () => { $('rdId').value = item.reading.id; };
+    card.appendChild(btn);
+
+    box.appendChild(card);
+  });
+}
+
+$('btnGoal').onclick = async () => {
+  await call('PUT', '/api/v1/me/goals/' + encodeURIComponent($('goalYear').value),
+    { targetCount: Number($('goalTarget').value) });
 };
 
 paint();
