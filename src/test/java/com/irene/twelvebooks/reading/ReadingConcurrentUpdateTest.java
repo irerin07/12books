@@ -11,6 +11,9 @@ import org.junit.jupiter.api.RepeatedTest;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -54,11 +57,12 @@ class ReadingConcurrentUpdateTest extends AbstractIntegrationTest {
 		Long readingId = readingRepository.save(seed).getId();
 
 		CountDownLatch start = new CountDownLatch(1);
+		List<Throwable> failures = Collections.synchronizedList(new ArrayList<>());
 		ExecutorService pool = Executors.newFixedThreadPool(2);
 		try {
-			pool.submit(() -> attempt(start, userId, readingId,
+			pool.submit(() -> attempt(start, failures, userId, readingId,
 					new ReadingUpdateRequest(ReadingStatus.FINISHED, null, null, null)));
-			pool.submit(() -> attempt(start, userId, readingId,
+			pool.submit(() -> attempt(start, failures, userId, readingId,
 					new ReadingUpdateRequest(null, 150, null, null)));
 
 			start.countDown();
@@ -69,20 +73,24 @@ class ReadingConcurrentUpdateTest extends AbstractIntegrationTest {
 			pool.shutdownNow();
 		}
 
-		Reading finished = readingRepository.findById(readingId).orElseThrow();
-		if (finished.getStatus() == ReadingStatus.FINISHED && finished.getPageCount() != null) {
-			assertThat(finished.getCurrentPage()).isEqualTo(finished.getPageCount());
-		}
+		// 어느 쪽도 실패하면 안 된다. 잠금은 뒤에 온 요청을 기다리게 할 뿐 거절하지 않는다.
+		// 이것을 보지 않으면 둘 다 실패해 READING으로 남은 경우까지 통과해버린다.
+		assertThat(failures).isEmpty();
+
+		Reading result = readingRepository.findById(readingId).orElseThrow();
+		// 어느 순서로 겹쳤든 결론은 하나다 — 완독한 책의 진도는 끝에 있다.
+		assertThat(result.getStatus()).isEqualTo(ReadingStatus.FINISHED);
+		assertThat(result.getCurrentPage()).isEqualTo(300);
 	}
 
-	/** 충돌로 실패하는 것 자체는 이 테스트의 관심사가 아니다. 남은 상태만 본다. */
-	private void attempt(CountDownLatch start, Long userId, Long readingId, ReadingUpdateRequest request) {
+	private void attempt(CountDownLatch start, List<Throwable> failures, Long userId, Long readingId,
+			ReadingUpdateRequest request) {
 		try {
 			start.await();
 			readingService.update(userId, readingId, request);
 		}
-		catch (Exception e) {
-			// 무시 — 규칙이 지켜졌는지는 마지막 상태로 판단한다
+		catch (Throwable e) {
+			failures.add(e);
 		}
 	}
 }
