@@ -15,6 +15,10 @@ import java.time.LocalDate;
  *
  * <p>{@code isbn13}과 {@code sourceKey}는 둘 다 nullable이면서 unique다. MySQL이 NULL 중복을
  * 허용하므로 이 조합이 성립한다 — ISBN이 있는 책은 앞쪽으로, 없는 책은 뒤쪽으로 유일성을 지킨다.
+ * 정확히 하나만 있어야 하고, 그 갈림이 곧 두 정적 팩토리다.
+ *
+ * <p>총 쪽수는 여기 없다. 카카오가 주지 않아 사용자가 채워야 하는데, 공용 테이블을 사용자가
+ * 고치게 하면 등록 서명으로 막은 오염 경로가 되살아난다. 쪽수는 {@code readings}가 갖는다.
  */
 @Entity
 @Table(name = "books")
@@ -42,29 +46,44 @@ public class Book extends BaseTimeEntity {
 	@Column(name = "thumbnail_url", length = 500)
 	private String thumbnailUrl;
 
-	/** 카카오가 총 쪽수를 주지 않는다. 사용자가 나중에 입력한다. */
-	@Column(name = "page_count")
-	private Integer pageCount;
-
 	@Column(name = "published_at")
 	private LocalDate publishedAt;
 
 	protected Book() {
 	}
 
-	private Book(Builder builder) {
-		this.isbn13 = builder.isbn13;
-		this.sourceKey = builder.sourceKey;
-		this.title = builder.title;
-		this.authors = builder.authors;
-		this.publisher = builder.publisher;
-		this.thumbnailUrl = builder.thumbnailUrl;
-		this.pageCount = builder.pageCount;
-		this.publishedAt = builder.publishedAt;
+	private Book(String isbn13, String sourceKey, String title, String authors, String publisher,
+			String thumbnailUrl, LocalDate publishedAt) {
+		require(title != null && !title.isBlank(), "title은 비어 있을 수 없습니다");
+		require(authors != null && !authors.isBlank(), "authors는 비어 있을 수 없습니다");
+		require((isbn13 == null) != (sourceKey == null), "isbn13과 sourceKey 중 정확히 하나여야 합니다");
+		this.isbn13 = isbn13;
+		this.sourceKey = sourceKey;
+		this.title = title;
+		this.authors = authors;
+		this.publisher = publisher;
+		this.thumbnailUrl = thumbnailUrl;
+		this.publishedAt = publishedAt;
 	}
 
-	public static Builder builder() {
-		return new Builder();
+	/** ISBN이 있는 책. 유일성은 ISBN이 지킨다. */
+	public static Book withIsbn13(String isbn13, String title, String authors, String publisher,
+			String thumbnailUrl, LocalDate publishedAt) {
+		require(isbn13 != null, "isbn13이 필요합니다");
+		return new Book(isbn13, null, title, authors, publisher, thumbnailUrl, publishedAt);
+	}
+
+	/** ISBN이 없는 책. 제목·저자·출판사에서 만든 sourceKey가 유일성을 대신 지킨다. */
+	public static Book withSourceKey(String sourceKey, String title, String authors, String publisher,
+			String thumbnailUrl, LocalDate publishedAt) {
+		require(sourceKey != null, "sourceKey가 필요합니다");
+		return new Book(null, sourceKey, title, authors, publisher, thumbnailUrl, publishedAt);
+	}
+
+	private static void require(boolean condition, String message) {
+		if (!condition) {
+			throw new IllegalArgumentException(message);
+		}
 	}
 
 	public Long getId() {
@@ -95,83 +114,7 @@ public class Book extends BaseTimeEntity {
 		return thumbnailUrl;
 	}
 
-	public Integer getPageCount() {
-		return pageCount;
-	}
-
 	public LocalDate getPublishedAt() {
 		return publishedAt;
-	}
-
-	/** 필드가 여덟 개라 생성자 인자 순서를 바꿔 넣는 실수가 조용히 통과한다. */
-	public static final class Builder {
-
-		private String isbn13;
-		private String sourceKey;
-		private String title;
-		private String authors;
-		private String publisher;
-		private String thumbnailUrl;
-		private Integer pageCount;
-		private LocalDate publishedAt;
-
-		public Builder isbn13(String isbn13) {
-			this.isbn13 = isbn13;
-			return this;
-		}
-
-		public Builder sourceKey(String sourceKey) {
-			this.sourceKey = sourceKey;
-			return this;
-		}
-
-		public Builder title(String title) {
-			this.title = title;
-			return this;
-		}
-
-		public Builder authors(String authors) {
-			this.authors = authors;
-			return this;
-		}
-
-		public Builder publisher(String publisher) {
-			this.publisher = publisher;
-			return this;
-		}
-
-		public Builder thumbnailUrl(String thumbnailUrl) {
-			this.thumbnailUrl = thumbnailUrl;
-			return this;
-		}
-
-		public Builder pageCount(Integer pageCount) {
-			this.pageCount = pageCount;
-			return this;
-		}
-
-		public Builder publishedAt(LocalDate publishedAt) {
-			this.publishedAt = publishedAt;
-			return this;
-		}
-
-		/**
-		 * 컬럼 제약을 DB까지 내려가서 알게 되면 원인을 짚기 어렵다. 여기서 먼저 막는다.
-		 * 특히 isbn13과 sourceKey는 "둘 중 하나"가 스키마의 전제인데, 둘 다 비면 어느 쪽으로도
-		 * 유일성이 지켜지지 않아 같은 책이 무한히 쌓인다.
-		 */
-		public Book build() {
-			require(title != null && !title.isBlank(), "title은 비어 있을 수 없습니다");
-			require(authors != null && !authors.isBlank(), "authors는 비어 있을 수 없습니다");
-			require((isbn13 == null) != (sourceKey == null),
-					"isbn13과 sourceKey 중 정확히 하나여야 합니다");
-			return new Book(this);
-		}
-
-		private static void require(boolean condition, String message) {
-			if (!condition) {
-				throw new IllegalArgumentException(message);
-			}
-		}
 	}
 }
