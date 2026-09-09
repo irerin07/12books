@@ -43,10 +43,6 @@ class ReadingControllerTest extends AbstractIntegrationTest {
 
 	@BeforeEach
 	void setUp() {
-		readingRepository.deleteAll();
-		bookRepository.deleteAll();
-		userRepository.deleteAll();
-
 		User me = userRepository.save(User.create("me@example.com", "hash", "irene", "아이린"));
 		User other = userRepository.save(User.create("other@example.com", "hash", "other", "남"));
 		bearer = "Bearer " + jwtProvider.createAccessToken(me.getId(), me.getHandle());

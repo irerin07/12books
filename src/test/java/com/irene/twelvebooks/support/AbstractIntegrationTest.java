@@ -1,11 +1,16 @@
 package com.irene.twelvebooks.support;
 
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.mysql.MySQLContainer;
 import org.testcontainers.utility.DockerImageName;
+
+import java.util.List;
 
 /**
  * 통합 테스트의 공통 기반. 실제 MySQL·Redis 컨테이너를 띄우고 Flyway 마이그레이션을 그대로 태운다.
@@ -33,5 +38,44 @@ public abstract class AbstractIntegrationTest {
 	static {
 		MYSQL.start();
 		REDIS.start();
+	}
+
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+
+	/**
+	 * 테스트마다 모든 테이블을 비운다.
+	 *
+	 * <p>클래스마다 자기가 쓰는 리포지토리만 지우면 테이블이 늘 때마다 깨진다 — 남의 테스트가
+	 * 남긴 자식 행 때문에 {@code users} 삭제가 FK에 걸리는 식이라, 실행 순서에 따라 통과와
+	 * 실패가 갈리는 불안정한 테스트가 된다.
+	 *
+	 * <p>목록을 information_schema에서 읽으므로 Phase가 늘어 테이블이 생겨도 여기는 그대로다.
+	 * FK 검사를 잠깐 끄는 이유는 삭제 순서를 몰라도 되게 하기 위해서다. truncate라
+	 * auto_increment도 함께 되돌아가 테스트가 id에 기대도 흔들리지 않는다.
+	 *
+	 * <p>상위 클래스의 {@code @BeforeEach}가 하위 것보다 먼저 실행되므로, 각 테스트의 준비
+	 * 코드는 빈 DB에서 시작한다.
+	 */
+	@BeforeEach
+	void cleanDatabase() {
+		List<String> tables = jdbcTemplate.queryForList("""
+				select table_name from information_schema.tables
+				where table_schema = database() and table_name <> 'flyway_schema_history'
+				""", String.class);
+
+		jdbcTemplate.execute("set foreign_key_checks = 0");
+		try {
+			for (String table : tables) {
+				// 우리 스키마에서 읽은 이름이지만 SQL에 이어 붙이므로 형태를 확인하고 쓴다.
+				if (!table.matches("[A-Za-z0-9_]+")) {
+					throw new IllegalStateException("예상치 못한 테이블 이름: " + table);
+				}
+				jdbcTemplate.execute("truncate table `" + table + "`");
+			}
+		}
+		finally {
+			jdbcTemplate.execute("set foreign_key_checks = 1");
+		}
 	}
 }
