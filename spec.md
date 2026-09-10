@@ -238,6 +238,7 @@
 ### 공통 규약
 
 - 목록 응답: `{ items: [...], nextCursor: <id 또는 null>, hasNext: bool }`
+  (`/books/search`만 쪽번호 기반이라 `{ items, page, hasNext, totalCount }` — 원본이 커서를 주지 않는다)
 - 에러 응답: `{ code, message, fieldErrors }` — `ErrorCode` enum이 HTTP 상태와 코드를 함께 소유
 - 인증: `Authorization: Bearer <accessToken>`
 

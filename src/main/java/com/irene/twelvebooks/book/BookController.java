@@ -2,7 +2,7 @@ package com.irene.twelvebooks.book;
 
 import com.irene.twelvebooks.book.dto.BookRegisterRequest;
 import com.irene.twelvebooks.book.dto.BookResponse;
-import com.irene.twelvebooks.book.dto.BookSearchResult;
+import com.irene.twelvebooks.book.dto.BookSearchPage;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -17,8 +17,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/books")
@@ -51,10 +49,12 @@ public class BookController {
 	 * E001/502로 번역되어 <b>클라이언트 실수가 외부 장애로 둔갑</b>한다.
 	 */
 	@GetMapping("/search")
-	public List<BookSearchResult> search(@RequestParam("q") @NotBlank @Size(max = MAX_QUERY_LENGTH) String query,
+	public BookSearchPage search(@RequestParam("q") @NotBlank @Size(max = MAX_QUERY_LENGTH) String query,
 			@RequestParam(name = "page", defaultValue = "1") @Min(1) @Max(MAX_PAGE) int page) {
 		// 앞뒤 공백은 검색 의도가 아니다. 그대로 넘기면 외부로 나가는 URI만 길어진다.
-		return kakaoBookClient.search(query.strip(), page).stream().map(bookSignature::signed).toList();
+		BookSearchPage found = kakaoBookClient.search(query.strip(), page);
+		// 서명은 여기서 붙인다. 카카오 응답을 옮기는 일과 출처를 보증하는 일은 다르다.
+		return found.withItems(found.items().stream().map(bookSignature::signed).toList());
 	}
 
 	@PostMapping
