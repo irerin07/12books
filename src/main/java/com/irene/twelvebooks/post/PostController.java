@@ -18,9 +18,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 감상평과 그것을 모아 보여주는 목록들. 책별 목록과 탐색 피드가 {@code /posts} 밖의 경로를
- * 쓰지만 같은 자원을 다루므로 여기 함께 둔다 — 서재가 {@code /users/{handle}/library}를
- * {@code LibraryController}에 두는 것과 같다.
+ * 감상평과 그 책의 감상평 목록. 책별 목록이 {@code /posts} 밖의 경로를 쓰지만 같은 자원을
+ * 다루므로 여기 함께 둔다 — 서재가 {@code /users/{handle}/library}를 {@code LibraryController}에
+ * 두는 것과 같다. 피드는 팔로우 관계가 섞이므로 {@code feed} 패키지가 따로 맡는다.
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -54,15 +54,5 @@ public class PostController {
 			@RequestParam(required = false) Long cursor,
 			@RequestParam(defaultValue = "20") int size) {
 		return postService.byBook(bookId, cursor, PageSize.clamp(size));
-	}
-
-	/**
-	 * 전체 최신순. 팔로우 관계가 없어도 볼 것이 있어야 신규 사용자가 빈 화면을 보지 않는다.
-	 * 팔로잉 타임라인({@code GET /feed})은 팔로우가 생기는 Phase 5에서 더한다.
-	 */
-	@GetMapping("/feed/explore")
-	public CursorPage<PostResponse> explore(@RequestParam(required = false) Long cursor,
-			@RequestParam(defaultValue = "20") int size) {
-		return postService.explore(cursor, PageSize.clamp(size));
 	}
 }

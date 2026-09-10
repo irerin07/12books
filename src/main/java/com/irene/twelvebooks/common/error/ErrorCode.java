@@ -16,6 +16,8 @@ public enum ErrorCode {
 	READING_NOT_FOUND(HttpStatus.NOT_FOUND, "R001", "서재에서 찾을 수 없습니다."),
 	READING_ALREADY_EXISTS(HttpStatus.CONFLICT, "R002", "이미 서재에 있는 책입니다."),
 	POST_NOT_FOUND(HttpStatus.NOT_FOUND, "P001", "감상평을 찾을 수 없습니다."),
+	SELF_FOLLOW_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "F001", "자기 자신은 팔로우할 수 없습니다."),
+	ALREADY_FOLLOWING(HttpStatus.CONFLICT, "F002", "이미 팔로우하고 있습니다."),
 	FORBIDDEN(HttpStatus.FORBIDDEN, "A004", "권한이 없습니다."),
 	EXTERNAL_API_ERROR(HttpStatus.BAD_GATEWAY, "E001", "외부 서비스를 이용할 수 없습니다."),
 	INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "C002", "서버 오류가 발생했습니다.");
