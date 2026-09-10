@@ -75,28 +75,35 @@ public class FollowService {
 
 	@Transactional(readOnly = true)
 	public CursorPage<UserSummaryResponse> followers(String handle, Long cursor, int size) {
-		return page(followRepository.findFollowerIdPage(idOf(handle), cursor, PageRequest.ofSize(size + 1)), size);
+		return page(followRepository.findFollowerPage(idOf(handle), cursor, PageRequest.ofSize(size + 1)),
+				size, Follow::getFollowerId);
 	}
 
 	@Transactional(readOnly = true)
 	public CursorPage<UserSummaryResponse> followings(String handle, Long cursor, int size) {
-		return page(followRepository.findFolloweeIdPage(idOf(handle), cursor, PageRequest.ofSize(size + 1)), size);
+		return page(followRepository.findFolloweePage(idOf(handle), cursor, PageRequest.ofSize(size + 1)),
+				size, Follow::getFolloweeId);
 	}
 
 	/**
-	 * id 목록을 사람으로 바꾼다.
+	 * 관계 한 페이지를 사람 목록으로 바꾼다. 커서는 관계의 id이고, 화면에 나갈 사람은
+	 * 방향에 따라 반대쪽이다 — 팔로워 목록은 follower, 팔로잉 목록은 followee.
 	 *
-	 * <p>관계 테이블에서 <b>id만</b> 읽고 사람은 한 번에 모아 조회한다. 조인으로 한 번에
-	 * 가져올 수도 있지만, 이러면 관계 조회가 인덱스만 읽고 끝나 목록이 커져도 쿼리는 둘이다.
+	 * <p>사람은 페이지 전체를 모아 <b>한 번에</b> 조회한다. 항목마다 따로 읽으면 페이지 크기만큼
+	 * 쿼리가 늘어난다. 이 방식은 목록이 20건이든 50건이든 쿼리가 둘이다.
 	 */
-	private CursorPage<UserSummaryResponse> page(List<Long> rows, int size) {
-		CursorPage<Long> ids = CursorPage.of(rows, size, Function.identity());
-		Map<Long, User> users = userRepository.findAllById(ids.items()).stream()
+	private CursorPage<UserSummaryResponse> page(List<Follow> rows, int size,
+			Function<Follow, Long> counterpart) {
+		CursorPage<Follow> follows = CursorPage.of(rows, size, Follow::getId);
+		Map<Long, User> users = userRepository.findAllById(
+						follows.items().stream().map(counterpart).toList()).stream()
 				.collect(Collectors.toMap(User::getId, Function.identity()));
 
 		return new CursorPage<>(
-				ids.items().stream().map(id -> UserSummaryResponse.from(users.get(id))).toList(),
-				ids.nextCursor(), ids.hasNext());
+				follows.items().stream()
+						.map(follow -> UserSummaryResponse.from(users.get(counterpart.apply(follow))))
+						.toList(),
+				follows.nextCursor(), follows.hasNext());
 	}
 
 	private Long idOf(String handle) {

@@ -3,41 +3,31 @@ package com.irene.twelvebooks.follow;
 import com.irene.twelvebooks.common.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.IdClass;
-import jakarta.persistence.PostLoad;
-import jakarta.persistence.PostPersist;
 import jakarta.persistence.Table;
-import jakarta.persistence.Transient;
-import org.springframework.data.domain.Persistable;
 
 /**
  * 한 사람이 다른 사람을 팔로우한다. 관계는 <b>단방향</b>이다 — 맞팔은 두 행이다.
  *
- * <p>복합 PK라 대리 키가 없다. 중복 팔로우를 막는 것이 이 키의 일이고, 응용이 먼저 조회해서
- * 막는 대신 DB가 1차 방어선이 된다.
- *
- * <p>{@link Persistable}을 구현하는 이유가 바로 그 방어선을 살리기 위해서다. 식별자를 우리가
- * 정해서 넣으므로 Spring Data는 이 엔티티를 <b>이미 있는 것</b>으로 보고 {@code save()}를 merge로
- * 처리한다 — 그러면 select 후 update가 나가 중복 팔로우가 조용히 성공해 버린다. "새 것"이라고
- * 알려 줘야 insert가 나가고, 그제야 복합 PK가 중복을 잡아낸다.
+ * <p>관계 자체는 (누가, 누구를)로 이미 유일하지만 대리 키를 둔다. 목록이 전부 id 커서라는
+ * 규약을 따르기 위해서이고, 그 덕에 팔로워 목록이 <b>최신순</b>으로 나온다. 중복을 막는 일은
+ * 유니크 제약이 그대로 맡는다 — 응용이 먼저 조회해서 막는 대신 DB가 1차 방어선이다.
  */
 @Entity
 @Table(name = "follows")
-@IdClass(FollowId.class)
-public class Follow extends BaseTimeEntity implements Persistable<FollowId> {
+public class Follow extends BaseTimeEntity {
 
 	@Id
-	@Column(name = "follower_id")
+	@GeneratedValue(strategy = GenerationType.IDENTITY)
+	private Long id;
+
+	@Column(name = "follower_id", nullable = false)
 	private Long followerId;
 
-	@Id
-	@Column(name = "followee_id")
+	@Column(name = "followee_id", nullable = false)
 	private Long followeeId;
-
-	/** 저장·조회를 거치지 않은 인스턴스만 새 것이다. 컬럼이 아니므로 테이블에는 남지 않는다. */
-	@Transient
-	private boolean isNew = true;
 
 	protected Follow() {
 	}
@@ -56,20 +46,8 @@ public class Follow extends BaseTimeEntity implements Persistable<FollowId> {
 		return follow;
 	}
 
-	@Override
-	public FollowId getId() {
-		return new FollowId(followerId, followeeId);
-	}
-
-	@Override
-	public boolean isNew() {
-		return isNew;
-	}
-
-	@PostLoad
-	@PostPersist
-	void markNotNew() {
-		this.isNew = false;
+	public Long getId() {
+		return id;
 	}
 
 	public Long getFollowerId() {

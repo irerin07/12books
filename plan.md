@@ -422,7 +422,7 @@ Phase 2에서 서명으로 막은 오염 경로가 그대로 되살아난다. �
 
 **산출물**
 - `V5__follows.sql`
-- `follow/domain/Follow` — 복합 PK(follower_id, followee_id), `idx(followee_id)`
+- `follow/Follow` — 대리 키 `id` + `uk(follower_id, followee_id)`, `idx(followee_id, id DESC)`
 - `POST|DELETE /users/{handle}/follow`
 - `GET /users/{handle}/followers`, `/followings`
 - `GET /feed?cursor=` — 팔로잉 + 본인
@@ -433,7 +433,12 @@ Phase 2에서 서명으로 막은 오염 경로가 그대로 되살아난다. �
   팬아웃 쓰기·Redis 타임라인은 **실제 지연이 관측된 뒤에** 도입한다 (조기 최적화 금지).
 - 팔로잉 ID 조회는 매 요청마다 발생하므로 Redis 캐시 후보이지만,
   Phase 5에서는 넣지 않는다. 팔로잉 수천 명 이전에는 문제가 되지 않는다.
-- 자기 자신 팔로우 차단(400). 중복 팔로우는 복합 PK가 막고 409로 변환.
+- 자기 자신 팔로우 차단(400). 중복 팔로우는 유니크 제약이 막고 409로 변환.
+- **대리 키를 둔다.** 관계 자체는 (누가, 누구를)로 이미 유일해 복합 PK로도 되지만, 그러면 목록에
+  쓸 단조 증가 키가 없어 커서 페이징과 최신순 정렬이 상대방의 user_id를 빌려 쓰게 된다 —
+  "모든 목록은 id 커서"라는 T5 규약과, 나머지 테이블이 전부 `bigint id`라는 점에 어긋난다.
+  복합 PK의 클러스터 인덱스 이점은 `uk(follower_id, followee_id)`가 그대로 대신한다.
+  피드가 매 요청 하는 "내 팔로잉" 조회는 이 인덱스만 읽고 끝난다.
 - 피드에 **본인 글도 포함**한다. 자기 글이 안 보이는 타임라인은 어색하다.
 - 프로필의 팔로워/팔로잉 수는 이 단계에서 `count` 쿼리로 시작한다.
   반정규화 카운터는 필요해지면 그때.

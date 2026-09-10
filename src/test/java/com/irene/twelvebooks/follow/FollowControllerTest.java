@@ -124,8 +124,8 @@ class FollowControllerTest extends AbstractIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("목록은 커서로 나뉘고 중복도 누락도 없다")
-	void pagesLists() throws Exception {
+	@DisplayName("목록은 최근에 팔로우한 순서로 나오고, 커서로 나뉘어도 중복도 누락도 없다")
+	void pagesListsNewestFirst() throws Exception {
 		for (int i = 1; i <= 5; i++) {
 			User fan = userRepository.save(
 					User.create("fan%d@example.com".formatted(i), "hash", "fan%d".formatted(i), "팬" + i));
@@ -145,9 +145,9 @@ class FollowControllerTest extends AbstractIntegrationTest {
 
 		List<String> page1 = com.jayway.jsonpath.JsonPath.parse(first).read("$.items[*].handle");
 		List<String> page2 = com.jayway.jsonpath.JsonPath.parse(second).read("$.items[*].handle");
-		assertThat(page1).hasSize(2);
-		assertThat(page2).hasSize(2);
-		assertThat(page1).doesNotContainAnyElementsOf(page2);
+		// 마지막에 팔로우한 fan5가 맨 위다 — 커서가 관계의 id라 얻어지는 순서다.
+		assertThat(page1).containsExactly("fan5", "fan4");
+		assertThat(page2).containsExactly("fan3", "fan2");
 	}
 
 	@Test
