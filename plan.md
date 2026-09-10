@@ -134,6 +134,23 @@ com.irene.twelvebooks
 `@RestControllerAdvice GlobalExceptionHandler`가 `{ code, message, fieldErrors }`로 변환한다.
 `MethodArgumentNotValidException`도 여기서 잡아 `fieldErrors`를 채운다.
 
+### 기본 키
+**모든 테이블은 `bigint auto_increment` 대리 키 하나를 PK로 갖는다. 복합 PK를 쓰지 않는다.**
+관계·조인 테이블도 예외가 아니다 — 유일성은 `unique` 제약이 맡는다.
+
+복합 PK는 관계 테이블의 교과서적 기본값이지만 이 프로젝트와는 두 군데서 부딪힌다.
+
+- **커서 페이징.** 단조 증가 키가 없으면 커서와 정렬이 다른 컬럼을 빌려 쓰게 되고,
+  "최근에 생긴 것이 먼저"가 성립하지 않는다. 목록이 전부 id 커서라는 아래 규약이 깨진다.
+- **JPA.** 식별자를 우리가 정해서 넣으면 `save()`가 insert가 아니라 merge로 나간다
+  (select 후 update). 그러면 **유니크 제약이 발동할 기회조차 없어** "DB를 1차 방어선으로 삼는다"는
+  규약이 조용히 무력화된다. 중복 요청이 409 대신 성공으로 답하고, 카운터를 함께 올리는
+  경로라면 숫자까지 어긋난다.
+
+성능 때문에 복합 PK를 고르고 싶어지면 먼저 인덱스를 보라. `uk(a, b)`가 대개 같은 조회를
+그대로 커버한다 — 좁히는 컬럼과 읽는 컬럼이 둘 다 인덱스 안에 있으면 클러스터 인덱스든
+아니든 테이블을 보지 않는다.
+
 ### 커서 페이징
 목록은 전부 `CursorPage<T> { List<T> items; Long nextCursor; boolean hasNext; }`.
 PK가 auto-increment이므로 `id DESC`가 곧 최신순이다. 별도 정렬 컬럼이 필요 없다.
@@ -156,7 +173,8 @@ List<Post> findPage(@Param("cursor") Long cursor, Pageable pageable);
 void incrementLikeCount(@Param("id") Long id);
 ```
 
-중복 좋아요는 `post_likes` 복합 PK 제약이 막고, `DataIntegrityViolationException`을 409로 변환한다.
+중복 좋아요는 `post_likes`의 `uk(post_id, user_id)`가 막고, `DataIntegrityViolationException`을
+409로 변환한다.
 
 ## T6. 마이그레이션 규칙
 
@@ -455,7 +473,7 @@ A가 B를 팔로우 → A의 `/feed`에 B의 글과 A 자신의 글만 보이고
 
 **산출물**
 - `V6__reactions.sql` (`post_likes`, `comments`)
-- `post/domain/PostLike` (복합 PK), `post/domain/Comment`
+- `post/PostLike` — 대리 키 + `uk(post_id, user_id)`, `post/Comment`
 - `POST|DELETE /posts/{id}/likes`
 - `GET|POST /posts/{id}/comments`, `DELETE /comments/{id}`
 
@@ -484,7 +502,7 @@ A가 B를 팔로우 → A의 `/feed`에 B의 글과 A 자신의 글만 보이고
 
 **산출물**
 - `V7__hashtags.sql` (`hashtags`, `post_hashtags`)
-- `tag/HashtagParser`, `tag/domain/Hashtag`, `PostHashtag`
+- `tag/HashtagParser`, `tag/Hashtag`, `PostHashtag` — 대리 키 + `uk(post_id, hashtag_id)`
 - `GET /tags/{name}/posts?cursor=`, `GET /tags/trending`
 
 **기술 상세**

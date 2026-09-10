@@ -106,6 +106,11 @@ feat: 감상평 작성 API
 **중복** — 중복 좋아요·팔로우는 "먼저 조회해서 있으면 스킵"이 아니라 **DB 유니크 제약을 1차 방어선**으로
 삼고 `DataIntegrityViolationException`을 409로 변환한다.
 
+**기본 키** — 모든 테이블은 `bigint auto_increment` 대리 키 하나를 PK로 갖는다. **복합 PK를 쓰지 않는다** —
+관계·조인 테이블도 예외가 아니고, 유일성은 `unique` 제약이 맡는다. 복합 PK는 커서 페이징을 깨고,
+식별자를 직접 넣으면 JPA `save()`가 insert 대신 merge로 나가 **유니크 제약이 발동하지 못한다**
+(중복 요청이 409 대신 조용히 성공한다).
+
 **스키마** — 단일 진실 공급원은 Flyway다(`ddl-auto: validate`). **적용된 마이그레이션은 절대 수정하지 않고**
 항상 새 버전 파일을 추가한다. 모든 테이블 `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`.
 

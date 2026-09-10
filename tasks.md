@@ -274,7 +274,7 @@
 
 > 소셜 루프를 닫는다.
 
-- [ ] `V6__reactions.sql` — `post_likes`(복합 PK), `comments`
+- [ ] `V6__reactions.sql` — `post_likes`(대리 키 + `uk(post_id, user_id)`), `comments`
 - [ ] `post/domain/PostLike`, `post/domain/Comment` (**대댓글 없음. `parent_id`를 만들지 않는다**)
 - [ ] `POST|DELETE /posts/{id}/likes`
 - [ ] `GET|POST /posts/{id}/comments`, `DELETE /comments/{id}`
