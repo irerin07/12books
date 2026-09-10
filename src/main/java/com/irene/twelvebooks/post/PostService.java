@@ -44,9 +44,14 @@ public class PostService {
 	 * 감상평을 쓴다. 서재에 없는 책이면 {@code READING}으로 만들어 연결한다 —
 	 * "책 담기를 잊어도 글은 써진다"(spec.md §1.4)가 코드로 지켜지는 지점.
 	 *
-	 * <p>트랜잭션을 걸지 않는다. {@link ReadingLinker}가 유니크 제약 위반을 신호로 읽어 재조회하는데,
-	 * 그 실패가 이 메서드의 트랜잭션 안에서 일어나면 재조회도 커밋도 할 수 없게 된다.
+	 * <p>연결과 저장은 한 트랜잭션이고, 연결한 기록은 커밋까지 잠가 둔다. 그 사이에 같은 기록이
+	 * 서재에서 빠지면 아직 저장되지 않은 글이 사라진 id로 insert되어 외래 키에 걸린다 —
+	 * {@code on delete set null}은 이미 저장된 글만 지킨다. {@link ReadingLinker#holdForWrite} 참고.
+	 *
+	 * <p>{@link ReadingLinker}의 insert는 독립 트랜잭션이라 여기에 트랜잭션이 있어도
+	 * 유니크 제약 위반 뒤 재조회가 살아 있다 — 실패가 안쪽 트랜잭션과 함께 끝나기 때문이다.
 	 */
+	@Transactional
 	public PostResponse write(Long authorId, PostCreateRequest request) {
 		Book book = bookRepository.findById(request.bookId())
 				.orElseThrow(() -> new BusinessException(ErrorCode.BOOK_NOT_FOUND));
@@ -54,10 +59,12 @@ public class PostService {
 				.orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
 		Reading reading = readingLinker.linkOrCreate(authorId, book.getId());
+		// 이미 빠진 뒤라면 연결 없이 쓴다. 글을 막을 이유가 아니고, 삭제 이후의 정상 상태와 같다.
+		Long readingId = readingLinker.holdForWrite(reading.getId()).orElse(null);
 
 		Post post;
 		try {
-			post = Post.write(authorId, book.getId(), reading.getId(), request.content(),
+			post = Post.write(authorId, book.getId(), readingId, request.content(),
 					request.fromPage(), request.toPage(), request.spoilerOrDefault());
 		}
 		catch (IllegalArgumentException e) {
