@@ -62,6 +62,28 @@ done
 - 도달 한계 너머(101·150·500)도 200에 문서 10건을 준다. `is_end`만 참이다.
   즉 **`is_end`를 무시하면 무한히 넘길 수 있다** — 클라이언트가 그 신호를 봐야 한다.
 
+### 응답에 있는데 우리가 안 쓰는 필드 (2026-09-11 측정)
+
+`documents`에는 우리가 파싱하지 않는 필드가 더 있다. Phase 6.5에서 쓰기로 한 것들이라 재 뒀다.
+
+**재현:**
+
+```bash
+for q in 사랑 자바 소설 역사; do
+  curl -s "https://dapi.kakao.com/v3/search/book?query=$(python -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$q")&size=50"     -H "Authorization: KakaoAK $KAKAO_REST_API_KEY"     | jq '[.documents[] | {c: (.contents != ""), u: (.url != ""), t: (.translators|length > 0)}] | {n: length, contents: map(select(.c))|length, url: map(select(.u))|length, translators: map(select(.t))|length}'
+done
+```
+
+| 필드 | 채움률 (4개 검색어 × 50건) | 비고 |
+|---|---|---|
+| `contents` | **186 / 200 (93%)** | **약 250자에서 잘린 발췌.** 최소 56 · 중앙 253 · 최대 261 |
+| `url` | 200 / 200 | 다음 책 페이지 링크 |
+| `price` · `sale_price` · `status` | 200 / 200 | 판매 정보 |
+| `translators` | 44 / 200 | 번역서만 채워진다 — 정상 |
+
+**읽어낸 것** — `contents`는 전문이 아니라 발췌다. 카드에 두세 줄 띄우기엔 충분하지만
+"책 소개"라 부르면 과장이다. 길이가 261에서 멈추는 것으로 보아 카카오가 자른 값이다.
+
 **아직 안 재본 것**
 
 - `size`를 명시했을 때의 동작. 지금은 보내지 않아 기본 10을 쓴다. 문서상 1~50이고,
