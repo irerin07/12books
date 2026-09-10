@@ -86,6 +86,26 @@ class BookSearchPagingTest extends AbstractIntegrationTest {
 				.andExpect(jsonPath("$.totalCount").value(3));
 	}
 
+	/**
+	 * 쪽번호에 상한을 두지 않는다. 멈추는 판단은 {@code is_end}가 한다.
+	 *
+	 * <p>상한을 두면 우리가 {@code hasNext: true}라고 말해 놓고 다음 쪽 요청을 400으로 거절하는
+	 * 모순이 생긴다. 실측하면 카카오는 상한 너머에도 200을 주고 {@code is_end}만 참으로 바꾼다 —
+	 * 그 신호를 그대로 전달하는 편이 우리가 숫자를 지어내는 것보다 정확하다.
+	 */
+	@Test
+	@DisplayName("깊은 쪽도 막지 않고 카카오에 넘긴다")
+	void doesNotCapDeepPages() throws Exception {
+		kakaoResponds("""
+				{"total_count":52388,"pageable_count":1000,"is_end":true}""");
+
+		mockMvc.perform(get("/api/v1/books/search").param("q", "사랑").param("page", "500")
+						.header("Authorization", bearer))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.page").value(500))
+				.andExpect(jsonPath("$.hasNext").value(false));
+	}
+
 	@Test
 	@DisplayName("결과가 없어도 빈 목록과 함께 페이지 정보가 온다")
 	void reportsEmptyResults() throws Exception {
