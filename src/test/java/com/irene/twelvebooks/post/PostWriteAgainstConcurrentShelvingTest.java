@@ -32,15 +32,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 감상평을 저장하는 사이에 그 서재 기록이 사라지는 순서.
+ * 같은 책에 첫 감상평을 동시에 쓰는 순서. 두 요청이 함께 "서재에 없음"을 보고, 한쪽이 먼저
+ * 서재 기록을 만들어 커밋한다.
  *
- * <p>{@code on delete set null}은 <b>이미 저장된</b> 글만 지킨다. 아직 insert하지 않은 글이
- * 사라진 기록의 id를 들고 있으면 외래 키 검사에 그대로 걸린다 — 사용자에게는 500이다.
+ * <p>늦은 쪽은 중복 키로 막힌 뒤 이미 만들어진 기록을 찾아야 하는데, <b>바깥 트랜잭션의
+ * 스냅샷</b>(MySQL 기본 REPEATABLE READ)에는 그 행이 아직 없다. 평범한 재조회로는 영원히
+ * 찾지 못한다 — 안쪽 트랜잭션을 격리해도 바깥의 읽기 시점까지 옮겨 주지는 않기 때문이다.
  *
- * <p>실제로는 행 잠금이 삭제를 커밋까지 기다리게 하므로 이 순서는 잠금을 잡기 <b>전</b>에만
- * 성립한다. 스레드로 재현하면 불안정하므로 조회 직후 삭제가 커밋된 상태를 만든다.
+ * <p>스레드로 재현하면 불안정하므로 첫 조회 직후에 승자가 커밋된 상태를 만든다.
+ * 늦게 도착한 요청이 겪는 바로 그 순서다.
  */
-class PostWriteAgainstReadingRemovalTest extends AbstractIntegrationTest {
+class PostWriteAgainstConcurrentShelvingTest extends AbstractIntegrationTest {
 
 	@Autowired
 	MockMvc mockMvc;
@@ -80,18 +82,16 @@ class PostWriteAgainstReadingRemovalTest extends AbstractIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("연결한 서재 기록이 저장 직전에 사라져도 글은 써지고, 연결만 비어 있다")
-	void writesPostWhenReadingVanishesMidway() throws Exception {
-		Long readingId = readingRepository.saveAndFlush(
-				Reading.of(myId, bookId, ReadingStatus.READING, LocalDateTime.now())).getId();
-
-		// 조회는 되지만, 잠그기 전에 다른 요청이 그 기록을 서재에서 빼고 커밋한 상태를 만든다.
-		// 리포지토리는 인터페이스 프록시라 실제 메서드를 부를 수 없어 EntityManager로 직접 읽는다.
+	@DisplayName("첫 조회 뒤 남이 먼저 서재를 만들어도, 늦은 글이 그 기록에 붙는다")
+	void linksToWinnerShelvedAfterFirstLookup() throws Exception {
+		// 리포지토리는 인터페이스 프록시라 실제 메서드를 부를 수 없다. 조회는 현재 트랜잭션에
+		// 묶인 EntityManager로 직접 날린다 — 바깥 트랜잭션의 스냅샷을 그대로 쓴다는 점이 핵심이다.
 		AtomicInteger calls = new AtomicInteger();
 		willAnswer(invocation -> {
 			Optional<Reading> found = lookUp();
+			// 첫 조회 직후, 다른 요청이 같은 (user, book)을 서재에 담고 커밋한다.
 			if (calls.getAndIncrement() == 0) {
-				removeInSeparateTransaction(readingId);
+				shelveInSeparateTransaction();
 			}
 			return found;
 		}).given(readingRepository).findByUserIdAndBookId(myId, bookId);
@@ -101,11 +101,12 @@ class PostWriteAgainstReadingRemovalTest extends AbstractIntegrationTest {
 						.content("""
 								{"bookId":%d,"content":"47~92쪽까지 읽었다"}""".formatted(bookId)))
 				.andExpect(status().isCreated())
-				.andExpect(jsonPath("$.content").value("47~92쪽까지 읽었다"))
-				.andExpect(jsonPath("$.readingId").doesNotExist());
+				.andExpect(jsonPath("$.readingId").isNumber());
 
-		assertThat(postRepository.count()).isEqualTo(1);
-		assertThat(postRepository.findAll().get(0).getReadingId()).isNull();
+		// 서재 기록은 하나뿐이고, 글이 그 행에 붙어 있다.
+		Reading winner = readingRepository.findAll().get(0);
+		assertThat(readingRepository.count()).isEqualTo(1);
+		assertThat(postRepository.findAll().get(0).getReadingId()).isEqualTo(winner.getId());
 	}
 
 	private Optional<Reading> lookUp() {
@@ -116,9 +117,10 @@ class PostWriteAgainstReadingRemovalTest extends AbstractIntegrationTest {
 				.getResultList().stream().findFirst();
 	}
 
-	private void removeInSeparateTransaction(Long readingId) {
+	private void shelveInSeparateTransaction() {
 		TransactionTemplate template = new TransactionTemplate(transactionManager);
 		template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-		template.executeWithoutResult(status -> readingRepository.deleteById(readingId));
+		template.executeWithoutResult(status -> readingRepository.saveAndFlush(
+				Reading.of(myId, bookId, ReadingStatus.READING, LocalDateTime.now())));
 	}
 }

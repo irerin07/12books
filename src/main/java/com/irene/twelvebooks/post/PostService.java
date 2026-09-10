@@ -7,7 +7,6 @@ import com.irene.twelvebooks.common.error.ErrorCode;
 import com.irene.twelvebooks.common.support.CursorPage;
 import com.irene.twelvebooks.post.dto.PostCreateRequest;
 import com.irene.twelvebooks.post.dto.PostResponse;
-import com.irene.twelvebooks.reading.Reading;
 import com.irene.twelvebooks.reading.ReadingLinker;
 import com.irene.twelvebooks.user.User;
 import com.irene.twelvebooks.user.UserRepository;
@@ -46,7 +45,7 @@ public class PostService {
 	 *
 	 * <p>연결과 저장은 한 트랜잭션이고, 연결한 기록은 커밋까지 잠가 둔다. 그 사이에 같은 기록이
 	 * 서재에서 빠지면 아직 저장되지 않은 글이 사라진 id로 insert되어 외래 키에 걸린다 —
-	 * {@code on delete set null}은 이미 저장된 글만 지킨다. {@link ReadingLinker#holdForWrite} 참고.
+	 * {@code on delete set null}은 이미 저장된 글만 지킨다. {@link ReadingLinker#linkForWrite} 참고.
 	 *
 	 * <p>{@link ReadingLinker}의 insert는 독립 트랜잭션이라 여기에 트랜잭션이 있어도
 	 * 유니크 제약 위반 뒤 재조회가 살아 있다 — 실패가 안쪽 트랜잭션과 함께 끝나기 때문이다.
@@ -58,9 +57,9 @@ public class PostService {
 		User author = userRepository.findById(authorId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-		Reading reading = readingLinker.linkOrCreate(authorId, book.getId());
-		// 이미 빠진 뒤라면 연결 없이 쓴다. 글을 막을 이유가 아니고, 삭제 이후의 정상 상태와 같다.
-		Long readingId = readingLinker.holdForWrite(reading.getId()).orElse(null);
+		// 빈 값이면 붙일 기록이 없다는 뜻이다(그 사이 서재에서 빠졌다). 글을 막을 이유가 아니고,
+		// 연결 없는 글은 삭제 이후의 정상 상태와 같다.
+		Long readingId = readingLinker.linkForWrite(authorId, book.getId()).orElse(null);
 
 		Post post;
 		try {

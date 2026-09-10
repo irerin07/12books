@@ -32,6 +32,22 @@ public interface ReadingRepository extends JpaRepository<Reading, Long> {
 	Optional<Reading> findByIdForUpdate(@Param("id") Long id);
 
 	/**
+	 * 이미 있는 줄 아는 기록을 (user, book)으로 잠그고 읽는다.
+	 *
+	 * <p>잠금 읽기는 트랜잭션의 스냅샷이 아니라 <b>최신 커밋</b>을 본다. REPEATABLE READ에서
+	 * 평범한 재조회는 트랜잭션이 시작할 때의 세상을 계속 보므로, 그 사이 남이 만들어 커밋한
+	 * 행을 영원히 찾지 못한다 — 중복 키로 막힌 뒤의 재조회가 바로 그 상황이다.
+	 *
+	 * <p><b>첫 조회로 쓰지 않는다.</b> 행이 없을 때 잠금 읽기는 갭 잠금을 잡고, 그러면 같은
+	 * 요청이 다른 트랜잭션으로 넣으려는 insert가 자기 자신의 갭 잠금에 막힌다.
+	 * "이미 누가 만들었다"는 신호를 받은 뒤에만 부른다.
+	 */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select r from Reading r where r.userId = :userId and r.bookId = :bookId")
+	Optional<Reading> findByUserIdAndBookIdForUpdate(@Param("userId") Long userId,
+			@Param("bookId") Long bookId);
+
+	/**
 	 * 서재 한 페이지. 주어진 필터는 전부 AND로 묶이고, 주지 않은 것은 조건에서 빠진다.
 	 *
 	 * <p>연도는 {@code year(started_at) = 2026}이 아니라 <b>[그 해 시작, 다음 해 시작)</b> 범위로
