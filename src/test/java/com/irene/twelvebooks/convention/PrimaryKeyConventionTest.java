@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.MatchResult;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -41,8 +42,15 @@ class PrimaryKeyConventionTest {
 	private static final Path MIGRATIONS = Path.of("src/main/resources/db/migration");
 	private static final Path SOURCES = Path.of("src/main/java");
 
-	/** 표식과 사유. 사유가 10자 미만이면 표식으로 치지 않는다. */
-	private static final Pattern ESCAPE_HATCH = Pattern.compile("allow-composite-pk\\s*:\\s*(\\S.{9,})");
+	/**
+	 * 표식과 사유. 사유가 10자 미만이면 표식으로 치지 않는다.
+	 *
+	 * <p>표식 뒤 공백을 {@code \s*}가 아니라 {@code [ \t]*}로 잡는 이유는 {@code \s}가 줄바꿈까지
+	 * 먹기 때문이다. 그러면 사유 없는 표식 <b>다음 줄의 코드</b>가 사유로 읽혀 면제가 나간다.
+	 * 사유는 표식과 같은 줄에서만 읽는다.
+	 */
+	private static final Pattern ESCAPE_HATCH =
+			Pattern.compile("allow-composite-pk[ \\t]*:[ \\t]*(\\S[^\\r\\n]{9,})");
 
 	private static final Pattern PRIMARY_KEY = Pattern.compile("primary\\s+key\\s*\\(([^)]*)\\)",
 			Pattern.CASE_INSENSITIVE);
@@ -94,9 +102,12 @@ class PrimaryKeyConventionTest {
 				violations.add(file.getFileName() + " — @EmbeddedId");
 			}
 
-			long ids = ID_ANNOTATION.matcher(source).results().count();
-			if (ids > 1 && !excused(source, source.length())) {
-				violations.add("%s — @Id %d개".formatted(file.getFileName(), ids));
+			// 두 번째 @Id가 위반이 성립하는 지점이다. 파일 전체를 면제 검사에 넘기면 표식이
+			// 위반보다 <b>뒤에</b> 있어도 면제되어, "표식은 앞쪽에만 유효하다"는 규칙이 무너진다.
+			List<Integer> idPositions = ID_ANNOTATION.matcher(source).results()
+					.map(MatchResult::start).toList();
+			if (idPositions.size() > 1 && !excused(source, idPositions.get(1))) {
+				violations.add("%s — @Id %d개".formatted(file.getFileName(), idPositions.size()));
 			}
 		}
 
@@ -115,6 +126,17 @@ class PrimaryKeyConventionTest {
 		assertThat(ESCAPE_HATCH.matcher("-- allow-composite-pk:").find()).isFalse();
 		assertThat(ESCAPE_HATCH.matcher("-- allow-composite-pk: 필요해서").find()).isFalse();
 		assertThat(ESCAPE_HATCH.matcher("-- allow-composite-pk: 외부 시스템이 이 키로 조회한다").find()).isTrue();
+	}
+
+	@Test
+	@DisplayName("사유는 표식과 같은 줄에서만 읽는다 — 다음 줄 코드를 사유로 착각하지 않는다")
+	void escapeHatchDoesNotReadTheNextLineAsAReason() {
+		assertThat(ESCAPE_HATCH.matcher("""
+				-- allow-composite-pk:
+				primary key (a_id, b_id)""").find()).isFalse();
+		assertThat(ESCAPE_HATCH.matcher("""
+				// allow-composite-pk:
+				private Long followerId;""").find()).isFalse();
 	}
 
 	/** 표식은 걸린 지점 <b>앞쪽</b>에만 유효하다. 파일 어딘가에 있다고 전부 면제되지 않는다. */
