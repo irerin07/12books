@@ -51,10 +51,12 @@ public class FollowService {
 	/**
 	 * 언팔로우한다. 팔로우한 적이 없어도 성공으로 답한다 — 요청의 목적("이 사람을 팔로우하고
 	 * 있지 않다")이 이미 이뤄진 상태이고, 두 번 눌렀다고 오류를 보여줄 이유가 없다.
+	 *
+	 * <p>지운 행 수를 보지 않는 것은 그래서다. 0행은 실패가 아니라 이미 그 상태라는 뜻이다.
 	 */
 	@Transactional
 	public void unfollow(Long followerId, String targetHandle) {
-		followRepository.deleteByFollowerIdAndFolloweeId(followerId, idOf(targetHandle));
+		followRepository.deleteRelation(followerId, idOf(targetHandle));
 	}
 
 	/** 타임라인이 매 요청 필요로 하는 목록. 팬아웃 없이 이 id들을 그대로 조건에 넣는다. */

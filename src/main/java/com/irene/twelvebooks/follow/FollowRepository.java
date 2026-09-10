@@ -2,6 +2,7 @@ package com.irene.twelvebooks.follow;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -54,5 +55,19 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
 
 	long countByFollowerId(Long followerId);
 
-	void deleteByFollowerIdAndFolloweeId(Long followerId, Long followeeId);
+	/**
+	 * 언팔로우. <b>한 문장</b>으로 지운다.
+	 *
+	 * <p>이름에서 파생된 {@code deleteBy...}는 조회 후 엔티티 삭제로 실행된다. 그러면 두 요청이
+	 * 같은 행을 함께 읽은 뒤 차례로 지우게 되고, 뒤엣것의 delete가 0행을 만나 Hibernate가
+	 * "예상 1행, 실제 0행"으로 예외를 던진다 — 사용자에게는 500이다. "두 번 눌러도 성공"이라는
+	 * 정책이 동시 요청에서만 조용히 깨진다.
+	 *
+	 * <p>한 문장으로 지우면 0행은 그냥 0행이다. 사전 조회도 사라진다.
+	 *
+	 * @return 지운 행 수. 0이면 애초에 팔로우한 적이 없다는 뜻이고, 그것도 성공이다.
+	 */
+	@Modifying
+	@Query("delete from Follow f where f.followerId = :followerId and f.followeeId = :followeeId")
+	int deleteRelation(@Param("followerId") Long followerId, @Param("followeeId") Long followeeId);
 }

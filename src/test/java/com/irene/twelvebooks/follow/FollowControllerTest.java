@@ -4,6 +4,8 @@ import com.irene.twelvebooks.auth.JwtProvider;
 import com.irene.twelvebooks.support.AbstractIntegrationTest;
 import com.irene.twelvebooks.user.User;
 import com.irene.twelvebooks.user.UserRepository;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,6 +31,9 @@ class FollowControllerTest extends AbstractIntegrationTest {
 
 	@Autowired
 	JwtProvider jwtProvider;
+
+	@Autowired
+	SessionFactory sessionFactory;
 
 	private String bearer;
 	private String otherBearer;
@@ -78,6 +83,24 @@ class FollowControllerTest extends AbstractIntegrationTest {
 
 		mockMvc.perform(get("/api/v1/users/other/followers").header("Authorization", bearer))
 				.andExpect(jsonPath("$.items.length()").value(0));
+	}
+
+	@Test
+	@DisplayName("언팔로우는 관계를 읽지 않고 지운다")
+	void unfollowDeletesWithoutReading() throws Exception {
+		follow(bearer, "other");
+
+		Statistics statistics = sessionFactory.getStatistics();
+		statistics.setStatisticsEnabled(true);
+		statistics.clear();
+
+		mockMvc.perform(delete("/api/v1/users/other/follow").header("Authorization", bearer))
+				.andExpect(status().isNoContent());
+
+		// 읽고 나서 지우면 두 요청이 같은 행을 함께 읽은 뒤 차례로 지우게 되고, 뒤엣것의 delete가
+		// 0행을 만나 Hibernate가 예외를 던진다 — "두 번 눌러도 성공"이 동시 요청에서 깨진다.
+		// 한 문장으로 지우면 0행은 그냥 0행이다.
+		assertThat(statistics.getEntityStatistics(Follow.class.getName()).getLoadCount()).isZero();
 	}
 
 	@Test

@@ -44,6 +44,9 @@ class TimelineTest extends AbstractIntegrationTest {
 	UserRepository userRepository;
 
 	@Autowired
+	FollowRepository followRepository;
+
+	@Autowired
 	JwtProvider jwtProvider;
 
 	@Autowired
@@ -148,16 +151,32 @@ class TimelineTest extends AbstractIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("작성자·책이 함께 실리고, 페이지가 커져도 쿼리 수는 그대로다")
-	void carriesAuthorAndDoesNotGrowQueries() throws Exception {
+	@DisplayName("작성자·책이 함께 실린다")
+	void carriesAuthorAndBook() throws Exception {
 		follow("friend");
-		for (int i = 1; i <= 30; i++) {
-			write(friendId, "글 " + i);
-		}
+		write(friendId, "친구의 글");
 
 		mockMvc.perform(get("/api/v1/feed").param("size", "5").header("Authorization", bearer))
 				.andExpect(jsonPath("$.items[0].author.handle").value("friend"))
 				.andExpect(jsonPath("$.items[0].book.title").value("코드 컴플리트"));
+	}
+
+	/**
+	 * 글마다 <b>작성자와 책이 전부 다르다.</b> 한 사람이 한 책에 30번 쓴 것으로 채우면,
+	 * 구현이 글마다 따로 조회하도록 바뀌어도 영속성 컨텍스트의 1차 캐시가 두 번째 조회부터
+	 * 흡수해 버려 쿼리 수가 늘지 않는다 — 회귀를 놓치는 테스트가 된다.
+	 */
+	@Test
+	@DisplayName("페이지가 커져도 쿼리 수는 그대로다")
+	void doesNotGrowQueriesWithPageSize() throws Exception {
+		for (int i = 1; i <= 30; i++) {
+			User author = userRepository.save(
+					User.create("a%d@example.com".formatted(i), "hash", "author%d".formatted(i), "저자" + i));
+			Long otherBookId = bookRepository.save(Book.withSourceKey("key-%d".formatted(i),
+					"책 " + i, "지은이 " + i, "출판사", null, null)).getId();
+			followRepository.save(Follow.of(meId, author.getId()));
+			postRepository.save(Post.write(author.getId(), otherBookId, null, "글 " + i, null, null, false));
+		}
 
 		assertThat(queriesFor(30)).isEqualTo(queriesFor(5));
 	}
