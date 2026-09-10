@@ -83,9 +83,14 @@ class KakaoBookClientTest {
 				.andExpect(header("Authorization", "KakaoAK " + API_KEY))
 				.andRespond(withSuccess(RESPONSE, MediaType.APPLICATION_JSON));
 
-		var results = client.search("코드", 1);
+		var page = client.search("코드", 1);
 
-		assertThat(results).hasSize(1).first().satisfies(book -> {
+		// meta의 페이지 정보도 함께 옮겨진다. 이것이 없으면 클라이언트가 다음 페이지를 알 수 없다.
+		assertThat(page.page()).isEqualTo(1);
+		assertThat(page.hasNext()).isFalse();
+		assertThat(page.totalCount()).isEqualTo(1);
+
+		assertThat(page.items()).hasSize(1).first().satisfies(book -> {
 			assertThat(book.title()).isEqualTo("코드 컴플리트");
 			// 카카오의 authors는 배열이지만 정렬·검색 요구가 없어 콤마로 합쳐 다룬다
 			assertThat(book.authors()).isEqualTo("스티브 맥코넬");
@@ -109,7 +114,7 @@ class KakaoBookClientTest {
 						"meta":{"is_end":true}}
 						""", MediaType.APPLICATION_JSON));
 
-		assertThat(client.search("공저", 1).getFirst().authors()).isEqualTo("김, 이");
+		assertThat(client.search("공저", 1).items().getFirst().authors()).isEqualTo("김, 이");
 	}
 
 	@Test
@@ -122,7 +127,7 @@ class KakaoBookClientTest {
 						"meta":{"is_end":true}}
 						""", MediaType.APPLICATION_JSON));
 
-		assertThat(client.search("없음", 1).getFirst().isbn13()).isNull();
+		assertThat(client.search("없음", 1).items().getFirst().isbn13()).isNull();
 	}
 
 	@Test
@@ -164,7 +169,7 @@ class KakaoBookClientTest {
 						"meta":{"is_end":true}}
 						""", MediaType.APPLICATION_JSON));
 
-		assertThat(client.search("없음", 1).getFirst().authors()).isEqualTo("작자 미상");
+		assertThat(client.search("없음", 1).items().getFirst().authors()).isEqualTo("작자 미상");
 	}
 
 	@Test
@@ -205,7 +210,7 @@ class KakaoBookClientTest {
 						"isbn":"","thumbnail":"","datetime":""}],"meta":{"is_end":true}}
 						""", MediaType.APPLICATION_JSON));
 
-		assertThat(client.search("코드", 1).getFirst().authors()).isEqualTo("김");
+		assertThat(client.search("코드", 1).items().getFirst().authors()).isEqualTo("김");
 	}
 
 	@Test
@@ -217,7 +222,7 @@ class KakaoBookClientTest {
 						"isbn":"","thumbnail":"","datetime":""}],"meta":{"is_end":true}}
 						""", MediaType.APPLICATION_JSON));
 
-		assertThat(client.search("코드", 1).getFirst().authors()).isEqualTo("작자 미상");
+		assertThat(client.search("코드", 1).items().getFirst().authors()).isEqualTo("작자 미상");
 	}
 
 	@Test
@@ -304,7 +309,7 @@ class KakaoBookClientTest {
 						"meta":{"is_end":true}}
 						""", MediaType.APPLICATION_JSON));
 
-		assertThat(client.search("코드", 1).getFirst().isbn13()).isEqualTo("9788960777330");
+		assertThat(client.search("코드", 1).items().getFirst().isbn13()).isEqualTo("9788960777330");
 	}
 
 	@Test

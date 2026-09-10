@@ -69,16 +69,16 @@ class BookJourneyE2ETest extends AbstractIntegrationTest {
 		String searched = mockMvc.perform(get("/api/v1/books/search").param("q", "코드")
 						.header("Authorization", bearer))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$[0].isbn13").value("9788960777330"))
-				.andExpect(jsonPath("$[0].authors").value("스티브 맥코넬"))
+				.andExpect(jsonPath("$.items[0].isbn13").value("9788960777330"))
+				.andExpect(jsonPath("$.items[0].authors").value("스티브 맥코넬"))
 				// 서명이 붙어 나온다. 이 값이 있어야 등록할 수 있다.
-				.andExpect(jsonPath("$[0].signature").isNotEmpty())
+				.andExpect(jsonPath("$.items[0].signature").isNotEmpty())
 				.andReturn().getResponse().getContentAsString();
 
 		assertThat(bookRepository.count()).isZero();
 
 		// 2. 고른 책을 그대로 되돌려보내 등록 — 이때 처음 내부에 확정된다
-		String signature = com.jayway.jsonpath.JsonPath.parse(searched).read("$[0].signature");
+		String signature = com.jayway.jsonpath.JsonPath.parse(searched).read("$.items[0].signature");
 		String chosen = """
 				{"isbn13":"9788960777330","title":"코드 컴플리트","authors":"스티브 맥코넬",
 				 "publisher":"위키북스","thumbnailUrl":"https://example.com/c.jpg",

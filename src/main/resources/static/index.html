@@ -144,6 +144,7 @@
           <input type="checkbox" id="tamper">
           담을 때 제목을 조작해서 보낸다 — 서명 검증(B002)이 막는지 확인
         </label>
+        <div class="hint" id="searchMeta"></div>
         <div class="results" id="results"></div>
         <div class="row" style="margin-top:12px">
           <div><label>책 id로 조회</label><input type="text" id="bookId" placeholder="담으면 자동으로 채워진다"></div>
@@ -386,7 +387,11 @@ $('btnPatch').onclick = async () => {
 $('btnSearch').onclick = async () => {
   const path = '/api/v1/books/search?q=' + encodeURIComponent($('q').value) + '&page=' + encodeURIComponent($('page').value);
   const r = await call('GET', path);
-  renderResults(r.ok && Array.isArray(r.body) ? r.body : []);
+  const page = r.ok && r.body && Array.isArray(r.body.items) ? r.body : { items: [], hasNext: false, totalCount: 0 };
+  renderResults(page.items);
+  $('searchMeta').textContent = page.items.length
+    ? '전체 ' + page.totalCount + '건 · ' + page.page + '쪽' + (page.hasNext ? ' · 다음 쪽 있음' : ' · 마지막 쪽')
+    : '';
 };
 
 function renderResults(items) {
