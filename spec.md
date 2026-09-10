@@ -76,6 +76,7 @@
 | F8 | 프로필 & 통계 | 서재 그리드, 연간 목표(기본 12권) 대비 달성률, 팔로워 수 |
 | F9 | 책 페이지 | 책 상세 + 그 책에 달린 모든 감상평 |
 | F10 | 해시태그 탐색 | 태그별 감상평 목록, 인기 태그 |
+| F11 | 사용자 검색 | handle·displayName 앞글자 매칭. **아는 사람을 찾아 팔로우**하는 경로 |
 
 ### 3.2 MVP 제외 (후속)
 
@@ -233,6 +234,7 @@
 | GET | `/users/{handle}/followers` · `/followings` | 관계 목록 |
 | GET | `/feed?cursor=` | 팔로잉 타임라인 |
 | GET | `/feed/explore?cursor=` | 전체 최신 |
+| GET | `/users/search?q=&cursor=` | 사용자 검색 |
 | GET | `/tags/{name}/posts?cursor=` | 태그별 |
 | GET | `/tags/trending` | 인기 태그 |
 
