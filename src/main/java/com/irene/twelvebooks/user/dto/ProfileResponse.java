@@ -15,10 +15,17 @@ public record ProfileResponse(
 		String bio,
 		String avatarUrl,
 		long followerCount,
-		long followingCount) {
+		long followingCount,
+		boolean isFollowing) {
 
-	public static ProfileResponse of(User user, long followerCount, long followingCount) {
+	/**
+	 * @param isFollowing <b>보는 사람이</b> 이 사람을 팔로우 중인지. 프로필마다 고정된 값이 아니라
+	 *                    누가 보느냐에 따라 달라진다. 이 값이 없으면 화면이 팔로우 버튼을 처음
+	 *                    그릴 때 어느 상태로 둘지 정할 수 없다.
+	 */
+	public static ProfileResponse of(User user, long followerCount, long followingCount,
+			boolean isFollowing) {
 		return new ProfileResponse(user.getHandle(), user.getDisplayName(), user.getBio(),
-				user.getAvatarUrl(), followerCount, followingCount);
+				user.getAvatarUrl(), followerCount, followingCount, isFollowing);
 	}
 }

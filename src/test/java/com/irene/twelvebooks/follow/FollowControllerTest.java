@@ -146,6 +146,38 @@ class FollowControllerTest extends AbstractIntegrationTest {
 				.andExpect(jsonPath("$.followingCount").value(1));
 	}
 
+	/**
+	 * 프로필에 팔로우 버튼을 그리려면 <b>처음 그릴 때</b> 상태를 알아야 한다.
+	 *
+	 * <p>이 값이 없으면 화면이 할 수 있는 것은 둘뿐인데 둘 다 못 쓴다. 내 팔로잉 목록을 끝까지
+	 * 넘겨 가며 찾는 것은 팔로잉이 500명이면 요청이 수십 번 나가고, 일단 "팔로우"로 그려 두고
+	 * 눌렀을 때 409가 오면 뒤집는 것은 <b>사용자에게 틀린 상태를 먼저 보여주는 것</b>이다.
+	 */
+	@Test
+	@DisplayName("프로필이 내가 그 사람을 팔로우 중인지 알려준다")
+	void tellsWhetherIFollowThem() throws Exception {
+		follow(bearer, "other");
+
+		mockMvc.perform(get("/api/v1/users/other").header("Authorization", bearer))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.isFollowing").value(true));
+
+		mockMvc.perform(get("/api/v1/users/third").header("Authorization", bearer))
+				.andExpect(jsonPath("$.isFollowing").value(false));
+
+		// 같은 사람을 보더라도 보는 사람이 다르면 답이 다르다.
+		mockMvc.perform(get("/api/v1/users/other").header("Authorization", otherBearer))
+				.andExpect(jsonPath("$.isFollowing").value(false));
+	}
+
+	@Test
+	@DisplayName("내 프로필의 isFollowing은 거짓이다 — 자기 자신은 팔로우할 수 없다")
+	void selfIsNeverFollowed() throws Exception {
+		mockMvc.perform(get("/api/v1/users/irene").header("Authorization", bearer))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.isFollowing").value(false));
+	}
+
 	@Test
 	@DisplayName("목록은 최근에 팔로우한 순서로 나오고, 커서로 나뉘어도 중복도 누락도 없다")
 	void pagesListsNewestFirst() throws Exception {

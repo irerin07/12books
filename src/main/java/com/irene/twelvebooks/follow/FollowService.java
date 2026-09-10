@@ -65,6 +65,17 @@ public class FollowService {
 		return followRepository.findFolloweeIds(userId);
 	}
 
+	/**
+	 * 보는 사람이 대상을 팔로우 중인지.
+	 *
+	 * <p>같은 프로필이라도 <b>보는 사람에 따라 답이 다르다.</b> 자기 자신은 팔로우할 수 없으므로
+	 * 내 프로필에서는 항상 거짓이고, 화면은 그때 팔로우 버튼 대신 프로필 수정을 보여주면 된다.
+	 */
+	@Transactional(readOnly = true)
+	public boolean isFollowing(Long viewerId, Long targetId) {
+		return followRepository.existsByFollowerIdAndFolloweeId(viewerId, targetId);
+	}
+
 	@Transactional(readOnly = true)
 	public long followerCount(Long userId) {
 		return followRepository.countByFolloweeId(userId);
