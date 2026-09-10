@@ -253,13 +253,13 @@
 
 > 여기서 SNS가 된다.
 
-- [ ] `V5__follows.sql` — 복합 PK(follower_id, followee_id), `idx(followee_id)`
-- [ ] `follow/domain/Follow`
+- [ ] `V5__follows.sql` — 대리 키 `id` + `uk(follower_id, followee_id)`, `idx(followee_id, id DESC)`
+- [ ] `follow/Follow`
 - [ ] `POST|DELETE /users/{handle}/follow`
 - [ ] `GET /users/{handle}/followers`, `/followings`
 - [ ] `GET /feed?cursor=` — **fan-out on read**: 팔로잉 ID로 `author_id IN (...)` + 커서
 - [ ] 피드에 **본인 글도 포함**한다
-- [ ] 자기 자신 팔로우 400, 중복 팔로우는 복합 PK가 막고 409로 변환
+- [ ] 자기 자신 팔로우 400, 중복 팔로우는 유니크 제약이 막고 409로 변환
 - [ ] 프로필의 팔로워/팔로잉 수는 `count` 쿼리로 시작 (반정규화는 나중에)
 
 **완료 기준**
@@ -274,7 +274,7 @@
 
 > 소셜 루프를 닫는다.
 
-- [ ] `V6__reactions.sql` — `post_likes`(복합 PK), `comments`
+- [ ] `V6__reactions.sql` — `post_likes`(대리 키 + `uk(post_id, user_id)`), `comments`
 - [ ] `post/domain/PostLike`, `post/domain/Comment` (**대댓글 없음. `parent_id`를 만들지 않는다**)
 - [ ] `POST|DELETE /posts/{id}/likes`
 - [ ] `GET|POST /posts/{id}/comments`, `DELETE /comments/{id}`

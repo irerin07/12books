@@ -35,4 +35,22 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			order by p.id desc
 			""")
 	List<Post> findExplorePage(@Param("cursor") Long cursor, Pageable pageable);
+
+	/**
+	 * 팔로잉 타임라인 한 페이지. 팔로잉 ID 목록을 그대로 {@code IN}에 넣는
+	 * <b>fan-out on read</b>이고, {@code (author_id, id desc)} 인덱스가 이것을 커버한다.
+	 *
+	 * <p>쓰기 시점에 팔로워마다 복사해 두는 팬아웃 쓰기나 Redis 타임라인은 넣지 않는다 —
+	 * 실제 지연이 관측되기 전에 도입하면 무효화 규칙만 늘어난다.
+	 *
+	 * <p>{@code authorIds}에는 본인도 들어간다. 자기 글이 안 보이는 타임라인은 어색하다.
+	 */
+	@Query("""
+			select p from Post p
+			where p.authorId in :authorIds
+			  and (:cursor is null or p.id < :cursor)
+			order by p.id desc
+			""")
+	List<Post> findTimelinePage(@Param("authorIds") List<Long> authorIds,
+			@Param("cursor") Long cursor, Pageable pageable);
 }

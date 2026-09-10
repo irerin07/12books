@@ -161,18 +161,18 @@
 | `readings` | id, user_id, book_id, status, current_page, started_at, finished_at, rating | uk(user_id, book_id) |
 | `reading_goals` | id, user_id, year, target_count | uk(user_id, year), 기본 12 |
 | `posts` | id, author_id, book_id, reading_id, content, from_page, to_page, spoiler, like_count, comment_count, created_at | book_id 비정규화 |
-| `post_likes` | post_id, user_id, created_at | 복합 PK |
+| `post_likes` | id, post_id, user_id, created_at | uk(post_id, user_id) |
 | `comments` | id, post_id, author_id, content, created_at | 1단계(대댓글 없음) |
-| `follows` | follower_id, followee_id, created_at | 복합 PK |
+| `follows` | id, follower_id, followee_id, created_at | uk(follower_id, followee_id) |
 | `hashtags` | id, name(uk, 소문자), post_count | |
-| `post_hashtags` | post_id, hashtag_id | 복합 PK |
+| `post_hashtags` | id, post_id, hashtag_id | uk(post_id, hashtag_id) |
 
 **인덱스**: `posts(author_id, id DESC)`, `posts(book_id, id DESC)`, `comments(post_id, id)`,
 `readings(user_id, status)`, `follows(followee_id)`, `post_hashtags(hashtag_id, post_id DESC)`.
 
 **카운터 정합성**: `like_count`/`comment_count`는 반정규화 컬럼.
 `UPDATE posts SET like_count = like_count + 1 WHERE id = ?` 원자적 UPDATE로 갱신하고,
-좋아요 중복은 `post_likes` 복합 PK 제약(`DataIntegrityViolationException` → 409)으로 방어한다.
+좋아요 중복은 `post_likes`의 유니크 제약(`DataIntegrityViolationException` → 409)으로 방어한다.
 
 ---
 

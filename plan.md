@@ -134,6 +134,28 @@ com.irene.twelvebooks
 `@RestControllerAdvice GlobalExceptionHandler`가 `{ code, message, fieldErrors }`로 변환한다.
 `MethodArgumentNotValidException`도 여기서 잡아 `fieldErrors`를 채운다.
 
+### 기본 키
+**모든 테이블은 `bigint auto_increment` 대리 키 하나를 PK로 갖는다. 복합 PK를 쓰지 않는다.**
+관계·조인 테이블도 예외가 아니다 — 유일성은 `unique` 제약이 맡는다.
+
+복합 PK는 관계 테이블의 교과서적 기본값이지만 이 프로젝트와는 두 군데서 부딪힌다.
+
+- **커서 페이징.** 단조 증가 키가 없으면 커서와 정렬이 다른 컬럼을 빌려 쓰게 되고,
+  "최근에 생긴 것이 먼저"가 성립하지 않는다. 목록이 전부 id 커서라는 아래 규약이 깨진다.
+- **JPA.** 식별자를 우리가 정해서 넣으면 `save()`가 insert가 아니라 merge로 나간다
+  (select 후 update). 그러면 **유니크 제약이 발동할 기회조차 없어** "DB를 1차 방어선으로 삼는다"는
+  규약이 조용히 무력화된다. 중복 요청이 409 대신 성공으로 답하고, 카운터를 함께 올리는
+  경로라면 숫자까지 어긋난다.
+
+성능 때문에 복합 PK를 고르고 싶어지면 먼저 인덱스를 보라. `uk(a, b)`가 대개 같은 조회를
+그대로 커버한다 — 좁히는 컬럼과 읽는 컬럼이 둘 다 인덱스 안에 있으면 클러스터 인덱스든
+아니든 테이블을 보지 않는다.
+
+이 규약은 문서로만 두지 않는다. `PrimaryKeyConventionTest`가 마이그레이션과 엔티티를 훑어
+복합 PK를 잡고, 그 테스트는 `build`에 얹혀 있어 머지 필수 체크다. 훅과 달리 우회할 경로가 없다.
+정말 필요한 자리라면 해당 줄 앞에 `allow-composite-pk: <이유>`를 남겨 면제받되, **사유를 적어야만**
+면제된다 — 침묵시키는 용도로 쓰이면 규약이 무의미해진다.
+
 ### 커서 페이징
 목록은 전부 `CursorPage<T> { List<T> items; Long nextCursor; boolean hasNext; }`.
 PK가 auto-increment이므로 `id DESC`가 곧 최신순이다. 별도 정렬 컬럼이 필요 없다.
@@ -156,7 +178,8 @@ List<Post> findPage(@Param("cursor") Long cursor, Pageable pageable);
 void incrementLikeCount(@Param("id") Long id);
 ```
 
-중복 좋아요는 `post_likes` 복합 PK 제약이 막고, `DataIntegrityViolationException`을 409로 변환한다.
+중복 좋아요는 `post_likes`의 `uk(post_id, user_id)`가 막고, `DataIntegrityViolationException`을
+409로 변환한다.
 
 ## T6. 마이그레이션 규칙
 
@@ -422,7 +445,7 @@ Phase 2에서 서명으로 막은 오염 경로가 그대로 되살아난다. �
 
 **산출물**
 - `V5__follows.sql`
-- `follow/domain/Follow` — 복합 PK(follower_id, followee_id), `idx(followee_id)`
+- `follow/Follow` — 대리 키 `id` + `uk(follower_id, followee_id)`, `idx(followee_id, id DESC)`
 - `POST|DELETE /users/{handle}/follow`
 - `GET /users/{handle}/followers`, `/followings`
 - `GET /feed?cursor=` — 팔로잉 + 본인
@@ -433,7 +456,12 @@ Phase 2에서 서명으로 막은 오염 경로가 그대로 되살아난다. �
   팬아웃 쓰기·Redis 타임라인은 **실제 지연이 관측된 뒤에** 도입한다 (조기 최적화 금지).
 - 팔로잉 ID 조회는 매 요청마다 발생하므로 Redis 캐시 후보이지만,
   Phase 5에서는 넣지 않는다. 팔로잉 수천 명 이전에는 문제가 되지 않는다.
-- 자기 자신 팔로우 차단(400). 중복 팔로우는 복합 PK가 막고 409로 변환.
+- 자기 자신 팔로우 차단(400). 중복 팔로우는 유니크 제약이 막고 409로 변환.
+- **대리 키를 둔다.** 관계 자체는 (누가, 누구를)로 이미 유일해 복합 PK로도 되지만, 그러면 목록에
+  쓸 단조 증가 키가 없어 커서 페이징과 최신순 정렬이 상대방의 user_id를 빌려 쓰게 된다 —
+  "모든 목록은 id 커서"라는 T5 규약과, 나머지 테이블이 전부 `bigint id`라는 점에 어긋난다.
+  복합 PK의 클러스터 인덱스 이점은 `uk(follower_id, followee_id)`가 그대로 대신한다.
+  피드가 매 요청 하는 "내 팔로잉" 조회는 이 인덱스만 읽고 끝난다.
 - 피드에 **본인 글도 포함**한다. 자기 글이 안 보이는 타임라인은 어색하다.
 - 프로필의 팔로워/팔로잉 수는 이 단계에서 `count` 쿼리로 시작한다.
   반정규화 카운터는 필요해지면 그때.
@@ -450,7 +478,7 @@ A가 B를 팔로우 → A의 `/feed`에 B의 글과 A 자신의 글만 보이고
 
 **산출물**
 - `V6__reactions.sql` (`post_likes`, `comments`)
-- `post/domain/PostLike` (복합 PK), `post/domain/Comment`
+- `post/PostLike` — 대리 키 + `uk(post_id, user_id)`, `post/Comment`
 - `POST|DELETE /posts/{id}/likes`
 - `GET|POST /posts/{id}/comments`, `DELETE /comments/{id}`
 
@@ -479,7 +507,7 @@ A가 B를 팔로우 → A의 `/feed`에 B의 글과 A 자신의 글만 보이고
 
 **산출물**
 - `V7__hashtags.sql` (`hashtags`, `post_hashtags`)
-- `tag/HashtagParser`, `tag/domain/Hashtag`, `PostHashtag`
+- `tag/HashtagParser`, `tag/Hashtag`, `PostHashtag` — 대리 키 + `uk(post_id, hashtag_id)`
 - `GET /tags/{name}/posts?cursor=`, `GET /tags/trending`
 
 **기술 상세**

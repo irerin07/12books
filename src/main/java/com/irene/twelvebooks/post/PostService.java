@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 public class PostService {
@@ -112,6 +113,18 @@ public class PostService {
 	@Transactional(readOnly = true)
 	public CursorPage<PostResponse> explore(Long cursor, int size) {
 		return assemble(postRepository.findExplorePage(cursor, PageRequest.ofSize(size + 1)), size);
+	}
+
+	/**
+	 * 팔로잉 타임라인. 대상은 <b>내가 팔로우하는 사람 + 나</b>다.
+	 *
+	 * <p>본인을 넣는 이유는 자기 글이 안 보이는 타임라인이 어색해서이고, 아무도 팔로우하지 않은
+	 * 사람에게도 볼 것이 남는다는 뜻이기도 하다.
+	 */
+	@Transactional(readOnly = true)
+	public CursorPage<PostResponse> timeline(Long userId, List<Long> followeeIds, Long cursor, int size) {
+		List<Long> authorIds = Stream.concat(followeeIds.stream(), Stream.of(userId)).distinct().toList();
+		return assemble(postRepository.findTimelinePage(authorIds, cursor, PageRequest.ofSize(size + 1)), size);
 	}
 
 	/**
