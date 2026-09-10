@@ -1,5 +1,7 @@
 package com.irene.twelvebooks.book;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.irene.twelvebooks.book.dto.BookSearchPage;
 import com.irene.twelvebooks.book.dto.BookSearchResult;
 import com.irene.twelvebooks.common.error.BusinessException;
 import com.irene.twelvebooks.common.error.ErrorCode;
@@ -65,7 +67,7 @@ public class KakaoBookClient {
 		this.rejected = meterRegistry.counter("kakao.search.rejected");
 	}
 
-	public List<BookSearchResult> search(String query, int page) {
+	public BookSearchPage search(String query, int page) {
 		if (!permits.tryAcquire()) {
 			rejected.increment();
 			logRejectionSparingly();
@@ -93,7 +95,7 @@ public class KakaoBookClient {
 		}
 	}
 
-	private List<BookSearchResult> doSearch(String query, int page) {
+	private BookSearchPage doSearch(String query, int page) {
 		try {
 			KakaoSearchResponse response = restClient.get()
 					.uri(properties.baseUrl() + SEARCH_PATH, uri -> uri
@@ -110,7 +112,9 @@ public class KakaoBookClient {
 				log.error("카카오 응답에 documents가 없습니다: queryLength={}, page={}", query.length(), page);
 				throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
 			}
-			return response.documents().stream().map(KakaoBookClient::toResult).toList();
+			return new BookSearchPage(
+					response.documents().stream().map(KakaoBookClient::toResult).toList(),
+					page, hasNext(response.meta()), totalCount(response.meta()));
 		}
 		catch (RestClientException | DateTimeParseException e) {
 			// 변환 실패도 카카오 쪽 문제다. 그대로 두면 500 + 스택트레이스가 되어
@@ -120,6 +124,21 @@ public class KakaoBookClient {
 			log.error("카카오 책 검색 실패: queryLength={}, page={}", query.length(), page, e);
 			throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
 		}
+	}
+
+	/**
+	 * 다음 페이지가 있는지는 카카오의 {@code is_end}가 답이다.
+	 *
+	 * <p>{@code meta}가 통째로 빠진 응답은 실패시키지 않고 <b>"더 없다"</b>로 본다. 문서를
+	 * 정상으로 받았다면 검색 자체는 성립했고, 여기서 502를 던지면 멀쩡한 결과를 버리게 된다.
+	 * 반대로 "더 있다"로 낙관하면 클라이언트가 빈 페이지를 계속 넘긴다.
+	 */
+	private static boolean hasNext(KakaoMeta meta) {
+		return meta != null && meta.isEnd() != null && !meta.isEnd();
+	}
+
+	private static long totalCount(KakaoMeta meta) {
+		return meta == null || meta.totalCount() == null ? 0 : meta.totalCount();
 	}
 
 	private static BookSearchResult toResult(KakaoDocument document) {
@@ -182,7 +201,17 @@ public class KakaoBookClient {
 		return OffsetDateTime.parse(datetime).toLocalDate();
 	}
 
-	private record KakaoSearchResponse(List<KakaoDocument> documents) {
+	private record KakaoSearchResponse(List<KakaoDocument> documents, KakaoMeta meta) {
+	}
+
+	/**
+	 * 카카오가 주는 페이지 메타. 필드명이 snake_case라 매핑을 명시한다.
+	 *
+	 * <p>{@code pageable_count}(노출 가능 수)는 받지 않는다. 클라이언트가 판단에 쓰는 것은
+	 * "다음이 있나"와 "전부 몇 건인가" 둘이고, 쓰지 않을 값은 부채다.
+	 */
+	private record KakaoMeta(@JsonProperty("is_end") Boolean isEnd,
+			@JsonProperty("total_count") Long totalCount) {
 	}
 
 	private record KakaoDocument(String title, List<String> authors, String publisher, String isbn,

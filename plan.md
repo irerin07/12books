@@ -168,6 +168,12 @@ List<Post> findPage(@Param("cursor") Long cursor, Pageable pageable);
 
 `size`는 기본 20, 최대 50으로 컨트롤러에서 clamp한다.
 
+**예외는 카카오 책 검색뿐이다.** 원본이 쪽번호 기반이라 커서를 지어낼 수 없어
+`BookSearchPage { items, page, hasNext, totalCount }`로 답한다. 커서 대신 쪽번호를 주되
+항목 이름(`items`, `hasNext`)은 맞춰, 클라이언트가 같은 모양으로 다루게 한다.
+`hasNext`는 카카오 `meta.is_end`를 뒤집은 값이고 `totalCount`는 `meta.total_count`다 —
+맨 배열로 내려주면 다음 페이지가 있는지, 결과가 빈 것이 끝이어서인지 알 수 없다.
+
 ### 반정규화 카운터
 `posts.like_count` / `comment_count`는 읽기 성능을 위한 반정규화다.
 **엔티티 필드를 읽고-더하고-쓰지 않는다** (동시 요청에 유실됨). 반드시 원자적 UPDATE:

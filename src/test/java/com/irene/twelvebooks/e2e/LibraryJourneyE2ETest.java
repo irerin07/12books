@@ -88,7 +88,7 @@ class LibraryJourneyE2ETest extends AbstractIntegrationTest {
 						.header("Authorization", bearer))
 				.andExpect(status().isOk())
 				.andReturn().getResponse().getContentAsString();
-		String signature = com.jayway.jsonpath.JsonPath.parse(searched).read("$[0].signature");
+		String signature = com.jayway.jsonpath.JsonPath.parse(searched).read("$.items[0].signature");
 
 		// 2. 고른 책을 그대로 되돌려보내 등록
 		String registered = mockMvc.perform(post("/api/v1/books").header("Authorization", bearer)
