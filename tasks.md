@@ -15,12 +15,12 @@
 
 | 단계 | 내용 | 마이그레이션 | 이 시점의 제품 | 상태 |
 |---|---|---|---|---|
-| H | 개발 하네스 | — | (궤도) | 진행 중 |
+| H | 개발 하네스 | — | (궤도) | 진행 중 ([#1](https://github.com/irerin07/12books/pull/1)) — 시크릿 1건 남음 |
 | 0 | 인프라·설정·공통·테스트 하네스 | — | (뼈대) | **완료** ([#3](https://github.com/irerin07/12books/pull/3)) |
-| 1 | 사용자 · JWT 인증 | `V1__users` | 계정 | |
-| 2 | 카카오 책 검색 · 등록 | `V2__books` | 책 찾기 | |
-| 3 | 서재 · 독서 기록 · 목표 | `V3__readings` | **개인 독서 기록 앱** | |
-| 4 | 감상평 · 책별 목록 · 탐색 피드 | `V4__posts` | **공개된 독서 기록** | |
+| 1 | 사용자 · JWT 인증 | `V1__users` | 계정 | **완료** ([#6](https://github.com/irerin07/12books/pull/6)) |
+| 2 | 카카오 책 검색 · 등록 | `V2__books` | 책 찾기 | **완료** ([#9](https://github.com/irerin07/12books/pull/9)) |
+| 3 | 서재 · 독서 기록 · 목표 | `V3__readings` | **개인 독서 기록 앱** | **완료** ([#14](https://github.com/irerin07/12books/pull/14)) |
+| 4 | 감상평 · 책별 목록 · 탐색 피드 | `V4__posts` | **공개된 독서 기록** | **완료** ([#16](https://github.com/irerin07/12books/pull/16)) |
 | 5 | 팔로우 · 타임라인 | `V5__follows` | **SNS** | |
 | 6 | 좋아요 · 댓글 | `V6__reactions` | 소셜 루프 완성 | |
 | 7 | 해시태그 탐색 | `V7__hashtags` | 주제 기반 발견 | |
@@ -45,12 +45,14 @@
 - [x] `.github/workflows/release.yml` + `Dockerfile` — main 머지 시 GHCR 이미지
 - [x] `.github/ruleset-main.json` — main 보호 규칙 정의
 - [x] `.github/pull_request_template.md`
-- [ ] **PR #1 리뷰 · 머지**
-- [ ] 저장소 public 전환 — 비밀값 히스토리 점검 완료, 깨끗
-- [ ] auto-merge · squash 전용 · 머지 후 브랜치 삭제 설정
-- [ ] ruleset 적용 (`gh api repos/irerin07/12books/rulesets -X POST --input .github/ruleset-main.json`)
+- [x] **PR #1 리뷰 · 머지**
+- [x] 저장소 public 전환 — 비밀값 히스토리 점검 완료, 깨끗
+- [x] auto-merge · squash 전용 · 머지 후 브랜치 삭제 설정
+- [x] ruleset 적용 (`gh api repos/irerin07/12books/rulesets -X POST --input .github/ruleset-main.json`)
+      — `main-protection` active
 - [ ] `ANTHROPIC_API_KEY` 시크릿 등록
-- [ ] 사소한 PR 하나로 승인 → 자동머지 전 구간 리허설
+      — **아직 없다.** 등록 전까지 `@claude` 워크플로는 계속 `skipping`이다
+- [x] 사소한 PR 하나로 승인 → 자동머지 전 구간 리허설 ([#2](https://github.com/irerin07/12books/pull/2))
 
 ---
 
@@ -129,114 +131,121 @@
 
 # Phase 1 — 사용자와 인증
 
-> 가입하고 로그인해서 토큰으로 보호된 엔드포인트를 호출할 수 있다.
+> PR [#6](https://github.com/irerin07/12books/pull/6). 가입하고 로그인해서 토큰으로 보호된 엔드포인트를 호출할 수 있다.
 
-- [ ] `V1__users.sql`
-- [ ] `user/domain/User` — email(uk), passwordHash, handle(uk), displayName, bio, avatarUrl
-- [ ] `auth/JwtProvider` — jjwt 0.12.x, subject=userId, claim=handle,
+- [x] `V1__users.sql`
+- [x] `user/User` — email(uk), passwordHash, handle(uk), displayName, bio, avatarUrl
+- [x] `auth/JwtProvider` — jjwt 0.12.x, subject=userId, claim=handle,
       `Keys.hmacShaKeyFor`. **컨테이너 없는 단위 테스트로 검증**
-- [ ] `auth/JwtAuthenticationFilter` — `OncePerRequestFilter`, Bearer 파싱.
+- [x] `auth/JwtAuthenticationFilter` — `OncePerRequestFilter`, Bearer 파싱.
       **실패해도 예외를 던지지 않고** 익명 통과 → `AuthenticationEntryPoint`가 401을 만든다
-- [ ] `auth/SecurityConfig` 확장 — `BCryptPasswordEncoder`, 공개 경로
+- [x] `auth/SecurityConfig` 확장 — `BCryptPasswordEncoder`, 공개 경로
       (`/api/v1/auth/**`, `/actuator/health`, `/swagger-ui/**`, `/v3/api-docs/**`)
-- [ ] `auth/@AuthUser` + `HandlerMethodArgumentResolver`
-- [ ] `AuthController` — signup / login / reissue / logout (**reissue·logout은 POST 전용**)
-- [ ] Refresh 발급 — `SecureRandom` 32바이트 불투명 문자열, **HttpOnly 쿠키**로 전달
+- [x] `auth/@AuthUser` + `HandlerMethodArgumentResolver`
+- [x] `AuthController` — signup / login / reissue / logout (**reissue·logout은 POST 전용**)
+- [x] Refresh 발급 — `SecureRandom` 32바이트 불투명 문자열, **HttpOnly 쿠키**로 전달
       (`Secure`·`SameSite=Strict`·`Path=/api/v1/auth`). 서명하지 않는다
-- [ ] Refresh 저장 — `refresh:{토큰해시} → {userId, 발급시각}` TTL 14일.
+- [x] Refresh 저장 — `refresh:{토큰해시} → {userId, 발급시각}` TTL 14일.
       **SHA-256 해시해서 저장**. 역인덱스 `refresh:user:{userId} → 해시 집합`
-- [ ] **기기별 다중 세션** — reissue 시 rotation(옛 해시 삭제), logout은 그 세션만 삭제
-- [ ] access 블랙리스트는 만들지 않는다 (로그아웃 후 최대 10분 잔존을 받아들인다)
-- [ ] 전체 기기 로그아웃 API는 이 Phase에 만들지 않는다 (역인덱스만 준비)
-- [ ] `UserController` — `GET /users/{handle}`, `PATCH /me`
-- [ ] handle 검증 `^[a-z0-9_]{3,20}$`, 이메일/handle 중복은 유니크 제약 + 사전 조회
-- [ ] **비밀번호가 어떤 DTO·로그·응답에도 실리지 않는지 확인**
+- [x] **기기별 다중 세션** — reissue 시 rotation(옛 해시 삭제), logout은 그 세션만 삭제
+- [x] access 블랙리스트는 만들지 않는다 (로그아웃 후 최대 10분 잔존을 받아들인다)
+- [x] 전체 기기 로그아웃 API는 이 Phase에 만들지 않는다 (역인덱스만 준비)
+- [x] `UserController` — `GET /users/{handle}`, `PATCH /me`
+- [x] handle 검증 `^[a-z0-9_]{3,20}$`, 이메일/handle 중복은 유니크 제약 + 사전 조회
+- [x] **비밀번호가 어떤 DTO·로그·응답에도 실리지 않는지 확인**
 
 **완료 기준**
 
-- [ ] E2E: 가입 → 로그인 → access로 `PATCH /me` 성공
-- [ ] 토큰 없이 호출 시 401
-- [ ] 두 번 로그인 후 한쪽만 logout해도 다른 쪽 reissue는 성공
-- [ ] reissue로 새 토큰 발급, logout 후 같은 refresh로 reissue 시 401
+- [x] E2E: 가입 → 로그인 → access로 `PATCH /me` 성공
+- [x] 토큰 없이 호출 시 401
+- [x] 두 번 로그인 후 한쪽만 logout해도 다른 쪽 reissue는 성공
+- [x] reissue로 새 토큰 발급, logout 후 같은 refresh로 reissue 시 401
 
 ---
 
 # Phase 2 — 책 검색과 등록
 
-> 카카오에서 검색하고, 고른 책을 내부 DB에 확정한다.
+> PR [#9](https://github.com/irerin07/12books/pull/9). 카카오에서 검색하고, 고른 책을 내부 DB에 확정한다.
 
-- [ ] `V2__books.sql` — `isbn13`·`sourceKey` 둘 다 nullable + unique
-- [ ] `book/domain/Book` — isbn13, sourceKey, title, authors, publisher, thumbnailUrl,
-      pageCount(nullable), publishedAt
-- [ ] `book/client/KakaoBookClient` — `RestClient`, `Authorization: KakaoAK {key}`,
+- [x] `V2__books.sql` — `isbn13`·`sourceKey` 둘 다 nullable + unique
+- [x] `book/Book` — isbn13, sourceKey, title, authors, publisher, thumbnailUrl, publishedAt
+      — `pageCount`는 Phase 3에서 `readings`로 옮기고 `books`에서 걷어냈다(V3). 판본마다
+      다르고 사용자가 채우는 값이라 공용 `books`가 가질 것이 아니었다
+- [x] `book/KakaoBookClient` — `RestClient`, `Authorization: KakaoAK {key}`,
       타임아웃 연결 2초 / 읽기 3초
-- [ ] 카카오 호출 실패 → `EXTERNAL_API_ERROR`(502) 변환 + 원인 로깅.
+- [x] 카카오 호출 실패 → `EXTERNAL_API_ERROR`(502) 변환 + 원인 로깅.
       **검색이 죽어도 나머지 API는 살아 있어야 한다**
-- [ ] `BookController` — `GET /books/search`, `POST /books`, `GET /books/{id}`
-- [ ] **검색 결과는 저장하지 않는다.** `POST /books` 시점에만 업서트
-- [ ] 업서트 키: ISBN13 있으면 그것, 없으면 `sha256(title|authors|publisher)`
-- [ ] 동시 등록 경쟁: insert 실패(`DataIntegrityViolationException`) 시 **재조회해 기존 행 반환**
-- [ ] `authors` 배열은 콤마 조인 문자열로 저장
+- [x] `BookController` — `GET /books/search`, `POST /books`, `GET /books/{id}`
+- [x] **검색 결과는 저장하지 않는다.** `POST /books` 시점에만 업서트
+- [x] 업서트 키: ISBN13 있으면 그것, 없으면 `sha256(title|authors|publisher)`
+- [x] 동시 등록 경쟁: insert 실패(`DataIntegrityViolationException`) 시 **재조회해 기존 행 반환**
+- [x] `authors` 배열은 콤마 조인 문자열로 저장
 
 **완료 기준**
 
-- [ ] `MockRestServiceServer`로 스텁한 검색이 동작 (외부 네트워크·API 키에 의존하지 않을 것)
-- [ ] 같은 책 재등록 시 **새 행이 생기지 않고 동일 id 반환**
-- [ ] `GET /books/{id}` 조회
+- [x] `MockRestServiceServer`로 스텁한 검색이 동작 (외부 네트워크·API 키에 의존하지 않을 것)
+- [x] 같은 책 재등록 시 **새 행이 생기지 않고 동일 id 반환**
+- [x] `GET /books/{id}` 조회
 
 ---
 
 # Phase 3 — 내 서재
 
-> 여기서 처음으로 혼자 쓰는 독서 기록 앱으로 완결된다.
+> PR [#14](https://github.com/irerin07/12books/pull/14). 여기서 처음으로 혼자 쓰는 독서 기록 앱으로 완결된다.
 
-- [ ] `V3__readings.sql` — `readings`, `reading_goals`. `uk(user_id, book_id)`
-- [ ] `reading/domain/Reading` + `ReadingStatus`
+- [x] `V3__readings.sql` — `readings`, `reading_goals`. `uk(user_id, book_id)`
+- [x] `reading/Reading` + `ReadingStatus`
       (`WANT_TO_READ / READING / FINISHED / PAUSED / DROPPED`)
-- [ ] `reading/domain/ReadingGoal`
-- [ ] **상태 전이를 엔티티 메서드에 캡슐화** (`changeStatus`, `updateProgress`).
+- [x] `reading/ReadingGoal`
+- [x] **상태 전이를 엔티티 메서드에 캡슐화** (`changeStatus`, `applyProgress`, `apply`).
       서비스가 필드를 직접 세팅하지 않는다 — **컨테이너 없는 단위 테스트 대상**
-  - [ ] → `READING`: `startedAt`이 비어 있으면 지금으로 채운다
-  - [ ] → `FINISHED`: `finishedAt` 기록, `pageCount`를 알면 `currentPage`를 맞춘다
-  - [ ] `FINISHED` → 다른 상태: `finishedAt`을 비운다 (재독)
-- [ ] `currentPage`는 감소도 허용. 0 이상, `pageCount`가 있으면 그 이하
-- [ ] `ReadingController` — `POST /readings`, `PATCH /readings/{id}`, `DELETE /readings/{id}`
-- [ ] `GET /users/{handle}/library?year=&status=`
-- [ ] `PUT /me/goals/{year}` — 미설정 시 조회 계층에서 **기본 12권**. 가입 시 행을 미리 만들지 않는다
-- [ ] 수정·삭제 소유자 검증 (남의 것 → 403)
+      — 상태·총 쪽수·진도는 `apply` 하나로 함께 받는다. 따로 적용하면 최종 상태가 멀쩡한
+      요청도 중간 상태에 걸린다
+  - [x] → `READING`: `startedAt`이 비어 있으면 지금으로 채운다
+  - [x] → `FINISHED`: `finishedAt` 기록, `pageCount`를 알면 `currentPage`를 맞춘다
+  - [x] `FINISHED` → 다른 상태: `finishedAt`을 비운다 (재독)
+- [x] `currentPage`는 감소도 허용. 0 이상, `pageCount`가 있으면 그 이하
+- [x] `ReadingController` — `POST /readings`, `PATCH /readings/{id}`, `DELETE /readings/{id}`
+- [x] `GET /users/{handle}/library?year=&status=`
+- [x] `PUT /me/goals/{year}` — 가입 시 행을 미리 만들지 않는다
+  - [ ] 미설정 연도를 **기본 12권**으로 답하는 것은 조회의 몫이라 Phase 8(프로필 통계)에 있다
+- [x] 수정·삭제 소유자 검증 (남의 것 → 403)
 
 **완료 기준**
 
-- [ ] 책 담기 → 진도 갱신 → `FINISHED` 시 `finishedAt` 채워짐 → `READING`으로 되돌리면 비워짐
-- [ ] 서재 조회에 반영
-- [ ] 남의 `reading` 수정 시도 403
+- [x] 책 담기 → 진도 갱신 → `FINISHED` 시 `finishedAt` 채워짐 → `READING`으로 되돌리면 비워짐
+- [x] 서재 조회에 반영
+- [x] 남의 `reading` 수정 시도 403
 
 ---
 
 # Phase 4 — 감상평
 
-> 제품의 핵심 콘텐츠. 기록이 공개된 글이 되고 첫 피드가 생긴다.
+> PR [#16](https://github.com/irerin07/12books/pull/16). 제품의 핵심 콘텐츠. 기록이 공개된 글이 되고 첫 피드가 생긴다.
 
-- [ ] `V4__posts.sql` — 인덱스 `posts(author_id, id DESC)`, `posts(book_id, id DESC)`를
+- [x] `V4__posts.sql` — 인덱스 `posts(author_id, id DESC)`, `posts(book_id, id DESC)`를
       **이 마이그레이션에서** 만든다
-- [ ] `post/domain/Post` — authorId, bookId, readingId, content, fromPage, toPage,
+- [x] `post/Post` — authorId, bookId, readingId, content, fromPage, toPage,
       spoiler, likeCount, commentCount (카운터는 0으로 시작, Phase 6에서 쓰임)
-- [ ] **`Reading` 자동 생성** — 작성 시 (user, book)이 없으면 `READING`으로 만들어 연결.
+- [x] **`Reading` 자동 생성** — 작성 시 (user, book)이 없으면 `READING`으로 만들어 연결.
       "책 담기를 잊어도 글은 써진다"는 제품 원칙의 코드상 구현 지점
-- [ ] 검증: 본문 1~1000자, `fromPage ≤ toPage`(둘 다 있을 때만) — 커스텀 `@AssertTrue`
-- [ ] `PostController` — `POST /posts`, `GET /posts/{id}`, `DELETE /posts/{id}` (작성자만)
-- [ ] `GET /books/{id}/posts?cursor=`
-- [ ] `GET /feed/explore?cursor=` — 전체 최신순
-- [ ] **N+1 방어**: 목록에 작성자·책이 항상 붙는다 → `@EntityGraph`/fetch join.
+- [x] 검증: 본문 1~1000자, `fromPage ≤ toPage`(둘 다 있을 때만) — 커스텀 `@AssertTrue`
+- [x] `PostController` — `POST /posts`, `GET /posts/{id}`, `DELETE /posts/{id}` (작성자만)
+- [x] `GET /books/{id}/posts?cursor=`
+- [x] `GET /feed/explore?cursor=` — 전체 최신순
+- [x] **N+1 방어**: 목록에 작성자·책이 항상 붙는다.
       **여기서 안 잡으면 Phase 5 피드에서 폭발한다**
+      — `@EntityGraph`가 아니라 **페이지의 작성자·책을 한 번에 모아 읽는** 방식이다. 엔티티가
+      연관관계 없이 id만 갖는 Phase 3의 선택을 유지했고, 페이지가 20건이든 50건이든 쿼리는
+      셋이다. `PostFeedTest`가 Hibernate `Statistics`로 지킨다
 
 **완료 기준**
 
-- [ ] 서재에 없는 책으로 작성 → `reading` 자동 생성·연결
-- [ ] `GET /books/{id}/posts`와 `/feed/explore`에 노출
-- [ ] 커서로 2페이지 조회 시 중복·누락 없음
-- [ ] 남의 글 삭제 시도 403
-- [ ] 페이지 크기를 바꿔도 쿼리 수가 늘지 않음
+- [x] 서재에 없는 책으로 작성 → `reading` 자동 생성·연결
+- [x] `GET /books/{id}/posts`와 `/feed/explore`에 노출
+- [x] 커서로 2페이지 조회 시 중복·누락 없음
+- [x] 남의 글 삭제 시도 403
+- [x] 페이지 크기를 바꿔도 쿼리 수가 늘지 않음
 
 ---
 
