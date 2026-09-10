@@ -111,6 +111,10 @@ feat: 감상평 작성 API
 식별자를 직접 넣으면 JPA `save()`가 insert 대신 merge로 나가 **유니크 제약이 발동하지 못한다**
 (중복 요청이 409 대신 조용히 성공한다).
 
+> 이 규약은 `PrimaryKeyConventionTest`가 강제한다. 마이그레이션의 `primary key (a, b)`와 엔티티의
+> `@IdClass`·`@EmbeddedId`·`@Id` 두 개를 잡아 `build`를 빨갛게 만든다. **정말 필요하면** 그 줄 앞에
+> 사유와 함께 `allow-composite-pk: <이유>`를 남긴다 — 사유가 없거나 짧으면 면제되지 않는다.
+
 **스키마** — 단일 진실 공급원은 Flyway다(`ddl-auto: validate`). **적용된 마이그레이션은 절대 수정하지 않고**
 항상 새 버전 파일을 추가한다. 모든 테이블 `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`.
 

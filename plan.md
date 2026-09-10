@@ -151,6 +151,11 @@ com.irene.twelvebooks
 그대로 커버한다 — 좁히는 컬럼과 읽는 컬럼이 둘 다 인덱스 안에 있으면 클러스터 인덱스든
 아니든 테이블을 보지 않는다.
 
+이 규약은 문서로만 두지 않는다. `PrimaryKeyConventionTest`가 마이그레이션과 엔티티를 훑어
+복합 PK를 잡고, 그 테스트는 `build`에 얹혀 있어 머지 필수 체크다. 훅과 달리 우회할 경로가 없다.
+정말 필요한 자리라면 해당 줄 앞에 `allow-composite-pk: <이유>`를 남겨 면제받되, **사유를 적어야만**
+면제된다 — 침묵시키는 용도로 쓰이면 규약이 무의미해진다.
+
 ### 커서 페이징
 목록은 전부 `CursorPage<T> { List<T> items; Long nextCursor; boolean hasNext; }`.
 PK가 auto-increment이므로 `id DESC`가 곧 최신순이다. 별도 정렬 컬럼이 필요 없다.
