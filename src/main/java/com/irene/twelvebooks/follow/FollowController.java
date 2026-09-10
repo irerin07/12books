@@ -3,7 +3,7 @@ package com.irene.twelvebooks.follow;
 import com.irene.twelvebooks.auth.AuthUser;
 import com.irene.twelvebooks.common.support.CursorPage;
 import com.irene.twelvebooks.common.support.PageSize;
-import com.irene.twelvebooks.user.dto.UserSummaryResponse;
+import com.irene.twelvebooks.follow.dto.FollowItemResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,17 +39,21 @@ public class FollowController {
 		return ResponseEntity.noContent().build();
 	}
 
+	/**
+	 * 목록의 {@code isFollowing}은 <b>목록 주인이 아니라 보는 사람</b> 기준이다.
+	 * 남의 팔로워 목록을 볼 때도 각 줄의 버튼은 내가 그 사람을 팔로우 중인지를 따라야 한다.
+	 */
 	@GetMapping("/followers")
-	public CursorPage<UserSummaryResponse> followers(@PathVariable String handle,
+	public CursorPage<FollowItemResponse> followers(@AuthUser Long viewerId, @PathVariable String handle,
 			@RequestParam(required = false) Long cursor,
 			@RequestParam(defaultValue = "20") int size) {
-		return followService.followers(handle, cursor, PageSize.clamp(size));
+		return followService.followers(handle, viewerId, cursor, PageSize.clamp(size));
 	}
 
 	@GetMapping("/followings")
-	public CursorPage<UserSummaryResponse> followings(@PathVariable String handle,
+	public CursorPage<FollowItemResponse> followings(@AuthUser Long viewerId, @PathVariable String handle,
 			@RequestParam(required = false) Long cursor,
 			@RequestParam(defaultValue = "20") int size) {
-		return followService.followings(handle, cursor, PageSize.clamp(size));
+		return followService.followings(handle, viewerId, cursor, PageSize.clamp(size));
 	}
 }

@@ -37,6 +37,7 @@ class FollowControllerTest extends AbstractIntegrationTest {
 
 	private String bearer;
 	private String otherBearer;
+	private String thirdBearer;
 
 	@BeforeEach
 	void setUp() {
@@ -47,6 +48,8 @@ class FollowControllerTest extends AbstractIntegrationTest {
 		bearer = "Bearer " + jwtProvider.createAccessToken(me.getId(), me.getHandle());
 		User other = userRepository.findByHandle("other").orElseThrow();
 		otherBearer = "Bearer " + jwtProvider.createAccessToken(other.getId(), other.getHandle());
+		User third = userRepository.findByHandle("third").orElseThrow();
+		thirdBearer = "Bearer " + jwtProvider.createAccessToken(third.getId(), third.getHandle());
 	}
 
 	private void follow(String bearerToken, String handle) throws Exception {
@@ -203,6 +206,54 @@ class FollowControllerTest extends AbstractIntegrationTest {
 		// 마지막에 팔로우한 fan5가 맨 위다 — 커서가 관계의 id라 얻어지는 순서다.
 		assertThat(page1).containsExactly("fan5", "fan4");
 		assertThat(page2).containsExactly("fan3", "fan2");
+	}
+
+	/**
+	 * 목록에서도 같은 문제가 생긴다. 팔로워 20명 옆에 팔로우 버튼을 그리려면 20명 각각에 대해
+	 * 내가 팔로우 중인지 알아야 하는데, 그 값이 없으면 프로필에서 겪던 일을 한 화면에서
+	 * 스무 번 겪는다.
+	 */
+	@Test
+	@DisplayName("팔로워·팔로잉 목록도 각 사람을 내가 팔로우 중인지 알려준다")
+	void listsTellWhetherIFollowEachPerson() throws Exception {
+		// other와 third가 나(irene)를 팔로우한다. 나는 그중 other만 맞팔한다.
+		follow(otherBearer, "irene");
+		follow(thirdBearer, "irene");
+		follow(bearer, "other");
+
+		mockMvc.perform(get("/api/v1/users/irene/followers").header("Authorization", bearer))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items[?(@.handle == 'other')].isFollowing").value(true))
+				.andExpect(jsonPath("$.items[?(@.handle == 'third')].isFollowing").value(false));
+
+		// 보는 사람이 바뀌면 같은 목록의 답도 바뀐다.
+		mockMvc.perform(get("/api/v1/users/irene/followers").header("Authorization", thirdBearer))
+				.andExpect(jsonPath("$.items[?(@.handle == 'other')].isFollowing").value(false));
+	}
+
+	@Test
+	@DisplayName("목록이 커져도 쿼리 수는 그대로다")
+	void listDoesNotGrowQueriesWithSize() throws Exception {
+		for (int i = 1; i <= 30; i++) {
+			User fan = userRepository.save(
+					User.create("f%d@example.com".formatted(i), "hash", "fan%d".formatted(i), "팬" + i));
+			follow("Bearer " + jwtProvider.createAccessToken(fan.getId(), fan.getHandle()), "irene");
+		}
+
+		assertThat(followerQueriesFor(30)).isEqualTo(followerQueriesFor(5));
+	}
+
+	private long followerQueriesFor(int size) throws Exception {
+		Statistics statistics = sessionFactory.getStatistics();
+		statistics.setStatisticsEnabled(true);
+		statistics.clear();
+
+		mockMvc.perform(get("/api/v1/users/irene/followers").param("size", String.valueOf(size))
+						.header("Authorization", bearer))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items.length()").value(size));
+
+		return statistics.getPrepareStatementCount();
 	}
 
 	@Test
