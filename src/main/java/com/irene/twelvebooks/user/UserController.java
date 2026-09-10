@@ -25,21 +25,28 @@ public class UserController {
 	}
 
 	@GetMapping("/users/{handle}")
-	public ProfileResponse profile(@PathVariable String handle) {
-		return withCounts(userService.getByHandle(handle));
-	}
-
-	@PatchMapping("/me")
-	public ProfileResponse updateMe(@AuthUser Long userId, @Valid @RequestBody UpdateProfileRequest request) {
-		return withCounts(userService.updateProfile(userId, request));
+	public ProfileResponse profile(@AuthUser Long viewerId, @PathVariable String handle) {
+		return withRelation(userService.getByHandle(handle), viewerId);
 	}
 
 	/**
-	 * 관계 수는 팔로우 쪽이 세어 준다. {@code user}가 {@code follow}를 알게 하면 두 패키지가
+	 * 내 프로필이므로 {@code isFollowing}은 항상 거짓이다 — 자기 자신은 팔로우할 수 없다.
+	 * 그래도 같은 응답 모양을 쓰는 편이 낫다. 화면이 프로필 하나를 그리는 코드를 둘로 나누지
+	 * 않아도 된다.
+	 */
+	@PatchMapping("/me")
+	public ProfileResponse updateMe(@AuthUser Long userId, @Valid @RequestBody UpdateProfileRequest request) {
+		return withRelation(userService.updateProfile(userId, request), userId);
+	}
+
+	/**
+	 * 관계 정보는 팔로우 쪽이 답한다. {@code user}가 {@code follow}를 알게 하면 두 패키지가
 	 * 서로를 참조하게 되므로, 조합만 여기서 한다.
 	 */
-	private ProfileResponse withCounts(User user) {
-		return ProfileResponse.of(user, followService.followerCount(user.getId()),
-				followService.followingCount(user.getId()));
+	private ProfileResponse withRelation(User user, Long viewerId) {
+		return ProfileResponse.of(user,
+				followService.followerCount(user.getId()),
+				followService.followingCount(user.getId()),
+				followService.isFollowing(viewerId, user.getId()));
 	}
 }

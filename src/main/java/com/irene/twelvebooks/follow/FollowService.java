@@ -3,9 +3,9 @@ package com.irene.twelvebooks.follow;
 import com.irene.twelvebooks.common.error.BusinessException;
 import com.irene.twelvebooks.common.error.ErrorCode;
 import com.irene.twelvebooks.common.support.CursorPage;
+import com.irene.twelvebooks.follow.dto.FollowItemResponse;
 import com.irene.twelvebooks.user.User;
 import com.irene.twelvebooks.user.UserRepository;
-import com.irene.twelvebooks.user.dto.UserSummaryResponse;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -65,6 +66,17 @@ public class FollowService {
 		return followRepository.findFolloweeIds(userId);
 	}
 
+	/**
+	 * 보는 사람이 대상을 팔로우 중인지.
+	 *
+	 * <p>같은 프로필이라도 <b>보는 사람에 따라 답이 다르다.</b> 자기 자신은 팔로우할 수 없으므로
+	 * 내 프로필에서는 항상 거짓이고, 화면은 그때 팔로우 버튼 대신 프로필 수정을 보여주면 된다.
+	 */
+	@Transactional(readOnly = true)
+	public boolean isFollowing(Long viewerId, Long targetId) {
+		return followRepository.existsByFollowerIdAndFolloweeId(viewerId, targetId);
+	}
+
 	@Transactional(readOnly = true)
 	public long followerCount(Long userId) {
 		return followRepository.countByFolloweeId(userId);
@@ -76,15 +88,15 @@ public class FollowService {
 	}
 
 	@Transactional(readOnly = true)
-	public CursorPage<UserSummaryResponse> followers(String handle, Long cursor, int size) {
+	public CursorPage<FollowItemResponse> followers(String handle, Long viewerId, Long cursor, int size) {
 		return page(followRepository.findFollowerPage(idOf(handle), cursor, PageRequest.ofSize(size + 1)),
-				size, Follow::getFollowerId);
+				size, Follow::getFollowerId, viewerId);
 	}
 
 	@Transactional(readOnly = true)
-	public CursorPage<UserSummaryResponse> followings(String handle, Long cursor, int size) {
+	public CursorPage<FollowItemResponse> followings(String handle, Long viewerId, Long cursor, int size) {
 		return page(followRepository.findFolloweePage(idOf(handle), cursor, PageRequest.ofSize(size + 1)),
-				size, Follow::getFolloweeId);
+				size, Follow::getFolloweeId, viewerId);
 	}
 
 	/**
@@ -94,16 +106,21 @@ public class FollowService {
 	 * <p>사람은 페이지 전체를 모아 <b>한 번에</b> 조회한다. 항목마다 따로 읽으면 페이지 크기만큼
 	 * 쿼리가 늘어난다. 이 방식은 목록이 20건이든 50건이든 쿼리가 둘이다.
 	 */
-	private CursorPage<UserSummaryResponse> page(List<Follow> rows, int size,
-			Function<Follow, Long> counterpart) {
+	private CursorPage<FollowItemResponse> page(List<Follow> rows, int size,
+			Function<Follow, Long> counterpart, Long viewerId) {
 		CursorPage<Follow> follows = CursorPage.of(rows, size, Follow::getId);
-		Map<Long, User> users = userRepository.findAllById(
-						follows.items().stream().map(counterpart).toList()).stream()
+		List<Long> ids = follows.items().stream().map(counterpart).toList();
+
+		Map<Long, User> users = userRepository.findAllById(ids).stream()
 				.collect(Collectors.toMap(User::getId, Function.identity()));
+		// 관계도 페이지 전체를 모아 한 번에 묻는다. 한 명씩 물으면 목록 크기만큼 쿼리가 늘어난다.
+		Set<Long> followed = ids.isEmpty() ? Set.of()
+				: Set.copyOf(followRepository.findFollowedAmong(viewerId, ids));
 
 		return new CursorPage<>(
 				follows.items().stream()
-						.map(follow -> UserSummaryResponse.from(users.get(counterpart.apply(follow))))
+						.map(counterpart)
+						.map(id -> FollowItemResponse.of(users.get(id), followed.contains(id)))
 						.toList(),
 				follows.nextCursor(), follows.hasNext());
 	}

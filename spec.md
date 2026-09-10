@@ -146,6 +146,7 @@
 ### 4.6 프로필 & 통계 (F8)
 
 - 프로필 응답: handle, displayName, bio, avatarUrl, 팔로워/팔로잉 수,
+  **isFollowing**(보는 사람이 이 사람을 팔로우 중인지 — 팔로우 버튼의 초기 상태),
   올해 완독 수, 목표 권수, 달성률, 현재 읽는 중인 책 목록.
 - 서재(`GET /users/{handle}/library`)는 `year`·`status` 필터를 받아 표지 그리드용
   최소 정보(bookId, title, thumbnailUrl, finishedAt)를 반환한다.

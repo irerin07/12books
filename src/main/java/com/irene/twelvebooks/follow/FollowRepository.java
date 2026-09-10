@@ -56,6 +56,28 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
 	long countByFollowerId(Long followerId);
 
 	/**
+	 * 내가 이 사람을 팔로우 중인지. 프로필이 팔로우 버튼을 <b>처음 그릴 때</b> 필요하다.
+	 *
+	 * <p>{@code uk(follower_id, followee_id)}를 그대로 타므로 관계가 몇 개든 인덱스 조회 한 번이다.
+	 * 목록을 받아 와 뒤지는 것과는 비용이 다르다 — 팔로잉이 500명이어도 여기서는 한 번이다.
+	 */
+	boolean existsByFollowerIdAndFolloweeId(Long followerId, Long followeeId);
+
+	/**
+	 * 주어진 사람들 중 <b>보는 사람이 팔로우 중인</b> 사람들의 id.
+	 *
+	 * <p>목록 한 쪽을 그리려면 스무 명 각각에 대해 관계를 알아야 하는데, 한 명씩 물으면 쿼리가
+	 * 목록 크기만큼 늘어난다. 페이지의 id를 모아 한 번에 묻고 Set으로 만들어 맞춘다 —
+	 * 목록이 20명이든 50명이든 이 조회는 한 번이다.
+	 */
+	@Query("""
+			select f.followeeId from Follow f
+			where f.followerId = :viewerId and f.followeeId in :candidateIds
+			""")
+	List<Long> findFollowedAmong(@Param("viewerId") Long viewerId,
+			@Param("candidateIds") List<Long> candidateIds);
+
+	/**
 	 * 언팔로우. <b>한 문장</b>으로 지운다.
 	 *
 	 * <p>이름에서 파생된 {@code deleteBy...}는 조회 후 엔티티 삭제로 실행된다. 그러면 두 요청이
