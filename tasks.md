@@ -23,7 +23,7 @@
 | 4 | 감상평 · 책별 목록 · 탐색 피드 | `V4__posts` | **공개된 독서 기록** | **완료** ([#16](https://github.com/irerin07/12books/pull/16)) |
 | 5 | 팔로우 · 타임라인 | `V5__follows` | **SNS** | |
 | 6 | 좋아요 · 댓글 | `V6__reactions` | 소셜 루프 완성 | |
-| 7 | 해시태그 탐색 | `V7__hashtags` | 주제 기반 발견 | |
+| 7 | 해시태그 탐색 · 사람 검색 | `V7__hashtags` | 주제·이름 기반 발견 | |
 | 8 | 프로필 · 서재 통계 | — | **지적 허영 완성** | |
 | 9 | 문서화 · 성능 · 보안 마감 | — | 출시 가능 | |
 
@@ -294,11 +294,11 @@
 
 ---
 
-# Phase 7 — 해시태그 탐색
+# Phase 7 — 해시태그 탐색과 사람 검색
 
-> 팔로우 관계 밖에서 주제로 글을 만난다.
+> 팔로우 관계 밖에서 주제로 글을, 이름으로 사람을 만난다.
 
-- [ ] `V7__hashtags.sql` — `hashtags`, `post_hashtags`
+- [ ] `V7__hashtags.sql` — `hashtags`, `post_hashtags`, `idx_users_display_name`
 - [ ] `tag/HashtagParser` — `#([0-9A-Za-z가-힣_]{1,30})`. **한글이 1급 시민.**
       소문자 정규화, 글 내 중복 제거, 글당 최대 10개.
       외부 의존성 없는 순수 함수 → **컨테이너 없는 단위 테스트**
@@ -308,6 +308,11 @@
 - [ ] `GET /tags/{name}/posts?cursor=`
 - [ ] `GET /tags/trending` — MVP는 `post_count DESC` 단순 정렬
 - [ ] 기존 글 소급 파싱 배치는 **만들지 않는다**
+- [ ] `GET /users/search?q=&cursor=` — `handle`·`displayName` **접두** 매칭
+  - [ ] 부분 일치(`%q%`)는 하지 않는다 — 인덱스를 못 탄다
+  - [ ] `q`는 2자 이상, 소문자 정규화
+  - [ ] 자기 자신은 결과에서 제외
+  - [ ] 응답은 `CursorPage<FollowItemResponse>` (`isFollowing` 포함)
 
 **완료 기준**
 
@@ -315,6 +320,8 @@
 - [ ] `GET /tags/소설/posts`에 노출
 - [ ] 글 삭제 시 `post_count` 감소
 - [ ] `#소설`과 `#SOSEOL`처럼 대소문자만 다른 태그가 하나로 합쳐짐
+- [ ] `q=ire`로 `irene`을 찾고 `isFollowing`을 보고 바로 팔로우
+- [ ] 한 글자 검색은 400, 결과에 자기 자신 없음
 
 ---
 
