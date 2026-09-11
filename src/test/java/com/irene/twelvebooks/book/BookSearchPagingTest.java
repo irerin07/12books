@@ -18,7 +18,10 @@ import org.springframework.web.client.RestClient;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import java.util.Map;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -104,6 +107,38 @@ class BookSearchPagingTest extends AbstractIntegrationTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.page").value(500))
 				.andExpect(jsonPath("$.hasNext").value(false));
+	}
+
+	/**
+	 * 검색 결과도 비어 있는 값을 빼야 하는데, 이 객체는 <b>그대로 되돌려보내 등록하는</b>
+	 * 페이로드이기도 하다. 필드가 빠져도 서명이 그대로 맞아야 한다 — 빠진 것과 {@code null}인
+	 * 것은 서버에서 같은 값이기 때문이다.
+	 */
+	@Test
+	@DisplayName("ISBN 없는 책은 응답에서 isbn13이 빠지고, 그대로 등록된다")
+	void omitsMissingIsbnAndStillRegisters() throws Exception {
+		StubbedKakao.server.expect(requestTo(containsString("/v3/search/book")))
+				.andRespond(withSuccess("""
+						{"documents":[{"title":"어느 무명 시집","authors":["무명"],
+						"publisher":"","isbn":"","thumbnail":"","datetime":""}],
+						"meta":{"total_count":1,"pageable_count":1,"is_end":true}}
+						""", MediaType.APPLICATION_JSON));
+
+		String body = mockMvc.perform(get("/api/v1/books/search").param("q", "무명")
+						.header("Authorization", bearer))
+				.andExpect(status().isOk())
+				// doesNotExist()는 값이 null이어도 통과한다. 키 자체가 없는지 보려면 이쪽이다.
+				.andExpect(jsonPath("$.items[0].isbn13").doesNotHaveJsonPath())
+				.andExpect(jsonPath("$.items[0].publishedAt").doesNotHaveJsonPath())
+				.andReturn().getResponse().getContentAsString();
+
+		// 받은 그대로 되돌려보낸다. 빠진 필드는 보내지 않는다.
+		Map<String, Object> item = com.jayway.jsonpath.JsonPath.parse(body).read("$.items[0]");
+		mockMvc.perform(post("/api/v1/books").header("Authorization", bearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(item)))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.title").value("어느 무명 시집"));
 	}
 
 	@Test

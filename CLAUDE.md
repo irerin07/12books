@@ -116,6 +116,13 @@ feat: 감상평 작성 API
 **중복** — 중복 좋아요·팔로우는 "먼저 조회해서 있으면 스킵"이 아니라 **DB 유니크 제약을 1차 방어선**으로
 삼고 `DataIntegrityViolationException`을 409로 변환한다.
 
+**빈 값** — 응답 DTO는 `@JsonInclude(NON_NULL)`을 단다. 모르는 값은 `null`로 싣지 않고 **키째 뺀다** —
+`null`과 0·빈 문자열을 클라이언트가 헷갈리지 않게. 일부 DTO만 다르게 굴면 같은 필드가 화면에 따라
+`null`로도 오고 없기도 해서, 클라이언트가 둘 다 다뤄야 한다.
+
+> 테스트에서 키가 빠졌는지 볼 때는 `doesNotHaveJsonPath()`를 쓴다. `doesNotExist()`는 값이 `null`이어도
+> 통과해서 아무것도 지키지 못한다.
+
 **기본 키** — 모든 테이블은 `bigint auto_increment` 대리 키 하나를 PK로 갖는다. **복합 PK를 쓰지 않는다** —
 관계·조인 테이블도 예외가 아니고, 유일성은 `unique` 제약이 맡는다. 복합 PK는 커서 페이징을 깨고,
 식별자를 직접 넣으면 JPA `save()`가 insert 대신 merge로 나가 **유니크 제약이 발동하지 못한다**

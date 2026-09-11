@@ -1,5 +1,6 @@
 package com.irene.twelvebooks.user.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.irene.twelvebooks.user.User;
 
 /**
@@ -8,7 +9,11 @@ import com.irene.twelvebooks.user.User;
  *
  * <p>팔로워·팔로잉 수는 <b>매번 세어</b> 넣는다. 반정규화 카운터는 갱신 유실과 불일치를 안고
  * 오므로, 이 조회가 실제로 느려진 뒤에 도입한다.
+ *
+ * <p>비어 있는 값은 응답에서 뺀다. 같은 필드가 프로필에서는 {@code null}로 오고 목록에서는
+ * 빠지면, 화면이 {@code null}과 {@code undefined}를 둘 다 다뤄야 한다 — 규칙이 아니라 사고다.
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record ProfileResponse(
 		String handle,
 		String displayName,
