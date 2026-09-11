@@ -20,7 +20,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @Service
 public class PostService {
@@ -116,15 +115,37 @@ public class PostService {
 	}
 
 	/**
-	 * 팔로잉 타임라인. 대상은 <b>내가 팔로우하는 사람 + 나</b>다.
+	 * 한 사람이 쓴 감상평. 프로필의 글 목록이자 "내 글만 보기"다.
 	 *
-	 * <p>본인을 넣는 이유는 자기 글이 안 보이는 타임라인이 어색해서이고, 아무도 팔로우하지 않은
-	 * 사람에게도 볼 것이 남는다는 뜻이기도 하다.
+	 * <p>{@code /posts/me}를 따로 두지 않은 것은 둘이 같은 질문이기 때문이다 — 내 handle로
+	 * 부르면 내 글이다. 경로를 나누면 같은 조회가 둘이 되고 한쪽만 고쳐지는 날이 온다.
 	 */
 	@Transactional(readOnly = true)
-	public CursorPage<PostResponse> timeline(Long userId, List<Long> followeeIds, Long cursor, int size) {
-		List<Long> authorIds = Stream.concat(followeeIds.stream(), Stream.of(userId)).distinct().toList();
-		return assemble(postRepository.findTimelinePage(authorIds, cursor, PageRequest.ofSize(size + 1)), size);
+	public CursorPage<PostResponse> byAuthor(String handle, Long cursor, int size) {
+		Long authorId = userRepository.findByHandle(handle)
+				// 빈 목록으로 답하면 "아직 안 쓴 사람"과 "없는 사람"이 구분되지 않는다.
+				.orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND))
+				.getId();
+		return assemble(postRepository.findAuthorPage(authorId, cursor, PageRequest.ofSize(size + 1)), size);
+	}
+
+	/**
+	 * 팔로잉 타임라인. 대상은 <b>내가 팔로우하는 사람들</b>이고 본인은 빠진다.
+	 *
+	 * <p>Phase 5에서는 본인을 넣었다 — "자기 글이 안 보이는 타임라인은 어색하다"는 이유였다.
+	 * 화면을 만들어 보니 반대였다. 홈에 내 글과 남의 글이 섞이면 무엇을 보는 화면인지 흐려진다.
+	 *
+	 * <p>그래서 아무도 팔로우하지 않으면 <b>빈 페이지</b>다. 화면은 그때 둘러보기를 권하면 된다 —
+	 * 빈 자리를 내 글로 채우면 "팔로우해야 할 이유"가 가려진다. 빈 목록을 그대로
+	 * {@code in ()}으로 넘기지 않고 여기서 끊는 것은, 빈 컬렉션을 받은 JPQL이 DB마다 다르게
+	 * 굴기 때문이다.
+	 */
+	@Transactional(readOnly = true)
+	public CursorPage<PostResponse> timeline(List<Long> followeeIds, Long cursor, int size) {
+		if (followeeIds.isEmpty()) {
+			return new CursorPage<>(List.of(), null, false);
+		}
+		return assemble(postRepository.findTimelinePage(followeeIds, cursor, PageRequest.ofSize(size + 1)), size);
 	}
 
 	/**

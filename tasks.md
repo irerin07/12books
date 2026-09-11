@@ -259,7 +259,8 @@
 - [ ] `POST|DELETE /users/{handle}/follow`
 - [ ] `GET /users/{handle}/followers`, `/followings`
 - [ ] `GET /feed?cursor=` — **fan-out on read**: 팔로잉 ID로 `author_id IN (...)` + 커서
-- [ ] 피드에 **본인 글도 포함**한다
+- [ ] 피드에 **본인 글은 넣지 않는다** — 홈이 흐려진다. 내 글은 `/users/{handle}/posts`
+- [ ] `GET /users/{handle}/posts?cursor=` — 프로필 글 목록 = 내 글만 보기
 - [ ] 자기 자신 팔로우 400, 중복 팔로우는 유니크 제약이 막고 409로 변환
 - [ ] 프로필의 팔로워/팔로잉 수는 `count` 쿼리로 시작 (반정규화는 나중에)
 

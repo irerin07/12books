@@ -81,9 +81,17 @@ class TimelineTest extends AbstractIntegrationTest {
 				.andExpect(status().isNoContent());
 	}
 
+	/**
+	 * 타임라인은 <b>내가 고른 사람들의 글만</b> 흐른다. 내 글은 섞이지 않는다.
+	 *
+	 * <p>Phase 5에서는 본인 글을 포함했다 — "자기 글이 안 보이는 타임라인은 어색하다"는 이유였다.
+	 * 화면을 만들어 보니 반대였다. 홈에 내 글과 남의 글이 섞이면 무엇을 보는 화면인지 흐려진다.
+	 * 인스타·트위터가 홈에 자기 글을 섞지 않는 것과 같다. 내 글은 {@code /users/{handle}/posts}로
+	 * 따로 본다.
+	 */
 	@Test
-	@DisplayName("팔로우한 사람과 내 글만 흐르고 남의 글은 섞이지 않는다")
-	void showsFollowingsAndSelfOnly() throws Exception {
+	@DisplayName("팔로우한 사람의 글만 흐르고 내 글도 남의 글도 섞이지 않는다")
+	void showsFollowingsOnly() throws Exception {
 		follow("friend");
 		write(strangerId, "남의 글");
 		write(friendId, "친구의 글");
@@ -91,23 +99,27 @@ class TimelineTest extends AbstractIntegrationTest {
 
 		String feed = mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.items.length()").value(2))
+				.andExpect(jsonPath("$.items.length()").value(1))
 				.andReturn().getResponse().getContentAsString();
 
 		List<String> contents = JsonPath.parse(feed).read("$.items[*].content");
-		assertThat(contents).containsExactly("내 글", "친구의 글");
+		assertThat(contents).containsExactly("친구의 글");
 	}
 
+	/**
+	 * 아무도 팔로우하지 않으면 타임라인은 빈다. 화면은 그때 둘러보기를 권하면 된다 —
+	 * 빈 상태를 내 글로 채우면 "팔로우해야 할 이유"가 가려진다.
+	 */
 	@Test
-	@DisplayName("아무도 팔로우하지 않아도 내 글은 보인다")
-	void alwaysIncludesMyOwnPosts() throws Exception {
+	@DisplayName("아무도 팔로우하지 않으면 타임라인은 비어 있다")
+	void isEmptyWithoutFollowings() throws Exception {
 		write(strangerId, "남의 글");
 		write(meId, "내 글");
 
 		mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.items.length()").value(1))
-				.andExpect(jsonPath("$.items[0].content").value("내 글"));
+				.andExpect(jsonPath("$.items.length()").value(0))
+				.andExpect(jsonPath("$.hasNext").value(false));
 	}
 
 	@Test

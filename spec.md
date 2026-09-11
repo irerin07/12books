@@ -139,7 +139,8 @@
 
 ### 4.5 피드 (F7)
 
-- `GET /feed` = 내가 팔로우한 사람 + 나 자신의 감상평을 `id DESC` 정렬, 커서 페이징.
+- `GET /feed` = 내가 팔로우한 사람의 감상평을 `id DESC` 정렬, 커서 페이징. **본인 글은 빠진다** —
+  홈에 내 글과 남의 글이 섞이면 무엇을 보는 화면인지 흐려진다. 내 글은 `GET /users/{handle}/posts`.
 - MVP는 **fan-out on read**(팔로잉 ID `IN` 조건 + `posts(author_id, id)` 인덱스).
   팬아웃 쓰기나 Redis 타임라인은 실제 성능 문제가 관측된 뒤에 도입한다.
 - `GET /feed/explore` = 전체 최신순. 신규 사용자가 빈 화면을 보지 않게 하는 안전장치.
@@ -206,6 +207,7 @@
 | POST | `/books` | 내부 업서트, bookId 반환 |
 | GET | `/books/{id}` | 책 상세 |
 | GET | `/books/{id}/posts?cursor=` | 그 책의 감상평 |
+| GET | `/users/{handle}/posts?cursor=` | 그 사람의 감상평 (프로필 글 목록 · 내 글만 보기) |
 
 ### reading
 

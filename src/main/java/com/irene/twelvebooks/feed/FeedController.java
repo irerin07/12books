@@ -27,12 +27,15 @@ public class FeedController {
 		this.followService = followService;
 	}
 
-	/** 내가 고른 사람들 + 나. 여기서 제품이 SNS가 된다. */
+	/**
+	 * 내가 고른 사람들의 글. <b>내 글은 섞이지 않는다</b> — 그건
+	 * {@code GET /users/{handle}/posts}가 따로 준다.
+	 */
 	@GetMapping
 	public CursorPage<PostResponse> timeline(@AuthUser Long userId,
 			@RequestParam(required = false) Long cursor,
 			@RequestParam(defaultValue = "20") int size) {
-		return postService.timeline(userId, followService.followeeIds(userId), cursor, PageSize.clamp(size));
+		return postService.timeline(followService.followeeIds(userId), cursor, PageSize.clamp(size));
 	}
 
 	/** 전체 최신순. 팔로우 관계가 없어도 볼 것이 있어야 신규 사용자가 빈 화면을 보지 않는다. */
