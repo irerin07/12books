@@ -40,13 +40,10 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			Pageable pageable);
 
 	/**
-	 * 홈 한 페이지. <b>내 글만 빼고</b> 전체 최신순이다.
+	 * 홈 한 페이지. <b>내 글만 빼고</b> 전체 최신순이다. 팔로잉 여부는 서비스가 표시한다.
 	 *
-	 * <p>팔로우한 사람의 글과 아닌 글이 한 목록에 섞여 나온다 — 인스타·트위터의 홈과 같다.
-	 * 둘을 따로 조회해 클라이언트가 이어 붙이면 팔로우한 사람의 글이 양쪽에 다 나와 중복되고,
-	 * 커서도 둘을 따로 굴려야 한다. 한 쿼리·한 커서면 그 문제가 구조적으로 없다.
-	 *
-	 * <p>어느 글이 팔로잉인지는 서비스가 표시해 준다.
+	 * <p>팔로잉 글과 아닌 글을 한 쿼리로 가져오므로 커서가 하나다. 왜 나누지 않는지는
+	 * {@code plan.md} Phase 5에 있다.
 	 */
 	@Query("""
 			select p from Post p
@@ -64,8 +61,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	 * <p>쓰기 시점에 팔로워마다 복사해 두는 팬아웃 쓰기나 Redis 타임라인은 넣지 않는다 —
 	 * 실제 지연이 관측되기 전에 도입하면 무효화 규칙만 늘어난다.
 	 *
-	 * <p>{@code authorIds}에는 <b>본인이 들어가지 않는다.</b> 홈에 내 글과 남의 글이 섞이면
-	 * 무엇을 보는 화면인지 흐려진다. 내 글은 {@code findAuthorPage}로 따로 본다.
+	 * <p>{@code authorIds}에 본인은 들어가지 않는다. 내 글은 {@code findAuthorPage}로 본다.
 	 */
 	@Query("""
 			select p from Post p

@@ -27,13 +27,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 홈({@code /feed})과 팔로잉 전용({@code /feed/following}).
- *
- * <p>홈은 인스타·트위터처럼 <b>팔로우한 사람과 안 한 사람의 글이 섞여</b> 흐르고, 각 항목에
- * 팔로잉 여부가 붙는다. 서버가 섞어 주는 이유는 취향이 아니라 기술이다 — 클라이언트가 두 목록을
- * 이어 붙이면 팔로우한 사람의 글이 양쪽에 다 나와 <b>중복</b>되고, 커서도 둘을 따로 굴려야 한다.
- *
- * <p>내 글은 어느 쪽에도 없다. 그건 {@code /users/{handle}/posts}가 준다.
+ * 홈({@code /feed})과 팔로잉 전용({@code /feed/following}). 어느 쪽에도 내 글은 없다 —
+ * 그건 {@code /users/{handle}/posts}가 준다.
  */
 class TimelineTest extends AbstractIntegrationTest {
 
@@ -87,14 +82,6 @@ class TimelineTest extends AbstractIntegrationTest {
 				.andExpect(status().isNoContent());
 	}
 
-	/**
-	 * 타임라인은 <b>내가 고른 사람들의 글만</b> 흐른다. 내 글은 섞이지 않는다.
-	 *
-	 * <p>Phase 5에서는 본인 글을 포함했다 — "자기 글이 안 보이는 타임라인은 어색하다"는 이유였다.
-	 * 화면을 만들어 보니 반대였다. 홈에 내 글과 남의 글이 섞이면 무엇을 보는 화면인지 흐려진다.
-	 * 인스타·트위터가 홈에 자기 글을 섞지 않는 것과 같다. 내 글은 {@code /users/{handle}/posts}로
-	 * 따로 본다.
-	 */
 	@Test
 	@DisplayName("홈은 팔로우한 사람과 안 한 사람의 글이 섞여 흐르고, 각각 팔로잉 여부가 붙는다")
 	void homeMixesFollowedAndUnfollowed() throws Exception {
@@ -239,6 +226,32 @@ class TimelineTest extends AbstractIntegrationTest {
 				.andExpect(jsonPath("$.items.length()").value(size));
 
 		return statistics.getPrepareStatementCount();
+	}
+
+	/**
+	 * 팔로우 표시는 <b>그 페이지에 실린 작성자</b>에 대해서만 물어야 한다. 팔로잉 전체를 끌어와
+	 * Set으로 만들면 한 페이지가 50건이어도 비용이 팔로잉 수에 비례하고, 페이지가 비어 있을
+	 * 때조차 같은 값을 치른다.
+	 */
+	@Test
+	@DisplayName("홈이 비면 팔로우 관계를 아예 묻지 않는다")
+	void doesNotAskRelationsForAnEmptyHome() throws Exception {
+		for (int i = 1; i <= 30; i++) {
+			User someone = userRepository.save(
+					User.create("u%d@example.com".formatted(i), "hash", "u%d".formatted(i), "사람" + i));
+			followRepository.save(Follow.of(meId, someone.getId()));
+		}
+
+		Statistics statistics = sessionFactory.getStatistics();
+		statistics.setStatisticsEnabled(true);
+		statistics.clear();
+
+		mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items.length()").value(0));
+
+		// 글 조회 한 번이면 끝난다. 팔로잉을 미리 긁어 오면 여기가 둘이 된다.
+		assertThat(statistics.getPrepareStatementCount()).isEqualTo(1);
 	}
 
 	@Test

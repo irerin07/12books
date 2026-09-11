@@ -11,8 +11,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Set;
-
 /**
  * 글이 흐르는 두 화면 — 홈과 팔로잉 전용. 팔로우 관계와 감상평이 여기서 만나므로 어느 한쪽
  * 패키지에 두지 않고 조합만 하는 자리를 따로 뒀다.
@@ -30,27 +28,22 @@ public class FeedController {
 	}
 
 	/**
-	 * 홈. 팔로우한 사람의 글과 아닌 사람의 글이 <b>섞여</b> 흐르고, 각 글에 팔로잉 여부가 붙는다.
-	 * 인스타·트위터의 홈과 같은 모양이다.
+	 * 홈. 팔로잉 글과 아닌 글이 섞여 흐르고 각 글에 팔로잉 여부가 붙는다. 내 글은 여기 없다 —
+	 * {@code GET /users/{handle}/posts}가 준다.
 	 *
-	 * <p>서버가 섞어 주는 이유는 화면 취향이 아니라 기술이다. 팔로잉 목록과 전체 목록을 따로
-	 * 받아 클라이언트가 이어 붙이면, 팔로우한 사람의 글이 양쪽에 다 나와 <b>중복</b>되고 커서도
-	 * 둘을 따로 굴려야 한다. 한 쿼리·한 커서면 그 문제가 아예 없다.
-	 *
-	 * <p>내 글은 여기 없다 — {@code GET /users/{handle}/posts}가 준다.
+	 * <p>왜 서버가 섞는지, 왜 본인 글을 빼는지는 {@code plan.md} Phase 5에 있다.
+	 * 여기서는 관계를 <b>그 페이지의 작성자에 대해서만</b> 묻는다는 점만 짚어 둔다 —
+	 * 팔로잉 전체를 끌어오면 비용이 팔로잉 수에 비례한다.
 	 */
 	@GetMapping
 	public CursorPage<PostResponse> home(@AuthUser Long userId,
 			@RequestParam(required = false) Long cursor,
 			@RequestParam(defaultValue = "20") int size) {
-		return postService.home(userId, Set.copyOf(followService.followeeIds(userId)),
-				cursor, PageSize.clamp(size));
+		return postService.home(userId, cursor, PageSize.clamp(size),
+				authorIds -> followService.followedAmong(userId, authorIds));
 	}
 
-	/**
-	 * 팔로잉 전용. 내가 고른 사람들의 글만 — 인스타에서 로고를 눌러 "Following"으로 전환한 화면,
-	 * 트위터의 "Following" 탭에 해당한다. 아무도 팔로우하지 않으면 빈다.
-	 */
+	/** 팔로잉 전용. 내가 고른 사람들의 글만 — 아무도 팔로우하지 않으면 빈다. */
 	@GetMapping("/following")
 	public CursorPage<PostResponse> following(@AuthUser Long userId,
 			@RequestParam(required = false) Long cursor,

@@ -113,13 +113,13 @@ public class PostService {
 	/**
 	 * 홈. 내 글만 빼고 전체 최신순이며, 각 글에 <b>작성자를 팔로우 중인지</b>가 붙는다.
 	 *
-	 * <p>팔로잉 목록을 여기로 넘겨받는 이유는 {@code post}가 {@code follow}를 알지 않게 하기
-	 * 위해서다. 조합은 {@code feed}가 한다.
+	 * <p>관계는 {@link FollowLookup}으로 <b>그 페이지에 실린 작성자만</b> 묻는다. 페이지가 비면
+	 * 아예 묻지 않는다. {@code post}가 {@code follow}를 알지 않게 하는 장치이기도 하다.
 	 */
 	@Transactional(readOnly = true)
-	public CursorPage<PostResponse> home(Long viewerId, Set<Long> followeeIds, Long cursor, int size) {
+	public CursorPage<PostResponse> home(Long viewerId, Long cursor, int size, FollowLookup followLookup) {
 		return assemble(postRepository.findHomePage(viewerId, cursor, PageRequest.ofSize(size + 1)),
-				size, followeeIds);
+				size, followLookup);
 	}
 
 	/**
@@ -138,22 +138,18 @@ public class PostService {
 	}
 
 	/**
-	 * 팔로잉 타임라인. 대상은 <b>내가 팔로우하는 사람들</b>이고 본인은 빠진다.
+	 * 팔로잉 전용. 대상은 내가 팔로우하는 사람들이고 본인은 빠지므로, 아무도 팔로우하지 않으면
+	 * 빈 페이지다.
 	 *
-	 * <p>Phase 5에서는 본인을 넣었다 — "자기 글이 안 보이는 타임라인은 어색하다"는 이유였다.
-	 * 화면을 만들어 보니 반대였다. 홈에 내 글과 남의 글이 섞이면 무엇을 보는 화면인지 흐려진다.
-	 *
-	 * <p>그래서 아무도 팔로우하지 않으면 <b>빈 페이지</b>다. 화면은 그때 둘러보기를 권하면 된다 —
-	 * 빈 자리를 내 글로 채우면 "팔로우해야 할 이유"가 가려진다. 빈 목록을 그대로
-	 * {@code in ()}으로 넘기지 않고 여기서 끊는 것은, 빈 컬렉션을 받은 JPQL이 DB마다 다르게
-	 * 굴기 때문이다.
+	 * <p>빈 목록을 그대로 {@code in ()}으로 넘기지 않고 여기서 끊는다 — 빈 컬렉션을 받은 JPQL은
+	 * DB마다 다르게 군다.
 	 */
 	@Transactional(readOnly = true)
 	public CursorPage<PostResponse> timeline(List<Long> followeeIds, Long cursor, int size) {
 		if (followeeIds.isEmpty()) {
 			return new CursorPage<>(List.of(), null, false);
 		}
-		// 여기 실린 글은 전부 팔로잉이다. 굳이 한 건씩 표시할 것 없이 목록 자체가 그 뜻이다.
+		// 여기 실린 글은 전부 팔로잉이다. 목록 자체가 그 뜻이라 한 건씩 표시하지 않는다.
 		return assemble(postRepository.findTimelinePage(followeeIds, cursor, PageRequest.ofSize(size + 1)), size);
 	}
 
@@ -169,12 +165,14 @@ public class PostService {
 	}
 
 	/**
-	 * @param followeeIds 보는 사람이 팔로우하는 id들. {@code null}이면 관계를 계산하지 않고,
-	 *                    응답에서 {@code followingAuthor}가 아예 빠진다 — 계산하지 않은 값을
-	 *                    {@code false}로 실으면 거짓말이 된다.
+	 * @param followLookup {@code null}이면 관계를 계산하지 않고, 응답에서 {@code followingAuthor}가
+	 *                     아예 빠진다 — 계산하지 않은 값을 {@code false}로 실으면 거짓말이 된다.
 	 */
-	private CursorPage<PostResponse> assemble(List<Post> rows, int size, Set<Long> followeeIds) {
+	private CursorPage<PostResponse> assemble(List<Post> rows, int size, FollowLookup followLookup) {
 		CursorPage<Post> page = CursorPage.of(rows, size, Post::getId);
+
+		List<Long> authorIds = page.items().stream().map(Post::getAuthorId).distinct().toList();
+		Set<Long> followed = followLookup == null ? null : followLookup.followedAmong(authorIds);
 
 		Map<Long, User> authors = userRepository.findAllById(
 						page.items().stream().map(Post::getAuthorId).distinct().toList()).stream()
@@ -187,7 +185,7 @@ public class PostService {
 				page.items().stream()
 						.map(post -> PostResponse.of(post, authors.get(post.getAuthorId()),
 								books.get(post.getBookId()),
-								followeeIds == null ? null : followeeIds.contains(post.getAuthorId())))
+								followed == null ? null : followed.contains(post.getAuthorId())))
 						.toList(),
 				page.nextCursor(), page.hasNext());
 	}
