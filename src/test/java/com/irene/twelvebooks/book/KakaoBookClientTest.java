@@ -83,7 +83,7 @@ class KakaoBookClientTest {
 				.andExpect(header("Authorization", "KakaoAK " + API_KEY))
 				.andRespond(withSuccess(RESPONSE, MediaType.APPLICATION_JSON));
 
-		var page = client.search("코드", 1);
+		var page = client.search("코드", 1, BookSearchTarget.ALL);
 
 		// meta의 페이지 정보도 함께 옮겨진다. 이것이 없으면 클라이언트가 다음 페이지를 알 수 없다.
 		assertThat(page.page()).isEqualTo(1);
@@ -114,7 +114,7 @@ class KakaoBookClientTest {
 						"meta":{"is_end":true}}
 						""", MediaType.APPLICATION_JSON));
 
-		assertThat(client.search("공저", 1).items().getFirst().authors()).isEqualTo("김, 이");
+		assertThat(client.search("공저", 1, BookSearchTarget.ALL).items().getFirst().authors()).isEqualTo("김, 이");
 	}
 
 	@Test
@@ -127,7 +127,7 @@ class KakaoBookClientTest {
 						"meta":{"is_end":true}}
 						""", MediaType.APPLICATION_JSON));
 
-		assertThat(client.search("없음", 1).items().getFirst().isbn13()).isNull();
+		assertThat(client.search("없음", 1, BookSearchTarget.ALL).items().getFirst().isbn13()).isNull();
 	}
 
 	@Test
@@ -138,7 +138,7 @@ class KakaoBookClientTest {
 						{"meta":{"is_end":true}}
 						""", MediaType.APPLICATION_JSON));
 
-		assertThatThrownBy(() -> client.search("코드", 1))
+		assertThatThrownBy(() -> client.search("코드", 1, BookSearchTarget.ALL))
 				.isInstanceOf(BusinessException.class)
 				.extracting(e -> ((BusinessException) e).getErrorCode())
 				.isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
@@ -153,7 +153,7 @@ class KakaoBookClientTest {
 						"isbn":"","thumbnail":"","datetime":"어제"}],"meta":{"is_end":true}}
 						""", MediaType.APPLICATION_JSON));
 
-		assertThatThrownBy(() -> client.search("코드", 1))
+		assertThatThrownBy(() -> client.search("코드", 1, BookSearchTarget.ALL))
 				.isInstanceOf(BusinessException.class)
 				.extracting(e -> ((BusinessException) e).getErrorCode())
 				.isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
@@ -169,7 +169,7 @@ class KakaoBookClientTest {
 						"meta":{"is_end":true}}
 						""", MediaType.APPLICATION_JSON));
 
-		assertThat(client.search("없음", 1).items().getFirst().authors()).isEqualTo("작자 미상");
+		assertThat(client.search("없음", 1, BookSearchTarget.ALL).items().getFirst().authors()).isEqualTo("작자 미상");
 	}
 
 	@Test
@@ -180,7 +180,7 @@ class KakaoBookClientTest {
 						{"documents":[null],"meta":{"is_end":true}}
 						""", MediaType.APPLICATION_JSON));
 
-		assertThatThrownBy(() -> client.search("코드", 1))
+		assertThatThrownBy(() -> client.search("코드", 1, BookSearchTarget.ALL))
 				.isInstanceOf(BusinessException.class)
 				.extracting(e -> ((BusinessException) e).getErrorCode())
 				.isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
@@ -195,7 +195,7 @@ class KakaoBookClientTest {
 						"isbn":"","thumbnail":"","datetime":""}],"meta":{"is_end":true}}
 						""", MediaType.APPLICATION_JSON));
 
-		assertThatThrownBy(() -> client.search("코드", 1))
+		assertThatThrownBy(() -> client.search("코드", 1, BookSearchTarget.ALL))
 				.isInstanceOf(BusinessException.class)
 				.extracting(e -> ((BusinessException) e).getErrorCode())
 				.isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
@@ -210,7 +210,7 @@ class KakaoBookClientTest {
 						"isbn":"","thumbnail":"","datetime":""}],"meta":{"is_end":true}}
 						""", MediaType.APPLICATION_JSON));
 
-		assertThat(client.search("코드", 1).items().getFirst().authors()).isEqualTo("김");
+		assertThat(client.search("코드", 1, BookSearchTarget.ALL).items().getFirst().authors()).isEqualTo("김");
 	}
 
 	@Test
@@ -222,7 +222,7 @@ class KakaoBookClientTest {
 						"isbn":"","thumbnail":"","datetime":""}],"meta":{"is_end":true}}
 						""", MediaType.APPLICATION_JSON));
 
-		assertThat(client.search("코드", 1).items().getFirst().authors()).isEqualTo("작자 미상");
+		assertThat(client.search("코드", 1, BookSearchTarget.ALL).items().getFirst().authors()).isEqualTo("작자 미상");
 	}
 
 	@Test
@@ -239,7 +239,7 @@ class KakaoBookClientTest {
 			for (int i = 0; i < limit; i++) {
 				pool.submit(() -> {
 					inFlight.countDown();
-					return limited.search("코드", 1);
+					return limited.search("코드", 1, BookSearchTarget.ALL);
 				});
 			}
 			assertThat(inFlight.await(5, TimeUnit.SECONDS)).isTrue();
@@ -248,7 +248,7 @@ class KakaoBookClientTest {
 			// 핵심은 502가 아니라 "기다리지 않는다"는 것이다. 상한이 없으면 이 호출도
 			// 앞의 둘처럼 묶여 있다가 타임아웃으로 502가 되므로, 걸린 시간을 함께 본다.
 			long startedAt = System.nanoTime();
-			assertThatThrownBy(() -> limited.search("코드", 1))
+			assertThatThrownBy(() -> limited.search("코드", 1, BookSearchTarget.ALL))
 					.isInstanceOf(BusinessException.class)
 					.extracting(e -> ((BusinessException) e).getErrorCode())
 					.isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
@@ -309,7 +309,7 @@ class KakaoBookClientTest {
 						"meta":{"is_end":true}}
 						""", MediaType.APPLICATION_JSON));
 
-		assertThat(client.search("코드", 1).items().getFirst().isbn13()).isEqualTo("9788960777330");
+		assertThat(client.search("코드", 1, BookSearchTarget.ALL).items().getFirst().isbn13()).isEqualTo("9788960777330");
 	}
 
 	@Test
@@ -318,7 +318,7 @@ class KakaoBookClientTest {
 		server.expect(requestTo(org.hamcrest.Matchers.startsWith(BASE_URL)))
 				.andRespond(withServerError());
 
-		assertThatThrownBy(() -> client.search("코드", 1))
+		assertThatThrownBy(() -> client.search("코드", 1, BookSearchTarget.ALL))
 				.isInstanceOf(BusinessException.class)
 				.extracting(e -> ((BusinessException) e).getErrorCode())
 				.isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
@@ -331,7 +331,7 @@ class KakaoBookClientTest {
 				.andRespond(org.springframework.test.web.client.response.MockRestResponseCreators
 						.withStatus(HttpStatus.UNAUTHORIZED));
 
-		assertThatThrownBy(() -> client.search("코드", 1))
+		assertThatThrownBy(() -> client.search("코드", 1, BookSearchTarget.ALL))
 				.isInstanceOf(BusinessException.class)
 				.extracting(e -> ((BusinessException) e).getErrorCode())
 				.isEqualTo(ErrorCode.EXTERNAL_API_ERROR);
