@@ -84,8 +84,37 @@ done
 **읽어낸 것** — `contents`는 전문이 아니라 발췌다. 카드에 두세 줄 띄우기엔 충분하지만
 "책 소개"라 부르면 과장이다. 길이가 261에서 멈추는 것으로 보아 카카오가 자른 값이다.
 
+### target — 검색 범위 좁히기 (2026-09-11 측정)
+
+문서상 `title` · `isbn` · `publisher` · `person`. 실제로 동작하고 의미 있게 좁혀진다.
+
+**재현:**
+
+```bash
+for t in "" title person publisher; do
+  u="https://dapi.kakao.com/v3/search/book?query=%EB%B0%95%EA%B2%BD%EB%A6%AC&size=5"
+  [ -n "$t" ] && u="$u&target=$t"
+  curl -s "$u" -H "Authorization: KakaoAK $KAKAO_REST_API_KEY" | jq -c '{target: "'"$t"'", total: .meta.total_count}'
+done
+```
+
+| target | `박경리`의 total_count |
+|---|---|
+| (없음) | 628 |
+| `title` | 228 |
+| `person` | 568 |
+| `publisher` | 0 |
+
+**읽어낸 것** — 저자로 좁히면 "박경리가 쓴 책", 제목으로 좁히면 "제목에 박경리가 든 책"으로
+갈린다. 섞여 있으면 둘 다 묻힌다. 우리는 `ALL` · `TITLE` · `AUTHOR`만 노출하고
+`AUTHOR`를 카카오의 `person`에 매핑한다 — 상류의 어휘(`person`=인명)가 우리 API에 새지
+않게 하려는 것이다. **좁히지 않을 때는 파라미터를 아예 빼야 한다**(빈 값을 어떻게 다루는지는
+재보지 않았다).
+
 **아직 안 재본 것**
 
+- `target=isbn`·`publisher`. 지금 노출하지 않으므로 쓰지 않는다.
+- `sort`(정확도순·발간일순). 기본값인 정확도순을 그대로 쓴다.
 - `size`를 명시했을 때의 동작. 지금은 보내지 않아 기본 10을 쓴다. 문서상 1~50이고,
   `size=50`이면 같은 1000건에 20쪽으로 닿을 것으로 보이나 **확인하지 않았다.**
 - 검색어가 없거나 빈 문자열일 때의 응답. 컨트롤러가 `@NotBlank`로 먼저 막아 도달하지 않는다.

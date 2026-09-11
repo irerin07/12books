@@ -52,12 +52,15 @@ public class BookController {
 	 *
 	 * <p>{@code @Min(1)}은 남긴다. 0쪽이나 음수쪽은 뜻이 없는 입력이고, 카카오가 그것을 어떻게
 	 * 다루는지에 기대고 싶지 않다.
+	 *
+	 * <p>{@code target}으로 제목·저자를 나눠 찾을 수 있다. 안 보내면 좁히지 않는다.
 	 */
 	@GetMapping("/search")
 	public BookSearchPage search(@RequestParam("q") @NotBlank @Size(max = MAX_QUERY_LENGTH) String query,
-			@RequestParam(name = "page", defaultValue = "1") @Min(1) int page) {
+			@RequestParam(name = "page", defaultValue = "1") @Min(1) int page,
+			@RequestParam(name = "target", defaultValue = "ALL") BookSearchTarget target) {
 		// 앞뒤 공백은 검색 의도가 아니다. 그대로 넘기면 외부로 나가는 URI만 길어진다.
-		BookSearchPage found = kakaoBookClient.search(query.strip(), page);
+		BookSearchPage found = kakaoBookClient.search(query.strip(), page, target);
 		// 서명은 여기서 붙인다. 카카오 응답을 옮기는 일과 출처를 보증하는 일은 다르다.
 		return found.withItems(found.items().stream().map(bookSignature::signed).toList());
 	}

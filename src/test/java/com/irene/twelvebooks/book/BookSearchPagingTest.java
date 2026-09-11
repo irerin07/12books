@@ -141,6 +141,65 @@ class BookSearchPagingTest extends AbstractIntegrationTest {
 				.andExpect(jsonPath("$.title").value("어느 무명 시집"));
 	}
 
+	/**
+	 * 제목과 저자를 한꺼번에 찾으면 원하는 책을 고르기 어렵다. 실측하면 {@code 박경리}는
+	 * 전체 628건인데 저자로 좁히면 568건, 제목으로 좁히면 228건이다 — 섞여 있으면 둘 다 놓친다.
+	 */
+	@Test
+	@DisplayName("저자로 좁히면 카카오에 person으로 넘긴다")
+	void narrowsToAuthor() throws Exception {
+		StubbedKakao.server.expect(requestTo(containsString("target=person")))
+				.andRespond(withSuccess("""
+						{"documents":[],"meta":{"total_count":0,"pageable_count":0,"is_end":true}}
+						""", MediaType.APPLICATION_JSON));
+
+		mockMvc.perform(get("/api/v1/books/search").param("q", "박경리").param("target", "AUTHOR")
+						.header("Authorization", bearer))
+				.andExpect(status().isOk());
+
+		StubbedKakao.server.verify();
+	}
+
+	@Test
+	@DisplayName("제목으로 좁히면 카카오에 title로 넘긴다")
+	void narrowsToTitle() throws Exception {
+		StubbedKakao.server.expect(requestTo(containsString("target=title")))
+				.andRespond(withSuccess("""
+						{"documents":[],"meta":{"total_count":0,"pageable_count":0,"is_end":true}}
+						""", MediaType.APPLICATION_JSON));
+
+		mockMvc.perform(get("/api/v1/books/search").param("q", "토지").param("target", "TITLE")
+						.header("Authorization", bearer))
+				.andExpect(status().isOk());
+
+		StubbedKakao.server.verify();
+	}
+
+	@Test
+	@DisplayName("target을 안 보내면 좁히지 않는다 — 카카오에 target이 실리지 않는다")
+	void searchesEverythingByDefault() throws Exception {
+		StubbedKakao.server.expect(request ->
+						org.assertj.core.api.Assertions.assertThat(request.getURI().getQuery())
+								.doesNotContain("target"))
+				.andRespond(withSuccess("""
+						{"documents":[],"meta":{"total_count":0,"pageable_count":0,"is_end":true}}
+						""", MediaType.APPLICATION_JSON));
+
+		mockMvc.perform(get("/api/v1/books/search").param("q", "토지").header("Authorization", bearer))
+				.andExpect(status().isOk());
+
+		StubbedKakao.server.verify();
+	}
+
+	@Test
+	@DisplayName("모르는 target은 카카오까지 가지 않고 400이다")
+	void rejectsUnknownTarget() throws Exception {
+		mockMvc.perform(get("/api/v1/books/search").param("q", "토지").param("target", "GENRE")
+						.header("Authorization", bearer))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("C001"));
+	}
+
 	@Test
 	@DisplayName("결과가 없어도 빈 목록과 함께 페이지 정보가 온다")
 	void reportsEmptyResults() throws Exception {

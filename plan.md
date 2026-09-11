@@ -322,6 +322,10 @@ refresh 쿠키로 reissue해 새 access와 **새 refresh 쿠키**를 받음 → 
   pageCount, publishedAt
 - `book/client/KakaoBookClient` — `RestClient` 기반, `Authorization: KakaoAK {key}` 헤더
 - `BookController`: `GET /books/search`, `POST /books`, `GET /books/{id}`
+- 검색은 `target`으로 범위를 좁힌다(`ALL`·`TITLE`·`AUTHOR`). 제목과 저자를 한꺼번에 찾으면
+  원하는 책이 묻힌다 — `박경리`는 전체 628건, 저자 568건, 제목 228건이다(실측,
+  `external-apis.md`). 카카오의 `person`(인명)을 그대로 노출하지 않고 `AUTHOR`로 바꿔 내보낸다 —
+  상류의 어휘가 우리 API에 새면 검색 제공자를 바꿀 때 클라이언트까지 따라 바뀐다.
 
 **기술 상세**
 - **검색 결과는 저장하지 않는다.** 사용자가 서재에 담는 순간(`POST /books`)에만 업서트한다.
