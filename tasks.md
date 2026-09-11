@@ -254,23 +254,26 @@
 
 > 여기서 SNS가 된다.
 
-- [ ] `V5__follows.sql` — 대리 키 `id` + `uk(follower_id, followee_id)`, `idx(followee_id, id DESC)`
-- [ ] `follow/Follow`
-- [ ] `POST|DELETE /users/{handle}/follow`
-- [ ] `GET /users/{handle}/followers`, `/followings`
-- [ ] `GET /feed?cursor=` — **fan-out on read**: 팔로잉 ID로 `author_id IN (...)` + 커서
-- [ ] `GET /feed?cursor=` — 내 글·팔로잉 글 제외 (팔로잉 목록과 겹치지 않는다)
-- [ ] `GET /feed/following?cursor=` — 팔로잉 전용
-- [ ] 어느 쪽에도 **본인 글은 넣지 않는다.** 내 글은 `/users/{handle}/posts`
-- [ ] `GET /users/{handle}/posts?cursor=` — 프로필 글 목록 = 내 글만 보기
-- [ ] 자기 자신 팔로우 400, 중복 팔로우는 유니크 제약이 막고 409로 변환
-- [ ] 프로필의 팔로워/팔로잉 수는 `count` 쿼리로 시작 (반정규화는 나중에)
+- [x] `V5__follows.sql` — 대리 키 `id` + `uk(follower_id, followee_id)`, `idx(followee_id, id DESC)`
+- [x] `follow/Follow`
+- [x] `POST|DELETE /users/{handle}/follow`
+- [x] `GET /users/{handle}/followers`, `/followings`
+- [x] `GET /feed/following?cursor=` — **fan-out on read**: 팔로잉 ID로 `author_id IN (...)` + 커서
+- [x] `GET /feed?cursor=` — 홈. 내 글과 **팔로잉 글까지** 제외한다 (`author_id NOT IN (나, 팔로잉)`)
+      → 팔로잉 글은 `/feed/following`에만 있다. 한 화면에 섞여 어수선하다는 판단으로 나눴다
+- [x] 어느 쪽에도 **본인 글은 넣지 않는다.** 내 글은 `/users/{handle}/posts`
+- [x] `GET /users/{handle}/posts?cursor=` — 프로필 글 목록 = 내 글만 보기
+- [x] 자기 자신 팔로우 400, 중복 팔로우는 유니크 제약이 막고 409로 변환
+- [x] 프로필의 팔로워/팔로잉 수는 `count` 쿼리로 시작 (반정규화는 나중에)
+- [x] 프로필과 팔로워·팔로잉 목록에 `isFollowing` — 한 페이지의 대상 ID를 모아 한 번에 조회
+- [x] 책 검색은 제목·저자를 나눠 좁힐 수 있다 (`target=TITLE|AUTHOR`)
 
 **완료 기준**
 
-- [ ] A가 B를 팔로우 → A의 `/feed`에 B와 A의 글만, C의 글은 안 보임
-- [ ] 언팔로우하면 B의 글이 사라짐
-- [ ] 자기 팔로우 400, 중복 팔로우 409
+- [x] A가 B를 팔로우 → A의 `/feed/following`에 B의 글만, A와 C의 글은 안 보임
+- [x] 같은 상황에서 A의 `/feed`에는 C의 글만 — B도 A 자신도 안 보임
+- [x] 언팔로우하면 `/feed/following`에서 B의 글이 사라진다
+- [x] 자기 팔로우 400, 중복 팔로우 409
 
 ---
 
