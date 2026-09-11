@@ -67,14 +67,14 @@ public class KakaoBookClient {
 		this.rejected = meterRegistry.counter("kakao.search.rejected");
 	}
 
-	public BookSearchPage search(String query, int page) {
+	public BookSearchPage search(String query, int page, BookSearchTarget target) {
 		if (!permits.tryAcquire()) {
 			rejected.increment();
 			logRejectionSparingly();
 			throw new BusinessException(ErrorCode.EXTERNAL_API_ERROR);
 		}
 		try {
-			return doSearch(query, page);
+			return doSearch(query, page, target);
 		}
 		finally {
 			permits.release();
@@ -95,13 +95,18 @@ public class KakaoBookClient {
 		}
 	}
 
-	private BookSearchPage doSearch(String query, int page) {
+	private BookSearchPage doSearch(String query, int page, BookSearchTarget target) {
 		try {
 			KakaoSearchResponse response = restClient.get()
-					.uri(properties.baseUrl() + SEARCH_PATH, uri -> uri
-							.queryParam("query", query)
-							.queryParam("page", page)
-							.build())
+					.uri(properties.baseUrl() + SEARCH_PATH, uri -> {
+						uri.queryParam("query", query).queryParam("page", page);
+						// 좁히지 않을 때는 파라미터를 아예 빼야 한다. 빈 값을 보내면
+						// 카카오가 어떻게 다루는지 우리가 알 수 없다.
+						if (target.kakaoTarget() != null) {
+							uri.queryParam("target", target.kakaoTarget());
+						}
+						return uri.build();
+					})
 					.header("Authorization", AUTHORIZATION_PREFIX + properties.restApiKey())
 					.retrieve()
 					.body(KakaoSearchResponse.class);

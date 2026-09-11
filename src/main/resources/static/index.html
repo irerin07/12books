@@ -137,7 +137,14 @@
         <h2>4. 책 검색 · 등록 <span class="hint">GET /books/search · POST /books · GET /books/{id}</span></h2>
         <div class="row">
           <div><label>검색어</label><input type="text" id="q" value="코드 컴플리트"></div>
-          <div style="flex:0 0 90px"><label>page</label><input type="number" id="page" value="1" min="1" max="50"></div>
+          <div style="flex:0 0 110px"><label>범위</label>
+            <select id="target">
+              <option value="ALL">전체</option>
+              <option value="TITLE">제목</option>
+              <option value="AUTHOR">저자</option>
+            </select>
+          </div>
+          <div style="flex:0 0 90px"><label>page</label><input type="number" id="page" value="1" min="1"></div>
           <div style="flex:0 0 auto"><button id="btnSearch">검색</button></div>
         </div>
         <label class="check">
@@ -385,7 +392,9 @@ $('btnPatch').onclick = async () => {
 };
 
 $('btnSearch').onclick = async () => {
-  const path = '/api/v1/books/search?q=' + encodeURIComponent($('q').value) + '&page=' + encodeURIComponent($('page').value);
+  const path = '/api/v1/books/search?q=' + encodeURIComponent($('q').value)
+    + '&page=' + encodeURIComponent($('page').value)
+    + '&target=' + encodeURIComponent($('target').value);
   const r = await call('GET', path);
   const page = r.ok && r.body && Array.isArray(r.body.items) ? r.body : { items: [], hasNext: false, totalCount: 0 };
   renderResults(page.items);
