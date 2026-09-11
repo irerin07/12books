@@ -17,6 +17,16 @@ docker compose up -d                 # MySQL + Redis (통합 테스트에도 Doc
 .\gradlew.bat bootRun --args='--spring.profiles.active=local'
 ```
 
+QA용 시드 데이터가 필요하면 앱을 띄운 뒤:
+
+```powershell
+python tools/seed-qa.py              # 계정 5개 + 책·서재·감상평·팔로우·목표
+```
+
+**공개 API만 써서 넣는다** — DB에 직접 쓰지 않으므로 시드가 성공한다는 것 자체가 그 경로들이
+살아 있다는 뜻이다. 여러 번 돌려도 같은 상태가 된다(책은 업서트, 중복 담기·팔로우는 409를
+성공으로, 감상평은 같은 본문이면 건너뜀). 계정 비밀번호는 전부 `123456789`이고 **로컬 QA 전용**이다.
+
 ## 불변 규칙
 
 이 네 가지는 예외 없이 지킨다. 훅과 GitHub ruleset이 실제로 강제한다.
