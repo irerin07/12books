@@ -115,9 +115,6 @@ class PostJourneyE2ETest extends AbstractIntegrationTest {
 				.andReturn().getResponse().getContentAsString();
 		List<String> handles = JsonPath.parse(feed).read("$.items[*].author.handle");
 		assertThat(handles).containsExactly("other");
-		// 팔로우하지 않은 사람이므로 표시도 그렇게 나간다
-		assertThat(JsonPath.parse(feed).<List<Boolean>>read("$.items[*].followingAuthor"))
-				.containsExactly(false);
 
 		mockMvc.perform(get("/api/v1/users/irene/posts").header("Authorization", bearer))
 				.andExpect(jsonPath("$.items.length()").value(1))

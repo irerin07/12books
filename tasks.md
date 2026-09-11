@@ -259,7 +259,7 @@
 - [ ] `POST|DELETE /users/{handle}/follow`
 - [ ] `GET /users/{handle}/followers`, `/followings`
 - [ ] `GET /feed?cursor=` — **fan-out on read**: 팔로잉 ID로 `author_id IN (...)` + 커서
-- [ ] `GET /feed?cursor=` — **홈**: 내 글 제외 전체 + `followingAuthor` 표시 (한 쿼리·한 커서)
+- [ ] `GET /feed?cursor=` — 내 글·팔로잉 글 제외 (팔로잉 목록과 겹치지 않는다)
 - [ ] `GET /feed/following?cursor=` — 팔로잉 전용
 - [ ] 어느 쪽에도 **본인 글은 넣지 않는다.** 내 글은 `/users/{handle}/posts`
 - [ ] `GET /users/{handle}/posts?cursor=` — 프로필 글 목록 = 내 글만 보기

@@ -71,20 +71,17 @@ class FollowJourneyE2ETest extends AbstractIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("홈에서 만난 사람을 팔로우하면 관계와 표시가 따라 바뀐다")
+	@DisplayName("홈에서 만난 사람을 팔로우하면 그 글이 팔로잉 목록으로 옮겨 간다")
 	void discoverFollowAndUnfollow() throws Exception {
 		write(friendBearer, "친구의 감상");
 		write(strangerBearer, "남의 감상");
 		write(bearer, "내 감상");
 
-		// 1. 팔로우 전 — 홈에는 남들 글이 흐르지만 아직 아무도 팔로우하지 않았다.
-		//    내 글은 홈에 없고 내 글 목록에 있다.
-		String before = mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
+		// 1. 팔로우 전 — 홈에 남들 글이 둘, 팔로잉 목록은 비어 있다.
+		//    내 글은 어느 쪽에도 없고 내 글 목록에 있다.
+		mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.items.length()").value(2))
-				.andReturn().getResponse().getContentAsString();
-		assertThat(JsonPath.parse(before).<List<Boolean>>read("$.items[*].followingAuthor"))
-				.containsExactly(false, false);
+				.andExpect(jsonPath("$.items.length()").value(2));
 
 		mockMvc.perform(get("/api/v1/feed/following").header("Authorization", bearer))
 				.andExpect(jsonPath("$.items.length()").value(0));
@@ -96,14 +93,12 @@ class FollowJourneyE2ETest extends AbstractIntegrationTest {
 		mockMvc.perform(post("/api/v1/users/friend/follow").header("Authorization", bearer))
 				.andExpect(status().isNoContent());
 
-		// 3. 홈의 구성은 그대로지만 그 사람 글의 표시가 바뀌고, 팔로잉 목록에 흘러들어온다
+		// 3. 그 사람 글이 홈에서 빠져 팔로잉 목록으로 옮겨 간다 — 두 목록은 겹치지 않는다
 		String after = mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
-				.andExpect(jsonPath("$.items.length()").value(2))
+				.andExpect(jsonPath("$.items.length()").value(1))
 				.andReturn().getResponse().getContentAsString();
 		assertThat(JsonPath.parse(after).<List<String>>read("$.items[*].content"))
-				.containsExactly("남의 감상", "친구의 감상");
-		assertThat(JsonPath.parse(after).<List<Boolean>>read("$.items[*].followingAuthor"))
-				.containsExactly(false, true);
+				.containsExactly("남의 감상");
 
 		String following = mockMvc.perform(get("/api/v1/feed/following").header("Authorization", bearer))
 				.andExpect(jsonPath("$.items.length()").value(1))
@@ -129,14 +124,13 @@ class FollowJourneyE2ETest extends AbstractIntegrationTest {
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("F002"));
 
-		// 6. 언팔로우하면 팔로잉 목록이 다시 비고, 홈에는 글이 남되 표시만 돌아간다
+		// 6. 언팔로우하면 팔로잉 목록이 다시 비고, 그 글이 홈으로 돌아온다
 		mockMvc.perform(delete("/api/v1/users/friend/follow").header("Authorization", bearer))
 				.andExpect(status().isNoContent());
 		mockMvc.perform(get("/api/v1/feed/following").header("Authorization", bearer))
 				.andExpect(jsonPath("$.items.length()").value(0));
 		mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
-				.andExpect(jsonPath("$.items.length()").value(2))
-				.andExpect(jsonPath("$.items[1].followingAuthor").value(false));
+				.andExpect(jsonPath("$.items.length()").value(2));
 		mockMvc.perform(get("/api/v1/users/friend").header("Authorization", bearer))
 				.andExpect(jsonPath("$.followerCount").value(0));
 	}
