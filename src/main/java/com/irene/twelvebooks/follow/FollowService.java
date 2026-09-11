@@ -67,6 +67,16 @@ public class FollowService {
 	}
 
 	/**
+	 * 주어진 사람들 중 내가 팔로우 중인 사람. 목록 한 쪽을 그릴 때 쓴다 —
+	 * 팔로잉 전체를 끌어오지 않고 <b>그 페이지에 실린 id만</b> 묻는다.
+	 */
+	@Transactional(readOnly = true)
+	public Set<Long> followedAmong(Long viewerId, List<Long> candidateIds) {
+		return candidateIds.isEmpty() ? Set.of()
+				: Set.copyOf(followRepository.findFollowedAmong(viewerId, candidateIds));
+	}
+
+	/**
 	 * 보는 사람이 대상을 팔로우 중인지.
 	 *
 	 * <p>같은 프로필이라도 <b>보는 사람에 따라 답이 다르다.</b> 자기 자신은 팔로우할 수 없으므로
@@ -114,8 +124,7 @@ public class FollowService {
 		Map<Long, User> users = userRepository.findAllById(ids).stream()
 				.collect(Collectors.toMap(User::getId, Function.identity()));
 		// 관계도 페이지 전체를 모아 한 번에 묻는다. 한 명씩 물으면 목록 크기만큼 쿼리가 늘어난다.
-		Set<Long> followed = ids.isEmpty() ? Set.of()
-				: Set.copyOf(followRepository.findFollowedAmong(viewerId, ids));
+		Set<Long> followed = followedAmong(viewerId, ids);
 
 		return new CursorPage<>(
 				follows.items().stream()

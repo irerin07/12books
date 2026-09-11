@@ -423,7 +423,7 @@ Phase 2에서 서명으로 막은 오염 경로가 그대로 되살아난다. �
   likeCount, commentCount (카운터는 0으로 시작, Phase 6에서 쓰임)
 - `PostController`: `POST /posts`, `GET /posts/{id}`, `DELETE /posts/{id}`
 - `GET /books/{id}/posts?cursor=`
-- `GET /feed/explore?cursor=` — 전체 최신순
+- `GET /feed/explore?cursor=` — 전체 최신순 *(Phase 5에서 `/feed` 홈으로 흡수)*
 
 **기술 상세**
 - **`Reading` 자동 생성**: 작성 시 (user, book)으로 조회해 없으면 `READING` 상태로 만들어 연결한다.
@@ -434,13 +434,13 @@ Phase 2에서 서명으로 막은 오염 경로가 그대로 되살아난다. �
 - 목록 응답에는 작성자(handle/displayName/avatar)와 책(title/thumbnail)이 항상 붙는다.
   → **N+1 주의**. `@EntityGraph` 또는 fetch join으로 `author`, `book`을 함께 가져온다.
   Phase 4에서 잡아두지 않으면 Phase 5의 피드에서 폭발한다.
-- 탐색 피드(`/feed/explore`)를 팔로우보다 먼저 만드는 이유: 팔로우 관계가 없어도
+- 탐색 피드를 팔로우보다 먼저 만드는 이유: 팔로우 관계가 없어도
   피드가 성립해야 신규 사용자가 빈 화면을 보지 않는다.
 - 삭제는 작성자 본인만. 연관 삭제는 FK `ON DELETE CASCADE`에 맡긴다.
 
 **완료 기준**
 서재에 없는 책으로 감상평 작성 → `reading`이 자동 생성되어 연결됨 →
-`GET /books/{id}/posts`와 `/feed/explore`에 노출 → 커서로 2페이지 조회 시 중복·누락 없음 →
+`GET /books/{id}/posts`와 피드에 노출 → 커서로 2페이지 조회 시 중복·누락 없음 →
 남의 글 삭제 시도 403.
 
 ---
@@ -454,7 +454,9 @@ Phase 2에서 서명으로 막은 오염 경로가 그대로 되살아난다. �
 - `follow/Follow` — 대리 키 `id` + `uk(follower_id, followee_id)`, `idx(followee_id, id DESC)`
 - `POST|DELETE /users/{handle}/follow`
 - `GET /users/{handle}/followers`, `/followings`
-- `GET /feed?cursor=` — 팔로잉 + 본인
+- `GET /feed?cursor=` — 홈 (본인 제외, 섞임 + `followingAuthor`)
+- `GET /feed/following?cursor=` — 팔로잉 전용
+- `GET /users/{handle}/posts?cursor=` — 그 사람의 감상평 (프로필의 글 목록 = 내 글만 보기)
 
 **기술 상세**
 - MVP는 **fan-out on read**: 팔로잉 ID 목록을 뽑아 `posts.author_id IN (...)` + 커서 조건.
@@ -468,7 +470,17 @@ Phase 2에서 서명으로 막은 오염 경로가 그대로 되살아난다. �
   "모든 목록은 id 커서"라는 T5 규약과, 나머지 테이블이 전부 `bigint id`라는 점에 어긋난다.
   복합 PK의 클러스터 인덱스 이점은 `uk(follower_id, followee_id)`가 그대로 대신한다.
   피드가 매 요청 하는 "내 팔로잉" 조회는 이 인덱스만 읽고 끝난다.
-- 피드에 **본인 글도 포함**한다. 자기 글이 안 보이는 타임라인은 어색하다.
+- **홈은 팔로잉 글과 아닌 글을 섞어 준다.** 인스타·트위터의 홈이 그렇다. 각 항목에
+  `followingAuthor`를 실어 화면이 둘을 구분해 표시할 수 있게 한다.
+  **서버가 섞는 이유는 취향이 아니라 기술이다** — 팔로잉 목록과 전체 목록을 따로 받아
+  클라이언트가 이어 붙이면 팔로우한 사람의 글이 **양쪽에 다 나와 중복**되고, 커서도 둘을 따로
+  굴려야 한다. 한 쿼리·한 커서면 그 문제가 구조적으로 없다.
+- **팔로잉 전용은 `/feed/following`으로 따로 둔다.** 인스타의 "Following" 전환에 해당한다.
+- **어느 쪽에도 본인 글은 넣지 않는다.** 처음에는 "자기 글이 안 보이는 타임라인은 어색하다"고
+  보아 포함했는데, 화면을 만들어 보니 반대였다. 내 글은 `GET /users/{handle}/posts`로 본다.
+- 인스타는 팔로잉 글을 먼저 소진한 뒤 추천을 붙이지만, 우리는 그냥 최신순으로 섞는다.
+  단계를 나누려면 커서에 단계를 담아야 하고 복잡도가 눈에 띄게 오른다 — 지금 규모에서는
+  최신순으로 충분하고, 필요해지면 그때 올려도 응답 모양은 그대로다.
 - 프로필의 팔로워/팔로잉 수는 이 단계에서 `count` 쿼리로 시작한다.
   반정규화 카운터는 필요해지면 그때.
 - **팔로워·팔로잉 목록에도 같은 값을 싣는다.** 목록 한 줄마다 팔로우 버튼이 붙으므로 프로필과
@@ -482,7 +494,8 @@ Phase 2에서 서명으로 막은 오염 경로가 그대로 되살아난다. �
   `uk(follower_id, followee_id)`를 타는 exists 한 번이면 된다.
 
 **완료 기준**
-A가 B를 팔로우 → A의 `/feed`에 B의 글과 A 자신의 글만 보이고 C의 글은 안 보임 →
+A가 B를 팔로우 → A의 `/feed`에 B와 C의 글이 섞여 보이고 B만 `followingAuthor: true` →
+`/feed/following`에는 B의 글만 → A 자신의 글은 어느 쪽에도 없고 `/users/A/posts`에 보임 →
 언팔로우하면 B의 글이 사라짐 → 자기 자신 팔로우 400, 중복 팔로우 409.
 
 ---

@@ -18,8 +18,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 감상평과 그 책의 감상평 목록. 책별 목록이 {@code /posts} 밖의 경로를 쓰지만 같은 자원을
- * 다루므로 여기 함께 둔다 — 서재가 {@code /users/{handle}/library}를 {@code LibraryController}에
+ * 감상평과 그것을 모아 보는 목록들(책별·사람별). {@code /posts} 밖의 경로를 쓰지만 같은
+ * 자원을 다루므로 여기 함께 둔다 — 서재가 {@code /users/{handle}/library}를 {@code LibraryController}에
  * 두는 것과 같다. 피드는 팔로우 관계가 섞이므로 {@code feed} 패키지가 따로 맡는다.
  */
 @RestController
@@ -47,6 +47,16 @@ public class PostController {
 	public ResponseEntity<Void> remove(@AuthUser Long userId, @PathVariable Long id) {
 		postService.remove(userId, id);
 		return ResponseEntity.noContent().build();
+	}
+
+	/**
+	 * 그 사람이 쓴 감상평. 프로필의 글 목록이자 "내 글만 보기"다 — 내 handle로 부르면 내 글이다.
+	 */
+	@GetMapping("/users/{handle}/posts")
+	public CursorPage<PostResponse> byAuthor(@PathVariable String handle,
+			@RequestParam(required = false) Long cursor,
+			@RequestParam(defaultValue = "20") int size) {
+		return postService.byAuthor(handle, cursor, PageSize.clamp(size));
 	}
 
 	@GetMapping("/books/{bookId}/posts")

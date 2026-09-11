@@ -51,6 +51,7 @@ class PostFeedTest extends AbstractIntegrationTest {
 	private Long otherBookId;
 	private Long meId;
 	private Long otherId;
+	private Long thirdId;
 
 	@BeforeEach
 	void setUp() {
@@ -58,6 +59,8 @@ class PostFeedTest extends AbstractIntegrationTest {
 		User other = userRepository.save(User.create("other@example.com", "hash", "other", "남"));
 		meId = me.getId();
 		otherId = other.getId();
+		thirdId = userRepository.save(
+				User.create("third@example.com", "hash", "third", "제삼자")).getId();
 		bearer = "Bearer " + jwtProvider.createAccessToken(me.getId(), me.getHandle());
 
 		bookId = bookRepository.save(Book.withIsbn13("9788960777330", "코드 컴플리트",
@@ -89,13 +92,14 @@ class PostFeedTest extends AbstractIntegrationTest {
 				.andExpect(jsonPath("$.nextCursor").doesNotExist());
 	}
 
+	/** 홈은 <b>보는 사람 본인의 글을 뺀</b> 전체다. 내 글은 {@code /users/{handle}/posts}에 있다. */
 	@Test
-	@DisplayName("탐색 피드는 팔로우와 무관하게 전체를 최신순으로 준다")
+	@DisplayName("홈은 팔로우와 무관하게 남들의 글을 최신순으로 준다")
 	void listsEveryonesPosts() throws Exception {
 		given(meId, bookId, 2);
-		given(otherId, otherBookId, 1);
+		given(otherId, otherBookId, 3);
 
-		mockMvc.perform(get("/api/v1/feed/explore").header("Authorization", bearer))
+		mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.items.length()").value(3))
 				.andExpect(jsonPath("$.items[0].author.handle").value("other"));
@@ -104,16 +108,16 @@ class PostFeedTest extends AbstractIntegrationTest {
 	@Test
 	@DisplayName("커서로 두 번째 페이지를 받으면 중복도 누락도 없다")
 	void pagesWithoutOverlapOrGap() throws Exception {
-		given(meId, bookId, 5);
+		given(otherId, bookId, 5);
 
-		String first = mockMvc.perform(get("/api/v1/feed/explore")
+		String first = mockMvc.perform(get("/api/v1/feed")
 						.param("size", "2").header("Authorization", bearer))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.hasNext").value(true))
 				.andReturn().getResponse().getContentAsString();
 
 		Long cursor = JsonPath.parse(first).read("$.nextCursor", Long.class);
-		String second = mockMvc.perform(get("/api/v1/feed/explore")
+		String second = mockMvc.perform(get("/api/v1/feed")
 						.param("size", "2").param("cursor", String.valueOf(cursor))
 						.header("Authorization", bearer))
 				.andReturn().getResponse().getContentAsString();
@@ -127,13 +131,13 @@ class PostFeedTest extends AbstractIntegrationTest {
 	@Test
 	@DisplayName("size는 50을 넘지 못하고, 0 이하는 기본값으로 되돌린다")
 	void clampsSize() throws Exception {
-		given(meId, bookId, 51);
+		given(otherId, bookId, 51);
 
-		mockMvc.perform(get("/api/v1/feed/explore").param("size", "9999")
+		mockMvc.perform(get("/api/v1/feed").param("size", "9999")
 						.header("Authorization", bearer))
 				.andExpect(jsonPath("$.items.length()").value(50));
 
-		mockMvc.perform(get("/api/v1/feed/explore").param("size", "0")
+		mockMvc.perform(get("/api/v1/feed").param("size", "0")
 						.header("Authorization", bearer))
 				.andExpect(jsonPath("$.items.length()").value(20));
 	}
@@ -141,8 +145,8 @@ class PostFeedTest extends AbstractIntegrationTest {
 	@Test
 	@DisplayName("페이지가 커져도 쿼리 수는 그대로다")
 	void doesNotGrowQueriesWithPageSize() throws Exception {
-		given(meId, bookId, 3);
-		given(otherId, otherBookId, 27);
+		given(otherId, bookId, 3);
+		given(thirdId, otherBookId, 27);
 
 		long small = queriesFor(5);
 		long large = queriesFor(30);
@@ -155,7 +159,7 @@ class PostFeedTest extends AbstractIntegrationTest {
 		statistics.setStatisticsEnabled(true);
 		statistics.clear();
 
-		mockMvc.perform(get("/api/v1/feed/explore").param("size", String.valueOf(size))
+		mockMvc.perform(get("/api/v1/feed").param("size", String.valueOf(size))
 						.header("Authorization", bearer))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.items.length()").value(size));

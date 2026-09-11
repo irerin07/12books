@@ -27,7 +27,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 팔로잉 타임라인. 탐색 피드와 달리 <b>내가 고른 사람들</b>의 글만 흐른다.
+ * 홈({@code /feed})과 팔로잉 전용({@code /feed/following}). 어느 쪽에도 내 글은 없다 —
+ * 그건 {@code /users/{handle}/posts}가 준다.
  */
 class TimelineTest extends AbstractIntegrationTest {
 
@@ -82,8 +83,8 @@ class TimelineTest extends AbstractIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("팔로우한 사람과 내 글만 흐르고 남의 글은 섞이지 않는다")
-	void showsFollowingsAndSelfOnly() throws Exception {
+	@DisplayName("홈은 팔로우한 사람과 안 한 사람의 글이 섞여 흐르고, 각각 팔로잉 여부가 붙는다")
+	void homeMixesFollowedAndUnfollowed() throws Exception {
 		follow("friend");
 		write(strangerId, "남의 글");
 		write(friendId, "친구의 글");
@@ -91,39 +92,72 @@ class TimelineTest extends AbstractIntegrationTest {
 
 		String feed = mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
 				.andExpect(status().isOk())
+				// 내 글만 빠지고 나머지는 최신순으로 섞인다
 				.andExpect(jsonPath("$.items.length()").value(2))
 				.andReturn().getResponse().getContentAsString();
 
-		List<String> contents = JsonPath.parse(feed).read("$.items[*].content");
-		assertThat(contents).containsExactly("내 글", "친구의 글");
+		assertThat(JsonPath.parse(feed).<List<String>>read("$.items[*].content"))
+				.containsExactly("친구의 글", "남의 글");
+		assertThat(JsonPath.parse(feed)
+				.<List<Boolean>>read("$.items[*].followingAuthor"))
+				.containsExactly(true, false);
 	}
 
 	@Test
-	@DisplayName("아무도 팔로우하지 않아도 내 글은 보인다")
-	void alwaysIncludesMyOwnPosts() throws Exception {
+	@DisplayName("팔로잉 전용 목록은 내가 고른 사람들의 글만 준다")
+	void followingOnlyList() throws Exception {
+		follow("friend");
+		write(strangerId, "남의 글");
+		write(friendId, "친구의 글");
+		write(meId, "내 글");
+
+		String feed = mockMvc.perform(get("/api/v1/feed/following").header("Authorization", bearer))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items.length()").value(1))
+				.andReturn().getResponse().getContentAsString();
+
+		assertThat(JsonPath.parse(feed).<List<String>>read("$.items[*].content"))
+				.containsExactly("친구의 글");
+	}
+
+	/**
+	 * 아무도 팔로우하지 않아도 홈은 비지 않는다 — 그게 홈을 섞는 이유다.
+	 * 팔로잉 전용 목록만 빈다.
+	 */
+	@Test
+	@DisplayName("팔로우가 0명이어도 홈에는 글이 흐른다")
+	void homeIsNotEmptyWithoutFollowings() throws Exception {
 		write(strangerId, "남의 글");
 		write(meId, "내 글");
 
 		mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.items.length()").value(1))
-				.andExpect(jsonPath("$.items[0].content").value("내 글"));
+				.andExpect(jsonPath("$.items[0].content").value("남의 글"))
+				.andExpect(jsonPath("$.items[0].followingAuthor").value(false));
+
+		mockMvc.perform(get("/api/v1/feed/following").header("Authorization", bearer))
+				.andExpect(jsonPath("$.items.length()").value(0));
 	}
 
 	@Test
-	@DisplayName("언팔로우하면 그 사람의 글이 타임라인에서 사라진다")
+	@DisplayName("언팔로우하면 팔로잉 목록에서 빠지고, 홈에는 남되 표시가 바뀐다")
 	void dropsPostsAfterUnfollow() throws Exception {
 		follow("friend");
 		write(friendId, "친구의 글");
 
-		mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
+		mockMvc.perform(get("/api/v1/feed/following").header("Authorization", bearer))
 				.andExpect(jsonPath("$.items.length()").value(1));
 
 		mockMvc.perform(delete("/api/v1/users/friend/follow").header("Authorization", bearer))
 				.andExpect(status().isNoContent());
 
-		mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
+		mockMvc.perform(get("/api/v1/feed/following").header("Authorization", bearer))
 				.andExpect(jsonPath("$.items.length()").value(0));
+		// 글이 사라지는 게 아니라 관계 표시만 바뀐다
+		mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
+				.andExpect(jsonPath("$.items.length()").value(1))
+				.andExpect(jsonPath("$.items[0].followingAuthor").value(false));
 	}
 
 	@Test
@@ -134,13 +168,13 @@ class TimelineTest extends AbstractIntegrationTest {
 			write(friendId, "글 " + i);
 		}
 
-		String first = mockMvc.perform(get("/api/v1/feed").param("size", "2")
+		String first = mockMvc.perform(get("/api/v1/feed/following").param("size", "2")
 						.header("Authorization", bearer))
 				.andExpect(jsonPath("$.hasNext").value(true))
 				.andReturn().getResponse().getContentAsString();
 		Long cursor = JsonPath.parse(first).read("$.nextCursor", Long.class);
 
-		String second = mockMvc.perform(get("/api/v1/feed").param("size", "2")
+		String second = mockMvc.perform(get("/api/v1/feed/following").param("size", "2")
 						.param("cursor", String.valueOf(cursor)).header("Authorization", bearer))
 				.andReturn().getResponse().getContentAsString();
 
@@ -186,7 +220,7 @@ class TimelineTest extends AbstractIntegrationTest {
 		statistics.setStatisticsEnabled(true);
 		statistics.clear();
 
-		mockMvc.perform(get("/api/v1/feed").param("size", String.valueOf(size))
+		mockMvc.perform(get("/api/v1/feed/following").param("size", String.valueOf(size))
 						.header("Authorization", bearer))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.items.length()").value(size));
@@ -194,10 +228,36 @@ class TimelineTest extends AbstractIntegrationTest {
 		return statistics.getPrepareStatementCount();
 	}
 
+	/**
+	 * 팔로우 표시는 <b>그 페이지에 실린 작성자</b>에 대해서만 물어야 한다. 팔로잉 전체를 끌어와
+	 * Set으로 만들면 한 페이지가 50건이어도 비용이 팔로잉 수에 비례하고, 페이지가 비어 있을
+	 * 때조차 같은 값을 치른다.
+	 */
 	@Test
-	@DisplayName("토큰 없이는 타임라인을 볼 수 없다")
+	@DisplayName("홈이 비면 팔로우 관계를 아예 묻지 않는다")
+	void doesNotAskRelationsForAnEmptyHome() throws Exception {
+		for (int i = 1; i <= 30; i++) {
+			User someone = userRepository.save(
+					User.create("u%d@example.com".formatted(i), "hash", "u%d".formatted(i), "사람" + i));
+			followRepository.save(Follow.of(meId, someone.getId()));
+		}
+
+		Statistics statistics = sessionFactory.getStatistics();
+		statistics.setStatisticsEnabled(true);
+		statistics.clear();
+
+		mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items.length()").value(0));
+
+		// 글 조회 한 번이면 끝난다. 팔로잉을 미리 긁어 오면 여기가 둘이 된다.
+		assertThat(statistics.getPrepareStatementCount()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("토큰 없이는 볼 수 없다")
 	void requiresAuthentication() throws Exception {
-		mockMvc.perform(get("/api/v1/feed"))
-				.andExpect(status().isUnauthorized());
+		mockMvc.perform(get("/api/v1/feed")).andExpect(status().isUnauthorized());
+		mockMvc.perform(get("/api/v1/feed/following")).andExpect(status().isUnauthorized());
 	}
 }
