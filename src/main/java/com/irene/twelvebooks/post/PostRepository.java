@@ -40,19 +40,22 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			Pageable pageable);
 
 	/**
-	 * 홈 한 페이지. <b>내 글만 빼고</b> 전체 최신순이다. 팔로잉 여부는 서비스가 표시한다.
+	 * 홈 한 페이지. <b>내 글과 내가 팔로우하는 사람의 글을 뺀</b> 최신순이다.
 	 *
-	 * <p>팔로잉 글과 아닌 글을 한 쿼리로 가져오므로 커서가 하나다. 왜 나누지 않는지는
-	 * {@code plan.md} Phase 5에 있다.
+	 * <p>팔로잉을 빼기 때문에 홈과 팔로잉 목록이 <b>서로 겹치지 않는다</b> — 화면이 둘을 이어
+	 * 붙여도 같은 글이 두 번 나오지 않고, 섞는 비율은 화면이 정한다.
+	 *
+	 * <p>{@code excludedIds}에는 항상 본인이 들어가므로 빈 컬렉션이 될 수 없다. 빈 목록을
+	 * {@code in ()}으로 넘기면 DB마다 다르게 구는데, 그 경우가 아예 생기지 않는다.
 	 */
 	@Query("""
 			select p from Post p
-			where p.authorId <> :viewerId
+			where p.authorId not in :excludedIds
 			  and (:cursor is null or p.id < :cursor)
 			order by p.id desc
 			""")
-	List<Post> findHomePage(@Param("viewerId") Long viewerId, @Param("cursor") Long cursor,
-			Pageable pageable);
+	List<Post> findHomePage(@Param("excludedIds") List<Long> excludedIds,
+			@Param("cursor") Long cursor, Pageable pageable);
 
 	/**
 	 * 팔로잉 타임라인 한 페이지. 팔로잉 ID 목록을 그대로 {@code IN}에 넣는

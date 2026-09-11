@@ -82,9 +82,13 @@ class TimelineTest extends AbstractIntegrationTest {
 				.andExpect(status().isNoContent());
 	}
 
+	/**
+	 * 홈과 팔로잉 전용은 <b>서로 겹치지 않는다.</b> 홈에서 팔로잉을 빼기 때문에, 화면이 둘을
+	 * 이어 붙여도 같은 글이 두 번 나오지 않는다 — 섞는 비율은 화면이 정한다.
+	 */
 	@Test
-	@DisplayName("홈은 팔로우한 사람과 안 한 사람의 글이 섞여 흐르고, 각각 팔로잉 여부가 붙는다")
-	void homeMixesFollowedAndUnfollowed() throws Exception {
+	@DisplayName("홈에는 내 글도 팔로우한 사람의 글도 없다")
+	void homeExcludesMineAndFollowings() throws Exception {
 		follow("friend");
 		write(strangerId, "남의 글");
 		write(friendId, "친구의 글");
@@ -92,15 +96,29 @@ class TimelineTest extends AbstractIntegrationTest {
 
 		String feed = mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
 				.andExpect(status().isOk())
-				// 내 글만 빠지고 나머지는 최신순으로 섞인다
-				.andExpect(jsonPath("$.items.length()").value(2))
+				.andExpect(jsonPath("$.items.length()").value(1))
 				.andReturn().getResponse().getContentAsString();
 
 		assertThat(JsonPath.parse(feed).<List<String>>read("$.items[*].content"))
-				.containsExactly("친구의 글", "남의 글");
-		assertThat(JsonPath.parse(feed)
-				.<List<Boolean>>read("$.items[*].followingAuthor"))
-				.containsExactly(true, false);
+				.containsExactly("남의 글");
+	}
+
+	@Test
+	@DisplayName("팔로우하면 그 사람 글이 홈에서 빠져 팔로잉 목록으로 옮겨 간다")
+	void followingMovesPostsFromHomeToFollowing() throws Exception {
+		write(friendId, "친구의 글");
+
+		mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
+				.andExpect(jsonPath("$.items.length()").value(1));
+		mockMvc.perform(get("/api/v1/feed/following").header("Authorization", bearer))
+				.andExpect(jsonPath("$.items.length()").value(0));
+
+		follow("friend");
+
+		mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
+				.andExpect(jsonPath("$.items.length()").value(0));
+		mockMvc.perform(get("/api/v1/feed/following").header("Authorization", bearer))
+				.andExpect(jsonPath("$.items.length()").value(1));
 	}
 
 	@Test
@@ -120,10 +138,7 @@ class TimelineTest extends AbstractIntegrationTest {
 				.containsExactly("친구의 글");
 	}
 
-	/**
-	 * 아무도 팔로우하지 않아도 홈은 비지 않는다 — 그게 홈을 섞는 이유다.
-	 * 팔로잉 전용 목록만 빈다.
-	 */
+	/** 아무도 팔로우하지 않아도 홈은 비지 않는다. 팔로잉 전용 목록만 빈다. */
 	@Test
 	@DisplayName("팔로우가 0명이어도 홈에는 글이 흐른다")
 	void homeIsNotEmptyWithoutFollowings() throws Exception {
@@ -133,31 +148,30 @@ class TimelineTest extends AbstractIntegrationTest {
 		mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.items.length()").value(1))
-				.andExpect(jsonPath("$.items[0].content").value("남의 글"))
-				.andExpect(jsonPath("$.items[0].followingAuthor").value(false));
+				.andExpect(jsonPath("$.items[0].content").value("남의 글"));
 
 		mockMvc.perform(get("/api/v1/feed/following").header("Authorization", bearer))
 				.andExpect(jsonPath("$.items.length()").value(0));
 	}
 
 	@Test
-	@DisplayName("언팔로우하면 팔로잉 목록에서 빠지고, 홈에는 남되 표시가 바뀐다")
+	@DisplayName("언팔로우하면 팔로잉 목록에서 빠지고 홈으로 돌아온다")
 	void dropsPostsAfterUnfollow() throws Exception {
 		follow("friend");
 		write(friendId, "친구의 글");
 
 		mockMvc.perform(get("/api/v1/feed/following").header("Authorization", bearer))
 				.andExpect(jsonPath("$.items.length()").value(1));
+		mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
+				.andExpect(jsonPath("$.items.length()").value(0));
 
 		mockMvc.perform(delete("/api/v1/users/friend/follow").header("Authorization", bearer))
 				.andExpect(status().isNoContent());
 
 		mockMvc.perform(get("/api/v1/feed/following").header("Authorization", bearer))
 				.andExpect(jsonPath("$.items.length()").value(0));
-		// 글이 사라지는 게 아니라 관계 표시만 바뀐다
 		mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
-				.andExpect(jsonPath("$.items.length()").value(1))
-				.andExpect(jsonPath("$.items[0].followingAuthor").value(false));
+				.andExpect(jsonPath("$.items.length()").value(1));
 	}
 
 	@Test
@@ -190,7 +204,7 @@ class TimelineTest extends AbstractIntegrationTest {
 		follow("friend");
 		write(friendId, "친구의 글");
 
-		mockMvc.perform(get("/api/v1/feed").param("size", "5").header("Authorization", bearer))
+		mockMvc.perform(get("/api/v1/feed/following").param("size", "5").header("Authorization", bearer))
 				.andExpect(jsonPath("$.items[0].author.handle").value("friend"))
 				.andExpect(jsonPath("$.items[0].book.title").value("코드 컴플리트"));
 	}
@@ -226,32 +240,6 @@ class TimelineTest extends AbstractIntegrationTest {
 				.andExpect(jsonPath("$.items.length()").value(size));
 
 		return statistics.getPrepareStatementCount();
-	}
-
-	/**
-	 * 팔로우 표시는 <b>그 페이지에 실린 작성자</b>에 대해서만 물어야 한다. 팔로잉 전체를 끌어와
-	 * Set으로 만들면 한 페이지가 50건이어도 비용이 팔로잉 수에 비례하고, 페이지가 비어 있을
-	 * 때조차 같은 값을 치른다.
-	 */
-	@Test
-	@DisplayName("홈이 비면 팔로우 관계를 아예 묻지 않는다")
-	void doesNotAskRelationsForAnEmptyHome() throws Exception {
-		for (int i = 1; i <= 30; i++) {
-			User someone = userRepository.save(
-					User.create("u%d@example.com".formatted(i), "hash", "u%d".formatted(i), "사람" + i));
-			followRepository.save(Follow.of(meId, someone.getId()));
-		}
-
-		Statistics statistics = sessionFactory.getStatistics();
-		statistics.setStatisticsEnabled(true);
-		statistics.clear();
-
-		mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.items.length()").value(0));
-
-		// 글 조회 한 번이면 끝난다. 팔로잉을 미리 긁어 오면 여기가 둘이 된다.
-		assertThat(statistics.getPrepareStatementCount()).isEqualTo(1);
 	}
 
 	@Test
