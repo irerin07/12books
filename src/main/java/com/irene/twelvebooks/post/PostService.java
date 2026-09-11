@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -109,9 +110,16 @@ public class PostService {
 		return assemble(postRepository.findBookPage(bookId, cursor, PageRequest.ofSize(size + 1)), size);
 	}
 
+	/**
+	 * 홈. 내 글만 빼고 전체 최신순이며, 각 글에 <b>작성자를 팔로우 중인지</b>가 붙는다.
+	 *
+	 * <p>팔로잉 목록을 여기로 넘겨받는 이유는 {@code post}가 {@code follow}를 알지 않게 하기
+	 * 위해서다. 조합은 {@code feed}가 한다.
+	 */
 	@Transactional(readOnly = true)
-	public CursorPage<PostResponse> explore(Long cursor, int size) {
-		return assemble(postRepository.findExplorePage(cursor, PageRequest.ofSize(size + 1)), size);
+	public CursorPage<PostResponse> home(Long viewerId, Set<Long> followeeIds, Long cursor, int size) {
+		return assemble(postRepository.findHomePage(viewerId, cursor, PageRequest.ofSize(size + 1)),
+				size, followeeIds);
 	}
 
 	/**
@@ -145,6 +153,7 @@ public class PostService {
 		if (followeeIds.isEmpty()) {
 			return new CursorPage<>(List.of(), null, false);
 		}
+		// 여기 실린 글은 전부 팔로잉이다. 굳이 한 건씩 표시할 것 없이 목록 자체가 그 뜻이다.
 		return assemble(postRepository.findTimelinePage(followeeIds, cursor, PageRequest.ofSize(size + 1)), size);
 	}
 
@@ -156,6 +165,15 @@ public class PostService {
 	 * 20건이든 50건이든 쿼리가 세 번이다.
 	 */
 	private CursorPage<PostResponse> assemble(List<Post> rows, int size) {
+		return assemble(rows, size, null);
+	}
+
+	/**
+	 * @param followeeIds 보는 사람이 팔로우하는 id들. {@code null}이면 관계를 계산하지 않고,
+	 *                    응답에서 {@code followingAuthor}가 아예 빠진다 — 계산하지 않은 값을
+	 *                    {@code false}로 실으면 거짓말이 된다.
+	 */
+	private CursorPage<PostResponse> assemble(List<Post> rows, int size, Set<Long> followeeIds) {
 		CursorPage<Post> page = CursorPage.of(rows, size, Post::getId);
 
 		Map<Long, User> authors = userRepository.findAllById(
@@ -168,7 +186,8 @@ public class PostService {
 		return new CursorPage<>(
 				page.items().stream()
 						.map(post -> PostResponse.of(post, authors.get(post.getAuthorId()),
-								books.get(post.getBookId())))
+								books.get(post.getBookId()),
+								followeeIds == null ? null : followeeIds.contains(post.getAuthorId())))
 						.toList(),
 				page.nextCursor(), page.hasNext());
 	}

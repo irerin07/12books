@@ -28,7 +28,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Phase 4의 핵심 여정. 서재에 담지 않은 책에 감상을 남기는 순간 기록이 공개된 글이 되고,
- * 책 페이지와 탐색 피드에 함께 나타난다.
+ * 책 페이지와 홈에 함께 나타난다.
  *
  * <p>여기서 처음으로 두 사람이 같은 화면에서 만난다 — 그 전까지는 혼자 쓰는 기록 앱이었다.
  */
@@ -67,7 +67,7 @@ class PostJourneyE2ETest extends AbstractIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("서재에 담지 않은 책에 감상을 남기면 서재가 생기고, 책 페이지와 탐색 피드에 걸린다")
+	@DisplayName("서재에 담지 않은 책에 감상을 남기면 서재가 생기고, 책 페이지와 홈에 걸린다")
 	void writeWithoutShelving() throws Exception {
 		// 1. 아직 서재가 비어 있다
 		mockMvc.perform(get("/api/v1/users/irene/library").header("Authorization", bearer))
@@ -108,13 +108,20 @@ class PostJourneyE2ETest extends AbstractIntegrationTest {
 				.andExpect(status().isCreated());
 		assertThat(readingRepository.count()).isEqualTo(2);
 
-		// 6. 탐색 피드는 팔로우 없이도 둘 다 최신순으로 보여준다
-		String feed = mockMvc.perform(get("/api/v1/feed/explore").header("Authorization", bearer))
+		// 6. 홈은 팔로우 없이도 남의 글을 보여준다. 내 글은 홈이 아니라 내 글 목록에 있다.
+		String feed = mockMvc.perform(get("/api/v1/feed").header("Authorization", bearer))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.items.length()").value(2))
+				.andExpect(jsonPath("$.items.length()").value(1))
 				.andReturn().getResponse().getContentAsString();
 		List<String> handles = JsonPath.parse(feed).read("$.items[*].author.handle");
-		assertThat(handles).containsExactly("other", "irene");
+		assertThat(handles).containsExactly("other");
+		// 팔로우하지 않은 사람이므로 표시도 그렇게 나간다
+		assertThat(JsonPath.parse(feed).<List<Boolean>>read("$.items[*].followingAuthor"))
+				.containsExactly(false);
+
+		mockMvc.perform(get("/api/v1/users/irene/posts").header("Authorization", bearer))
+				.andExpect(jsonPath("$.items.length()").value(1))
+				.andExpect(jsonPath("$.items[0].author.handle").value("irene"));
 
 		// 7. 남의 글은 지울 수 없다
 		mockMvc.perform(delete("/api/v1/posts/" + postId).header("Authorization", otherBearer))
@@ -123,8 +130,8 @@ class PostJourneyE2ETest extends AbstractIntegrationTest {
 		// 8. 내 글을 지워도 서재 기록은 남는다 — 서재에서 뺀 것이 아니다
 		mockMvc.perform(delete("/api/v1/posts/" + postId).header("Authorization", bearer))
 				.andExpect(status().isNoContent());
-		mockMvc.perform(get("/api/v1/feed/explore").header("Authorization", bearer))
-				.andExpect(jsonPath("$.items.length()").value(1));
+		mockMvc.perform(get("/api/v1/users/irene/posts").header("Authorization", bearer))
+				.andExpect(jsonPath("$.items.length()").value(0));
 		assertThat(readingRepository.findByUserIdAndBookId(myId, bookId)).isPresent();
 	}
 

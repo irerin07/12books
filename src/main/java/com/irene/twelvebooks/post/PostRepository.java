@@ -40,16 +40,22 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			Pageable pageable);
 
 	/**
-	 * 탐색 피드 한 페이지. 팔로우 관계와 무관한 전체 최신순이라 조건이 커서뿐이다.
+	 * 홈 한 페이지. <b>내 글만 빼고</b> 전체 최신순이다.
 	 *
-	 * <p>팔로우한 사람이 없어도 피드가 성립해야 신규 사용자가 빈 화면을 보지 않는다.
+	 * <p>팔로우한 사람의 글과 아닌 글이 한 목록에 섞여 나온다 — 인스타·트위터의 홈과 같다.
+	 * 둘을 따로 조회해 클라이언트가 이어 붙이면 팔로우한 사람의 글이 양쪽에 다 나와 중복되고,
+	 * 커서도 둘을 따로 굴려야 한다. 한 쿼리·한 커서면 그 문제가 구조적으로 없다.
+	 *
+	 * <p>어느 글이 팔로잉인지는 서비스가 표시해 준다.
 	 */
 	@Query("""
 			select p from Post p
-			where (:cursor is null or p.id < :cursor)
+			where p.authorId <> :viewerId
+			  and (:cursor is null or p.id < :cursor)
 			order by p.id desc
 			""")
-	List<Post> findExplorePage(@Param("cursor") Long cursor, Pageable pageable);
+	List<Post> findHomePage(@Param("viewerId") Long viewerId, @Param("cursor") Long cursor,
+			Pageable pageable);
 
 	/**
 	 * 팔로잉 타임라인 한 페이지. 팔로잉 ID 목록을 그대로 {@code IN}에 넣는

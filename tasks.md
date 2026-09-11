@@ -233,7 +233,7 @@
 - [x] 검증: 본문 1~1000자, `fromPage ≤ toPage`(둘 다 있을 때만) — 커스텀 `@AssertTrue`
 - [x] `PostController` — `POST /posts`, `GET /posts/{id}`, `DELETE /posts/{id}` (작성자만)
 - [x] `GET /books/{id}/posts?cursor=`
-- [x] `GET /feed/explore?cursor=` — 전체 최신순
+- [x] `GET /feed/explore?cursor=` — 전체 최신순 *(Phase 5에서 `/feed` 홈으로 흡수)*
 - [x] **N+1 방어**: 목록에 작성자·책이 항상 붙는다.
       **여기서 안 잡으면 Phase 5 피드에서 폭발한다**
       — `@EntityGraph`가 아니라 **페이지의 작성자·책을 한 번에 모아 읽는** 방식이다. 엔티티가
@@ -243,7 +243,7 @@
 **완료 기준**
 
 - [x] 서재에 없는 책으로 작성 → `reading` 자동 생성·연결
-- [x] `GET /books/{id}/posts`와 `/feed/explore`에 노출
+- [x] `GET /books/{id}/posts`와 피드에 노출
 - [x] 커서로 2페이지 조회 시 중복·누락 없음
 - [x] 남의 글 삭제 시도 403
 - [x] 페이지 크기를 바꿔도 쿼리 수가 늘지 않음
@@ -259,7 +259,9 @@
 - [ ] `POST|DELETE /users/{handle}/follow`
 - [ ] `GET /users/{handle}/followers`, `/followings`
 - [ ] `GET /feed?cursor=` — **fan-out on read**: 팔로잉 ID로 `author_id IN (...)` + 커서
-- [ ] 피드에 **본인 글은 넣지 않는다** — 홈이 흐려진다. 내 글은 `/users/{handle}/posts`
+- [ ] `GET /feed?cursor=` — **홈**: 내 글 제외 전체 + `followingAuthor` 표시 (한 쿼리·한 커서)
+- [ ] `GET /feed/following?cursor=` — 팔로잉 전용
+- [ ] 어느 쪽에도 **본인 글은 넣지 않는다.** 내 글은 `/users/{handle}/posts`
 - [ ] `GET /users/{handle}/posts?cursor=` — 프로필 글 목록 = 내 글만 보기
 - [ ] 자기 자신 팔로우 400, 중복 팔로우는 유니크 제약이 막고 409로 변환
 - [ ] 프로필의 팔로워/팔로잉 수는 `count` 쿼리로 시작 (반정규화는 나중에)

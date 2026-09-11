@@ -139,11 +139,18 @@
 
 ### 4.5 피드 (F7)
 
-- `GET /feed` = 내가 팔로우한 사람의 감상평을 `id DESC` 정렬, 커서 페이징. **본인 글은 빠진다** —
-  홈에 내 글과 남의 글이 섞이면 무엇을 보는 화면인지 흐려진다. 내 글은 `GET /users/{handle}/posts`.
+- `GET /feed` = **홈.** 내 글만 뺀 전체를 `id DESC`로, 각 항목에 `followingAuthor`(작성자를
+  팔로우 중인지)를 실어 준다. 팔로우한 사람 글과 아닌 글이 **한 목록에 섞여** 흐른다 —
+  인스타·트위터의 홈과 같다. 서버가 섞는 이유는 취향이 아니라 기술이다: 두 목록을 클라이언트가
+  이어 붙이면 팔로우한 사람의 글이 양쪽에 다 나와 중복되고 커서도 둘이 된다.
+- `GET /feed/following` = 팔로잉 전용. 인스타의 "Following" 전환, 트위터의 "Following" 탭.
+  아무도 팔로우하지 않으면 빈다.
+- 두 목록 모두 **본인 글은 빠진다.** 내 글은 `GET /users/{handle}/posts`.
 - MVP는 **fan-out on read**(팔로잉 ID `IN` 조건 + `posts(author_id, id)` 인덱스).
   팬아웃 쓰기나 Redis 타임라인은 실제 성능 문제가 관측된 뒤에 도입한다.
-- `GET /feed/explore` = 전체 최신순. 신규 사용자가 빈 화면을 보지 않게 하는 안전장치.
+- (Phase 4의 `GET /feed/explore`는 Phase 5에서 `GET /feed`(홈)로 흡수됐다. 팔로우가 없어도
+  홈이 비지 않는다는 목적은 그대로다 — 팔로잉 글이 없으면 홈은 아직 팔로우하지 않은 사람들의
+  글로 채워진다.)
 
 ### 4.6 프로필 & 통계 (F8)
 
@@ -234,8 +241,8 @@
 |---|---|---|
 | POST / DELETE | `/users/{handle}/follow` | 팔로우 |
 | GET | `/users/{handle}/followers` · `/followings` | 관계 목록 |
-| GET | `/feed?cursor=` | 팔로잉 타임라인 |
-| GET | `/feed/explore?cursor=` | 전체 최신 |
+| GET | `/feed?cursor=` | 홈 (섞임 + `followingAuthor`) |
+| GET | `/feed/following?cursor=` | 팔로잉 전용 |
 | GET | `/users/search?q=&cursor=` | 사용자 검색 |
 | GET | `/tags/{name}/posts?cursor=` | 태그별 |
 | GET | `/tags/trending` | 인기 태그 |
