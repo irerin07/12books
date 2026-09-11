@@ -29,31 +29,46 @@ PASSWORD = "123456789"
 
 # 사람마다 읽는 방식이 다르게 잡았다. 아래 서재·감상평이 그 성격을 따라간다 —
 # 이름만 사람 같고 데이터는 무작위면 화면에서 금방 티가 난다.
+#
+# avatarUrl은 일부러 절반만 채웠다. 이미지 업로드가 MVP 밖이라(spec.md §3.2) 실제로도
+# 비어 있는 사람이 많을 것이고, 화면은 없는 경우를 기본으로 다뤄야 한다.
+# 하나(정민서)는 일부러 닿지 않는 주소를 넣었다 — 이미지 로딩이 실패했을 때의 대체 표시까지
+# 한 화면에서 확인할 수 있어야 한다.
+AVATAR = "https://api.dicebear.com/9.x/initials/svg?seed=%s"
+BROKEN_AVATAR = "https://example.invalid/avatar-not-there.png"
+
 ACCOUNTS = [
     # QA의 주인공 다섯. 팔로우 관계와 서재가 이 사람들 중심으로 짜여 있다.
     ("test1@test.com", "test1", "김서연",
-     "지하철에서 20분씩. 기술서랑 소설을 번갈아 읽습니다."),
+     "지하철에서 20분씩. 기술서랑 소설을 번갈아 읽습니다.", AVATAR % "seoyeon"),
     ("test2@test.com", "test2", "박도윤",
-     "완독보다 완주. 읽다 만 책도 그대로 남겨 둡니다."),
+     "완독보다 완주. 읽다 만 책도 그대로 남겨 둡니다.", AVATAR % "doyun"),
     ("test3@test.com", "test3", "이하은",
-     "같은 책을 다시 읽는 걸 좋아해요. 인생책은 데미안."),
+     "같은 책을 다시 읽는 걸 좋아해요. 인생책은 데미안.", None),
     ("test4@test.com", "test4", "최준우",
-     "두꺼운 책만 골라 읽는 편입니다. 요즘은 총 균 쇠."),
+     "두꺼운 책만 골라 읽는 편입니다. 요즘은 총 균 쇠.", AVATAR % "junwoo"),
     ("test5@test.com", "test5", "정민서",
-     "독서 기록 이제 막 시작했습니다."),
+     "독서 기록 이제 막 시작했습니다.", BROKEN_AVATAR),
 
     # 아무도 팔로우하지 않는 독자들. 홈(= 팔로우하지 않은 사람들의 글)을 채우는 것이
     # 이 사람들이다 — 이들이 없으면 서로 다 팔로우한 다섯 명의 홈은 거의 빈다.
-    ("reader1@test.com", "yungaram", "윤가람", "시집을 주로 읽습니다. 한 편씩 천천히."),
-    ("reader2@test.com", "hanjiwoo", "한지우", "추리소설 아니면 잘 안 읽혀요."),
-    ("reader3@test.com", "seominjae", "서민재", "출근 전 30분 독서 3년째."),
-    ("reader4@test.com", "ohsehun", "오세훈", "과학책 읽고 아이한테 설명해 주는 게 취미."),
-    ("reader5@test.com", "baesua", "배수아", "고전만 읽습니다. 느리게 읽는 편."),
-    ("reader6@test.com", "imhaneul", "임하늘", "에세이랑 산문. 밑줄 긋는 맛으로 읽어요."),
-    ("reader7@test.com", "kangtaeo", "강태오", "경제경영서 위주. 요약해서 남깁니다."),
-    ("reader8@test.com", "moonsori", "문소리", "아이랑 같이 읽은 책을 기록합니다."),
-    ("reader9@test.com", "shinyujin", "신유진", "판타지 정주행 중. 밤새우기 일쑤."),
-    ("reader10@test.com", "joeunbyul", "조은별", "역사책 읽고 연표 그리는 게 습관."),
+    ("reader1@test.com", "yungaram", "윤가람", "시집을 주로 읽습니다. 한 편씩 천천히.",
+     AVATAR % "garam"),
+    ("reader2@test.com", "hanjiwoo", "한지우", "추리소설 아니면 잘 안 읽혀요.", None),
+    ("reader3@test.com", "seominjae", "서민재", "출근 전 30분 독서 3년째.",
+     AVATAR % "minjae"),
+    ("reader4@test.com", "ohsehun", "오세훈", "과학책 읽고 아이한테 설명해 주는 게 취미.",
+     None),
+    ("reader5@test.com", "baesua", "배수아", "고전만 읽습니다. 느리게 읽는 편.",
+     AVATAR % "sua"),
+    ("reader6@test.com", "imhaneul", "임하늘", "에세이랑 산문. 밑줄 긋는 맛으로 읽어요.",
+     None),
+    ("reader7@test.com", "kangtaeo", "강태오", "경제경영서 위주. 요약해서 남깁니다.",
+     AVATAR % "taeo"),
+    ("reader8@test.com", "moonsori", "문소리", "아이랑 같이 읽은 책을 기록합니다.", None),
+    ("reader9@test.com", "shinyujin", "신유진", "판타지 정주행 중. 밤새우기 일쑤.",
+     AVATAR % "yujin"),
+    ("reader10@test.com", "joeunbyul", "조은별", "역사책 읽고 연표 그리는 게 습관.", None),
 ]
 
 
@@ -76,7 +91,7 @@ def call(method, path, body=None, token=None):
             return e.code, raw
 
 
-def login_or_signup(email, handle, display_name, bio):
+def login_or_signup(email, handle, display_name, bio, avatar_url):
     status, body = call("POST", "/auth/login", {"email": email, "password": PASSWORD})
     if status != 200:
         status, body = call("POST", "/auth/signup", {
@@ -90,7 +105,10 @@ def login_or_signup(email, handle, display_name, bio):
     # 이름과 소개를 매번 덮어쓴다. 이미 있던 계정은 handle이 그대로 이름에 들어가 있곤 한데
     # (test2, test3 …) 그 상태로는 화면이 테스트 화면처럼 보인다.
     # PATCH는 보내지 않은 필드를 건드리지 않으므로 현재 프로필도 함께 돌려받는다.
-    _, profile = call("PATCH", "/me", {"displayName": display_name, "bio": bio}, token)
+    patch = {"displayName": display_name, "bio": bio}
+    if avatar_url:
+        patch["avatarUrl"] = avatar_url
+    _, profile = call("PATCH", "/me", patch, token)
     return token, profile["handle"]
 
 
@@ -164,10 +182,11 @@ def write_post(token, book_id, content, from_page=None, to_page=None, spoiler=Fa
 # ── 1. 계정 ────────────────────────────────────────────────
 print("계정")
 users = {}
-for email, handle, name, bio in ACCOUNTS:
-    token, real_handle = login_or_signup(email, handle, name, bio)
+for email, handle, name, bio, avatar in ACCOUNTS:
+    token, real_handle = login_or_signup(email, handle, name, bio, avatar)
     users[handle] = {"token": token, "handle": real_handle, "name": name}
-    print("  %-6s %-8s %-6s %s" % (handle, real_handle, name, bio))
+    mark = "사진" if avatar and "invalid" not in avatar else ("깨진 주소" if avatar else "없음")
+    print("  %-10s %-6s %-8s %s" % (real_handle, name, mark, bio))
 
 # ── 2. 책 ─────────────────────────────────────────────────
 print("\n책")
