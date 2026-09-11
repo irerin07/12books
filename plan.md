@@ -134,6 +134,17 @@ com.irene.twelvebooks
 `@RestControllerAdvice GlobalExceptionHandler`가 `{ code, message, fieldErrors }`로 변환한다.
 `MethodArgumentNotValidException`도 여기서 잡아 `fieldErrors`를 채운다.
 
+### 빈 값
+응답 DTO는 `@JsonInclude(NON_NULL)`을 단다. 모르는 값은 `null`로 싣지 않고 키째 뺀다 —
+`null`과 0·빈 문자열을 클라이언트가 헷갈리지 않게 하려는 것이다.
+
+**일부만 다르게 굴면 규칙이 아니라 사고가 된다.** 실제로 `ProfileResponse`와 `BookSearchResult`만
+이 애너테이션이 없어서, `avatarUrl`이 프로필에서는 `null`로 오고 목록에서는 빠졌다. 같은 필드가
+자리에 따라 다르게 오면 화면이 `null`과 `undefined`를 둘 다 다뤄야 한다.
+
+테스트에서 키가 빠졌는지 볼 때는 `doesNotHaveJsonPath()`를 쓴다. `doesNotExist()`는 값이 `null`이어도
+통과해서 아무것도 지키지 못한다 — 이 규약을 처음 테스트로 옮길 때 실제로 헛통과했다.
+
 ### 기본 키
 **모든 테이블은 `bigint auto_increment` 대리 키 하나를 PK로 갖는다. 복합 PK를 쓰지 않는다.**
 관계·조인 테이블도 예외가 아니다 — 유일성은 `unique` 제약이 맡는다.

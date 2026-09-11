@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
@@ -17,6 +18,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -179,6 +181,34 @@ class FollowControllerTest extends AbstractIntegrationTest {
 		mockMvc.perform(get("/api/v1/users/irene").header("Authorization", bearer))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.isFollowing").value(false));
+	}
+
+	/**
+	 * 비어 있는 값은 <b>모든 응답에서 같은 방식으로</b> 빠져야 한다. 프로필만 {@code null}을
+	 * 실어 보내면 같은 필드가 자리에 따라 다르게 와서, 화면이 {@code null}과 {@code undefined}를
+	 * 둘 다 다뤄야 한다.
+	 */
+	@Test
+	@DisplayName("프로필도 비어 있는 값은 응답에서 뺀다")
+	void omitsEmptyProfileFields() throws Exception {
+		mockMvc.perform(get("/api/v1/users/other").header("Authorization", bearer))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.handle").value("other"))
+				// doesNotExist()는 값이 null이어도 통과한다. 키 자체가 없는지 보려면 이쪽이다.
+				.andExpect(jsonPath("$.bio").doesNotHaveJsonPath())
+				.andExpect(jsonPath("$.avatarUrl").doesNotHaveJsonPath());
+	}
+
+	@Test
+	@DisplayName("채워진 값은 그대로 실린다")
+	void keepsFilledProfileFields() throws Exception {
+		mockMvc.perform(patch("/api/v1/me").header("Authorization", bearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"bio":"지하철에서 20분씩","avatarUrl":"https://example.com/a.svg"}"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.bio").value("지하철에서 20분씩"))
+				.andExpect(jsonPath("$.avatarUrl").value("https://example.com/a.svg"));
 	}
 
 	@Test
