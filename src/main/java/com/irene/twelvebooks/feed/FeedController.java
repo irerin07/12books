@@ -28,19 +28,17 @@ public class FeedController {
 	}
 
 	/**
-	 * 홈. 팔로잉 글과 아닌 글이 섞여 흐르고 각 글에 팔로잉 여부가 붙는다. 내 글은 여기 없다 —
-	 * {@code GET /users/{handle}/posts}가 준다.
+	 * 홈. 아직 팔로우하지 않은 사람들의 글이다 — 내 글과 팔로잉 글은 빠진다.
 	 *
-	 * <p>왜 서버가 섞는지, 왜 본인 글을 빼는지는 {@code plan.md} Phase 5에 있다.
-	 * 여기서는 관계를 <b>그 페이지의 작성자에 대해서만</b> 묻는다는 점만 짚어 둔다 —
-	 * 팔로잉 전체를 끌어오면 비용이 팔로잉 수에 비례한다.
+	 * <p>팔로잉을 빼므로 {@code /feed/following}과 <b>서로 겹치지 않는다.</b> 화면이 둘을
+	 * 원하는 비율로 이어 붙여도 같은 글이 두 번 나오지 않는다. 왜 본인 글을 빼는지는
+	 * {@code plan.md} Phase 5에 있다.
 	 */
 	@GetMapping
 	public CursorPage<PostResponse> home(@AuthUser Long userId,
 			@RequestParam(required = false) Long cursor,
 			@RequestParam(defaultValue = "20") int size) {
-		return postService.home(userId, cursor, PageSize.clamp(size),
-				authorIds -> followService.followedAmong(userId, authorIds));
+		return postService.home(userId, followService.followeeIds(userId), cursor, PageSize.clamp(size));
 	}
 
 	/** 팔로잉 전용. 내가 고른 사람들의 글만 — 아무도 팔로우하지 않으면 빈다. */

@@ -139,10 +139,9 @@
 
 ### 4.5 피드 (F7)
 
-- `GET /feed` = **홈.** 내 글만 뺀 전체를 `id DESC`로, 각 항목에 `followingAuthor`(작성자를
-  팔로우 중인지)를 실어 준다. 팔로우한 사람 글과 아닌 글이 **한 목록에 섞여** 흐른다 —
-  인스타·트위터의 홈과 같다. 서버가 섞는 이유는 취향이 아니라 기술이다: 두 목록을 클라이언트가
-  이어 붙이면 팔로우한 사람의 글이 양쪽에 다 나와 중복되고 커서도 둘이 된다.
+- `GET /feed` = **아직 팔로우하지 않은 사람들의 글.** 내 글과 팔로잉 글을 뺀 나머지를 `id DESC`로.
+- **두 목록은 서로 겹치지 않는다.** 홈에서 팔로잉을 빼기 때문이다 — 화면이 둘을 원하는 비율로
+  이어 붙여도 같은 글이 두 번 나오지 않고, 섞는 비율은 화면이 정한다.
 - `GET /feed/following` = 팔로잉 전용. 인스타의 "Following" 전환, 트위터의 "Following" 탭.
   아무도 팔로우하지 않으면 빈다.
 - 두 목록 모두 **본인 글은 빠진다.** 내 글은 `GET /users/{handle}/posts`.
@@ -241,7 +240,7 @@
 |---|---|---|
 | POST / DELETE | `/users/{handle}/follow` | 팔로우 |
 | GET | `/users/{handle}/followers` · `/followings` | 관계 목록 |
-| GET | `/feed?cursor=` | 홈 (섞임 + `followingAuthor`) |
+| GET | `/feed?cursor=` | 아직 팔로우하지 않은 사람들의 글 |
 | GET | `/feed/following?cursor=` | 팔로잉 전용 |
 | GET | `/users/search?q=&cursor=` | 사용자 검색 |
 | GET | `/tags/{name}/posts?cursor=` | 태그별 |

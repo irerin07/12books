@@ -454,7 +454,7 @@ Phase 2에서 서명으로 막은 오염 경로가 그대로 되살아난다. �
 - `follow/Follow` — 대리 키 `id` + `uk(follower_id, followee_id)`, `idx(followee_id, id DESC)`
 - `POST|DELETE /users/{handle}/follow`
 - `GET /users/{handle}/followers`, `/followings`
-- `GET /feed?cursor=` — 홈 (본인 제외, 섞임 + `followingAuthor`)
+- `GET /feed?cursor=` — 본인·팔로잉 제외
 - `GET /feed/following?cursor=` — 팔로잉 전용
 - `GET /users/{handle}/posts?cursor=` — 그 사람의 감상평 (프로필의 글 목록 = 내 글만 보기)
 
@@ -470,11 +470,12 @@ Phase 2에서 서명으로 막은 오염 경로가 그대로 되살아난다. �
   "모든 목록은 id 커서"라는 T5 규약과, 나머지 테이블이 전부 `bigint id`라는 점에 어긋난다.
   복합 PK의 클러스터 인덱스 이점은 `uk(follower_id, followee_id)`가 그대로 대신한다.
   피드가 매 요청 하는 "내 팔로잉" 조회는 이 인덱스만 읽고 끝난다.
-- **홈은 팔로잉 글과 아닌 글을 섞어 준다.** 인스타·트위터의 홈이 그렇다. 각 항목에
-  `followingAuthor`를 실어 화면이 둘을 구분해 표시할 수 있게 한다.
-  **서버가 섞는 이유는 취향이 아니라 기술이다** — 팔로잉 목록과 전체 목록을 따로 받아
-  클라이언트가 이어 붙이면 팔로우한 사람의 글이 **양쪽에 다 나와 중복**되고, 커서도 둘을 따로
-  굴려야 한다. 한 쿼리·한 커서면 그 문제가 구조적으로 없다.
+- **`/feed`는 아직 팔로우하지 않은 사람들의 글만 준다.** 내 글과 팔로잉 글이 빠진다.
+  그래서 `/feed`와 `/feed/following`이 **서로 겹치지 않는다** — 화면이 둘을 원하는 비율로
+  이어 붙여도 같은 글이 두 번 나오지 않는다. 섞는 비율은 화면이 정할 일이고, 서버가 정해 버리면
+  UI를 바꿀 때마다 API를 고쳐야 한다.
+  (한동안 `/feed`가 둘을 섞어 주고 항목마다 `followingAuthor`를 실었는데, 팔로잉을 빼기로 하면서
+  그 값이 항상 거짓이 되어 걷어냈다. 늘 같은 값을 싣는 필드는 없느니만 못하다.)
 - **팔로잉 전용은 `/feed/following`으로 따로 둔다.** 인스타의 "Following" 전환에 해당한다.
 - **어느 쪽에도 본인 글은 넣지 않는다.** 처음에는 "자기 글이 안 보이는 타임라인은 어색하다"고
   보아 포함했는데, 화면을 만들어 보니 반대였다. 내 글은 `GET /users/{handle}/posts`로 본다.
@@ -494,8 +495,8 @@ Phase 2에서 서명으로 막은 오염 경로가 그대로 되살아난다. �
   `uk(follower_id, followee_id)`를 타는 exists 한 번이면 된다.
 
 **완료 기준**
-A가 B를 팔로우 → A의 `/feed`에 B와 C의 글이 섞여 보이고 B만 `followingAuthor: true` →
-`/feed/following`에는 B의 글만 → A 자신의 글은 어느 쪽에도 없고 `/users/A/posts`에 보임 →
+A가 B를 팔로우 → B의 글이 A의 `/feed`에서 빠져 `/feed/following`으로 옮겨 가고 C의 글만 `/feed`에
+남음 → A 자신의 글은 어느 쪽에도 없고 `/users/A/posts`에 보임 →
 언팔로우하면 B의 글이 사라짐 → 자기 자신 팔로우 400, 중복 팔로우 409.
 
 ---
