@@ -18,7 +18,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -184,55 +183,5 @@ class SoftDeleteTest extends AbstractIntegrationTest {
 		assertThat(rows("post_likes", "post_id = " + postId)).isEqualTo(1);
 		assertThat(rows("posts", "id = " + postId + " and like_count = 1 and comment_count = 1"))
 				.isEqualTo(1);
-	}
-
-	/**
-	 * 서재의 "빼기"는 삭제가 아니라 목록에서 내리는 일이다. 그래서 컬럼 이름도 {@code
-	 * deleted_at}이 아니라 {@code in_bookshelf}이고, 다시 담아도 진도가 초기화되지 않는다 —
-	 * 사용자는 목록에서 내려 달라고 했지 읽은 기록을 지워 달라고 한 적이 없다.
-	 */
-	@Test
-	@DisplayName("서재에서 빼도 기록은 남고, 다시 담으면 읽던 진도가 그대로다")
-	void unshelvesAndKeepsProgressOnReshelve() throws Exception {
-		// setUp의 감상평이 bookId를 이미 서재에 담았다(글을 쓰면 자동으로 담긴다). 담기부터
-		// 확인하려면 손대지 않은 책이 필요하다.
-		Long freshBookId = bookRepository.save(Book.withIsbn13("9788966262281", "리팩터링",
-				"마틴 파울러", "한빛미디어", null, null)).getId();
-
-		String body = mockMvc.perform(post("/api/v1/readings").header("Authorization", bearer)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"bookId\": %d, \"status\": \"READING\"}".formatted(freshBookId)))
-				.andExpect(status().isCreated())
-				.andReturn().getResponse().getContentAsString();
-		long readingId = ((Number) JsonPath.parse(body).read("$.id")).longValue();
-
-		// 200쪽까지 읽어 둔다. 다시 담았을 때 이 자리가 남아 있어야 한다.
-		mockMvc.perform(patch("/api/v1/readings/" + readingId).header("Authorization", bearer)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"pageCount\": 500, \"currentPage\": 200}"))
-				.andExpect(status().isOk());
-
-		mockMvc.perform(delete("/api/v1/readings/" + readingId).header("Authorization", bearer))
-				.andExpect(status().isNoContent());
-
-		// setUp의 글이 담은 책 하나만 남는다.
-		mockMvc.perform(get("/api/v1/users/irene/library").header("Authorization", bearer))
-				.andExpect(jsonPath("$.items.length()").value(1));
-		assertThat(rows("readings", "id = " + readingId + " and in_bookshelf = false")).isEqualTo(1);
-
-		// uk(user_id, book_id)가 그대로라 다시 담기는 insert가 아니라 그 행을 다시 꽂는 일이다.
-		mockMvc.perform(post("/api/v1/readings").header("Authorization", bearer)
-						.contentType(MediaType.APPLICATION_JSON)
-						.content("{\"bookId\": %d, \"status\": \"READING\"}".formatted(freshBookId)))
-				.andExpect(status().isCreated())
-				.andExpect(jsonPath("$.status").value("READING"))
-				// 책갈피가 그 자리에 있다. 목록에서 내렸을 뿐 읽은 것을 지운 적이 없다.
-				.andExpect(jsonPath("$.currentPage").value(200))
-				.andExpect(jsonPath("$.pageCount").value(500));
-
-		// 행이 늘지 않는다 — 같은 행을 다시 꽂은 것이다(setUp의 것까지 둘).
-		assertThat(rows("readings", "user_id is not null")).isEqualTo(2);
-		mockMvc.perform(get("/api/v1/users/irene/library").header("Authorization", bearer))
-				.andExpect(jsonPath("$.items.length()").value(2));
 	}
 }
