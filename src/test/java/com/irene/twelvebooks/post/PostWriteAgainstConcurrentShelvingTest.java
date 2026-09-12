@@ -94,7 +94,7 @@ class PostWriteAgainstConcurrentShelvingTest extends AbstractIntegrationTest {
 				shelveInSeparateTransaction();
 			}
 			return found;
-		}).given(readingRepository).findLiveByUserIdAndBookId(myId, bookId);
+		}).given(readingRepository).findShelvedByUserIdAndBookId(myId, bookId);
 
 		mockMvc.perform(post("/api/v1/posts").header("Authorization", bearer)
 						.contentType(MediaType.APPLICATION_JSON)

@@ -32,9 +32,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 감상평을 저장하는 사이에 그 서재 기록이 사라지는 순서.
+ * 감상평을 저장하는 사이에 그 서재 기록이 서재에서 빠지는 순서.
  *
- * <p>삭제가 플래그가 된 뒤로 외래 키가 깨질 일은 없어졌지만, "연결하려던 기록이 그사이
+ * <p>행이 지워지지 않게 된 뒤로 외래 키가 깨질 일은 없어졌지만, "연결하려던 기록이 그사이
  * 서재에서 빠졌다"는 상황 자체는 그대로 남는다. 그때 글쓰기를 막지 않고 연결만 비우는지를
  * 여기서 지킨다.
  *
@@ -95,7 +95,7 @@ class PostWriteAgainstReadingRemovalTest extends AbstractIntegrationTest {
 				removeInSeparateTransaction(readingId);
 			}
 			return found;
-		}).given(readingRepository).findLiveByUserIdAndBookId(myId, bookId);
+		}).given(readingRepository).findShelvedByUserIdAndBookId(myId, bookId);
 
 		mockMvc.perform(post("/api/v1/posts").header("Authorization", bearer)
 						.contentType(MediaType.APPLICATION_JSON)
@@ -112,17 +112,16 @@ class PostWriteAgainstReadingRemovalTest extends AbstractIntegrationTest {
 	private Optional<Reading> lookUp() {
 		return entityManager.createQuery(
 						"select r from Reading r where r.userId = :userId and r.bookId = :bookId "
-								+ "and r.deletedAt is null",
+								+ "and r.inBookshelf = true",
 						Reading.class)
 				.setParameter("userId", myId).setParameter("bookId", bookId)
 				.getResultList().stream().findFirst();
 	}
 
-	/** 사용자가 실제로 쓰는 경로와 같게 뺀다 — 행은 남고 플래그만 선다. */
+	/** 사용자가 실제로 쓰는 경로와 같게 뺀다 — 기록은 남고 서재에서만 내려간다. */
 	private void removeInSeparateTransaction(Long readingId) {
 		TransactionTemplate template = new TransactionTemplate(transactionManager);
 		template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-		template.executeWithoutResult(
-				status -> readingRepository.softDelete(readingId, LocalDateTime.now()));
+		template.executeWithoutResult(status -> readingRepository.unshelve(readingId));
 	}
 }

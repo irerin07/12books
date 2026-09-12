@@ -87,7 +87,7 @@ class PostJourneyE2ETest extends AbstractIntegrationTest {
 		Long postId = JsonPath.parse(written).read("$.id", Long.class);
 
 		// 3. 서재가 저절로 생겼다 — 읽는 중으로
-		Reading reading = readingRepository.findLiveByUserIdAndBookId(myId, bookId).orElseThrow();
+		Reading reading = readingRepository.findShelvedByUserIdAndBookId(myId, bookId).orElseThrow();
 		assertThat(reading.getStatus()).isEqualTo(ReadingStatus.READING);
 		mockMvc.perform(get("/api/v1/users/irene/library").header("Authorization", bearer))
 				.andExpect(jsonPath("$.items.length()").value(1))
@@ -129,7 +129,7 @@ class PostJourneyE2ETest extends AbstractIntegrationTest {
 				.andExpect(status().isNoContent());
 		mockMvc.perform(get("/api/v1/users/irene/posts").header("Authorization", bearer))
 				.andExpect(jsonPath("$.items.length()").value(0));
-		assertThat(readingRepository.findLiveByUserIdAndBookId(myId, bookId)).isPresent();
+		assertThat(readingRepository.findShelvedByUserIdAndBookId(myId, bookId)).isPresent();
 	}
 
 	@Test

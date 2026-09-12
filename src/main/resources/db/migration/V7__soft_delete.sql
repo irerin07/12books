@@ -9,7 +9,13 @@
 
 alter table posts add column deleted_at datetime(6) null;
 alter table comments add column deleted_at datetime(6) null;
-alter table readings add column deleted_at datetime(6) null;
+-- 서재의 "빼기"는 삭제가 아니다. 담았다 뺐다 하는 것은 정상적인 사용이고, 다시 담기는
+-- 복구가 아니라 그냥 다음 행동이다. 같은 컬럼 이름을 쓰면 되살리기 코드가 예외처럼 읽힌다.
+--
+-- deleted_at은 여기 두지 않는다. 지금 readings를 진짜로 지우는 경로가 없어서 항상 null인
+-- 컬럼이 되고, 그러면 모든 조회가 아무것도 거르지 않는 조건 하나를 더 달게 된다. 계정 탈퇴나
+-- 개인정보 파기 경로가 생길 때 posts·comments·users와 함께 정한다.
+alter table readings add column in_bookshelf boolean not null default true;
 
 -- 목록 조회가 전부 "안 지워진 것만"으로 좁혀지므로 기존 인덱스 앞에 그 조건이 붙는다.
 -- MySQL에는 부분 인덱스가 없어 조건을 인덱스에 담을 수 없고, 대신 선행 컬럼으로 넣는다.
@@ -28,15 +34,11 @@ drop index idx_posts_book_id_desc on posts;
 create index idx_comments_post_live on comments (post_id, deleted_at, id desc);
 drop index idx_comments_post_id_desc on comments;
 
-create index idx_readings_user_live on readings (user_id, deleted_at, id desc);
-create index idx_readings_user_status_live on readings (user_id, deleted_at, status);
+create index idx_readings_user_live on readings (user_id, in_bookshelf, id desc);
+create index idx_readings_user_status_live on readings (user_id, in_bookshelf, status);
 drop index idx_readings_user_id_desc on readings;
 drop index idx_readings_user_status on readings;
 
--- uk_readings_user_book(user_id, book_id)은 그대로 둔다.
---
--- 지운 행이 남으므로 같은 책을 다시 담으면 이 제약에 걸린다. 제약을 푸는 대신 다시 담기를
--- "되살리기"로 처리한다 — 한 사람이 한 책을 서재에 두 번 갖지 않는다는 규칙이 이 제약의
--- 본뜻이고, 그 규칙은 지운 뒤에도 옳다. 제약에 deleted_at을 더하는 방법은 MySQL에서 통하지
--- 않는다: 유니크 인덱스는 NULL을 서로 다른 값으로 보므로 (user, book, NULL)이 여러 벌
--- 허용되어 정작 살아 있는 행의 유일성이 깨진다.
+-- uk_readings_user_book(user_id, book_id)은 그대로 둔다. 한 사람이 한 책에 갖는 기록은
+-- 서재에 있든 없든 하나이고, 담기/빼기는 그 행의 in_bookshelf를 켜고 끄는 일이다.
+-- 기록이 사라지지 않으므로 이 제약은 이제 예외 없이 참이다.

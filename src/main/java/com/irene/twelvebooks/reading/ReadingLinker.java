@@ -52,7 +52,7 @@ public class ReadingLinker {
 	public Optional<Long> linkForWrite(Long userId, Long bookId) {
 		// 첫 조회는 잠그지 않는다. 행이 없을 때 잠금 읽기는 갭 잠금을 잡고, 그러면 바로 아래의
 		// insert(독립 트랜잭션)가 자기 요청이 잡은 갭 잠금에 막혀 스스로를 기다리게 된다.
-		Optional<Reading> found = readingRepository.findLiveByUserIdAndBookId(userId, bookId);
+		Optional<Reading> found = readingRepository.findShelvedByUserIdAndBookId(userId, bookId);
 		if (found.isPresent()) {
 			return lock(found.get().getId());
 		}
@@ -68,22 +68,22 @@ public class ReadingLinker {
 			// 시작할 때의 스냅샷을 계속 보므로 방금 남이 커밋한 그 행을 찾지 못한다. insert를
 			// 독립 트랜잭션으로 격리해도 바깥 트랜잭션의 읽기 시점까지 옮겨 주지는 않는다.
 			//
-			// 뺀 책이어서 걸린 경우도 여기로 온다. 행이 남아 있어 유니크 제약에 걸리지만
-			// 사용자에게 그 책은 "서재에 없는 책"이므로, 행 삭제 시절과 같은 결말이 되도록
-			// 되살려서 연결한다 — 글을 썼다는 것은 그 책을 읽고 있다는 뜻이다.
+			// 뺀 책이어서 걸린 경우도 여기로 온다. 기록이 남아 있어 유니크 제약에 걸리지만
+			// 사용자에게 그 책은 "서재에 없는 책"이므로, 다시 꽂아서 연결한다 —
+			// 글을 썼다는 것은 그 책을 읽고 있다는 뜻이다.
 			return readingRepository.findByUserIdAndBookIdForUpdate(userId, bookId)
-					.map(this::reviveIfRemoved)
+					.map(this::shelveAgainIfRemoved)
 					.map(Reading::getId);
 		}
 	}
 
 	/**
-	 * 뺀 기록이면 "읽는 중"으로 되살린다. 살아 있으면 <b>건드리지 않는다</b> — 잠시 덮어 둔
-	 * 책에 감상을 남긴다고 사용자가 정한 상태를 서버가 되돌리면 안 된다.
+	 * 뺀 기록이면 "읽는 중"으로 다시 꽂는다. 서재에 있으면 <b>건드리지 않는다</b> — 잠시
+	 * 덮어 둔 책에 감상을 남긴다고 사용자가 정한 상태를 서버가 되돌리면 안 된다.
 	 */
-	private Reading reviveIfRemoved(Reading reading) {
-		if (reading.isDeleted()) {
-			reading.revive(ReadingStatus.READING, LocalDateTime.now(clock));
+	private Reading shelveAgainIfRemoved(Reading reading) {
+		if (!reading.isInBookshelf()) {
+			reading.shelveAgain(ReadingStatus.READING, LocalDateTime.now(clock));
 		}
 		return reading;
 	}

@@ -33,17 +33,18 @@ public class ReadingService {
 	/**
 	 * 책을 서재에 담는다.
 	 *
-	 * <p>전에 뺐던 책이면 <b>되살린다.</b> 뺀 기록의 행이 남아 있어 {@code uk(user_id, book_id)}에
-	 * 걸리기 때문이기도 하지만, 그 제약의 본뜻("한 사람이 한 책을 서재에 한 번")은 뺀 뒤에도
-	 * 옳다. 되살리면서 진도·별점은 초기화한다 — {@link Reading#revive} 참고.
+	 * <p>전에 뺐던 책이면 <b>그 기록을 다시 꽂는다.</b> 한 사람이 한 책에 갖는 기록은 서재에
+	 * 있든 없든 하나이고({@code uk(user_id, book_id)}), 담기는 그 행의 상태를 바꾸는 일이다.
+	 * 진도와 별점은 그대로 둔다 — {@link Reading#shelveAgain} 참고.
 	 *
-	 * <p>확인과 되살리기 사이를 잠금으로 직렬화한다. 그러지 않으면 동시에 들어온 두 요청이
-	 * 함께 "지워져 있다"를 보고 둘 다 201로 답한다. <b>행이 있는 것을 안 뒤에만</b> 잠그는데,
-	 * 없는 행을 잠금 읽기하면 갭 잠금이 걸려 이어지는 insert가 막힐 수 있어서다.
+	 * <p>확인과 쓰기 사이를 잠금으로 직렬화한다. 그러지 않으면 동시에 들어온 두 요청이 함께
+	 * "빠져 있다"를 보고 둘 다 201로 답하며 뒤엣것이 앞엣것의 상태를 덮는다. <b>행이 있는
+	 * 것을 안 뒤에만</b> 잠그는데, 없는 행을 잠금 읽기하면 갭 잠금이 걸려 이어지는 insert가
+	 * 막힐 수 있어서다.
 	 *
 	 * <p>그 사전 확인은 <b>id만</b> 읽는다. 엔티티를 읽으면 영속성 컨텍스트에 올라가고, 뒤이은
 	 * 잠금 조회가 잠금만 잡은 채 그 인스턴스를 그대로 돌려준다 — 잠금을 기다리는 동안 앞
-	 * 요청이 되살려 커밋해도 이쪽은 옛 {@code deletedAt}을 보고 또 되살린다.
+	 * 요청이 담아 커밋해도 이쪽은 옛 값을 보고 또 담는다.
 	 *
 	 * <p>처음 담는 책이면 그냥 넣는다. 사전 조회와 insert 사이도 비어 있어 동시 요청이 함께
 	 * 통과할 수 있으므로, 마지막 방어선은 여전히 유니크 제약이다. 제약 위반을 409로 바꿔
@@ -56,14 +57,14 @@ public class ReadingService {
 			throw new BusinessException(ErrorCode.BOOK_NOT_FOUND);
 		}
 
-		Optional<Long> existingId = readingRepository.findAnyIdByUserIdAndBookId(userId, request.bookId());
+		Optional<Long> existingId = readingRepository.findIdByUserIdAndBookId(userId, request.bookId());
 		if (existingId.isPresent()) {
 			Reading reading = readingRepository.findAnyByIdForUpdate(existingId.get())
 					.orElseThrow(() -> new BusinessException(ErrorCode.READING_NOT_FOUND));
-			if (!reading.isDeleted()) {
+			if (reading.isInBookshelf()) {
 				throw new BusinessException(ErrorCode.READING_ALREADY_EXISTS);
 			}
-			reading.revive(request.statusOrDefault(), now());
+			reading.shelveAgain(request.statusOrDefault(), now());
 			return reading;
 		}
 
@@ -106,15 +107,16 @@ public class ReadingService {
 	}
 
 	/**
-	 * 서재에서 뺀다 — 행은 남기고 플래그만 세운다.
+	 * 서재에서 뺀다 — 기록은 그대로 두고 목록에서만 내린다. 진도도 별점도 남으므로 다시
+	 * 담으면 그 자리에서 이어 읽는다.
 	 *
-	 * <p>이 책에 쓴 감상평은 그대로 남는다. 예전에는 {@code on delete set null}이 글의 연결을
-	 * 비웠는데, 행이 남으므로 이제 연결도 그대로 남는다. 글에 실리는 것은 연결 자체가 아니라
-	 * 책 정보라 화면은 달라지지 않고, "그때 이 기록에 매달려 쓴 글"이라는 사실이 보존된다.
+	 * <p>이 책에 쓴 감상평도 그대로 남는다. 예전에는 행이 지워지면서 {@code on delete set
+	 * null}이 글의 연결을 비웠는데, 행이 남으므로 이제 연결도 남는다. 글에 실리는 것은 연결
+	 * 자체가 아니라 책 정보라 화면은 달라지지 않는다.
 	 */
 	@Transactional
 	public void remove(Long userId, Long readingId) {
-		readingRepository.softDelete(mine(userId, readingId).getId(), now());
+		readingRepository.unshelve(mine(userId, readingId).getId());
 	}
 
 	/**

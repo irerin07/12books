@@ -206,7 +206,7 @@ class ReadingControllerTest extends AbstractIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("서재에서 빼면 목록에서 사라지지만 행은 남는다")
+	@DisplayName("서재에서 빼면 목록에서 사라지지만 기록은 남는다")
 	void removesFromLibrary() throws Exception {
 		Long id = com.jayway.jsonpath.JsonPath.parse(addBook()).read("$.id", Long.class);
 
@@ -215,9 +215,9 @@ class ReadingControllerTest extends AbstractIntegrationTest {
 
 		mockMvc.perform(get("/api/v1/users/irene/library").header("Authorization", bearer))
 				.andExpect(jsonPath("$.items.length()").value(0));
-		// 삭제는 플래그다(V7). 행이 사라지면 잘못 뺐다는 신고에 답할 방법이 없다.
+		// 빼기는 삭제가 아니다(V7). 기록은 남고 서재에서만 내려간다.
 		assertThat(readingRepository.count()).isEqualTo(1);
-		assertThat(readingRepository.findById(id).orElseThrow().getDeletedAt()).isNotNull();
+		assertThat(readingRepository.findById(id).orElseThrow().isInBookshelf()).isFalse();
 	}
 
 	@Test
