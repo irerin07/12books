@@ -60,6 +60,21 @@ public class Reading extends BaseTimeEntity {
 
 	private Integer rating;
 
+	/**
+	 * 지금 서재에 꽂혀 있는가. 빼면 {@code false}가 되고 행은 그대로 남는다.
+	 *
+	 * <p><b>삭제 플래그가 아니다.</b> 서재에서 빼는 것은 "이 기록을 없애 달라"가 아니라
+	 * "목록에서 내려 달라"이고, 담았다 뺐다 하는 것은 정상적인 사용이다. 그래서 다시 담기도
+	 * 복구가 아니라 그냥 다음 행동이고, 진도와 별점은 그대로 남는다.
+	 *
+	 * <p>모든 조회가 이 조건을 <b>직접</b> 달아야 한다. Hibernate의 {@code @SQLRestriction}으로
+	 * 한 번에 거는 방법도 있지만, 그러면 어느 쿼리에 조건이 붙었는지가 보이지 않고 통계나
+	 * 관리 조회에서 뺀 것까지 보려 할 때 빠져나갈 구멍이 없다.
+	 */
+	@Column(name = "in_bookshelf", nullable = false)
+	private boolean inBookshelf;
+
+
 	protected Reading() {
 	}
 
@@ -68,6 +83,7 @@ public class Reading extends BaseTimeEntity {
 		this.bookId = bookId;
 		this.status = ReadingStatus.WANT_TO_READ;
 		this.currentPage = 0;
+		this.inBookshelf = true;
 	}
 
 	/**
@@ -168,6 +184,31 @@ public class Reading extends BaseTimeEntity {
 		}
 	}
 
+	/** 서재에서 뺀다. 기록은 그대로 두고 목록에서만 내린다. */
+	public void removeFromBookshelf() {
+		this.inBookshelf = false;
+	}
+
+	/**
+	 * 뺐던 책을 다시 담는다.
+	 *
+	 * <p><b>진도와 별점은 그대로 둔다.</b> 사용자는 목록에서 내려 달라고 했지 읽은 기록을
+	 * 지워 달라고 한 적이 없다. 200쪽까지 읽다 덮어 둔 책을 반년 뒤 다시 담으면 책갈피가
+	 * 그 자리에 있는 것이 자연스럽다.
+	 *
+	 * <p>상태만 요청한 값으로 전이한다. 완독했던 책을 다시 담으며 {@code READING}을 고르면
+	 * {@link #changeStatus}가 완독일을 비운다 — 재독을 시작한 것이므로 "다 읽은 날"이 남아
+	 * 있으면 연간 집계가 어긋난다.
+	 */
+	public void shelveAgain(ReadingStatus next, LocalDateTime now) {
+		this.inBookshelf = true;
+		changeStatus(next, now);
+	}
+
+	public boolean isInBookshelf() {
+		return inBookshelf;
+	}
+
 	public boolean ownedBy(Long candidateUserId) {
 		return userId.equals(candidateUserId);
 	}
@@ -207,4 +248,5 @@ public class Reading extends BaseTimeEntity {
 	public Integer getRating() {
 		return rating;
 	}
+
 }

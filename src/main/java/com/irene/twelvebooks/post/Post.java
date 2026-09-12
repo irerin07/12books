@@ -8,6 +8,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import java.time.LocalDateTime;
+
 /**
  * 읽은 분량에 대한 감상. 완독하지 않아도 쓸 수 있고, 구간도 별점도 선택이다.
  *
@@ -58,6 +60,17 @@ public class Post extends BaseTimeEntity {
 	@Column(name = "comment_count", nullable = false)
 	private int commentCount;
 
+	/**
+	 * 지운 시각. {@code null}이면 살아 있다.
+	 *
+	 * <p>행을 지우지 않는 이유는 {@code V7__soft_delete.sql}에 있다. 여기서는 <b>모든 조회가
+	 * 이 조건을 직접 달아야 한다</b>는 점이 중요하다 — Hibernate의 {@code @SQLRestriction}으로
+	 * 한 번에 거는 방법도 있지만, 그러면 어느 쿼리에 조건이 붙었는지가 보이지 않고 통계나
+	 * 관리 조회에서 지운 것까지 보려 할 때 빠져나갈 구멍이 없다.
+	 */
+	@Column(name = "deleted_at")
+	private LocalDateTime deletedAt;
+
 	protected Post() {
 	}
 
@@ -91,6 +104,14 @@ public class Post extends BaseTimeEntity {
 
 	public boolean writtenBy(Long candidateUserId) {
 		return authorId.equals(candidateUserId);
+	}
+
+	public boolean isDeleted() {
+		return deletedAt != null;
+	}
+
+	public LocalDateTime getDeletedAt() {
+		return deletedAt;
 	}
 
 	public Long getId() {

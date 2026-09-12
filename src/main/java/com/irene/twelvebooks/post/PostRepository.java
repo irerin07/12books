@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,6 +24,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	@Query("""
 			select p from Post p
 			where p.bookId = :bookId
+			  and p.deletedAt is null
 			  and (:cursor is null or p.id < :cursor)
 			order by p.id desc
 			""")
@@ -37,6 +39,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	@Query("""
 			select p from Post p
 			where p.authorId = :authorId
+			  and p.deletedAt is null
 			  and (:cursor is null or p.id < :cursor)
 			order by p.id desc
 			""")
@@ -55,6 +58,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	@Query("""
 			select p from Post p
 			where p.authorId not in :excludedIds
+			  and p.deletedAt is null
 			  and (:cursor is null or p.id < :cursor)
 			order by p.id desc
 			""")
@@ -73,6 +77,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	@Query("""
 			select p from Post p
 			where p.authorId in :authorIds
+			  and p.deletedAt is null
 			  and (:cursor is null or p.id < :cursor)
 			order by p.id desc
 			""")
@@ -90,7 +95,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	 * <p>글이 없으면 빈 값이다. 잠글 것이 없으니 뒤이은 삭제도 0행이고, 취소는 어차피 멱등이다.
 	 */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
-	@Query("select p from Post p where p.id = :postId")
+	@Query("select p from Post p where p.id = :postId and p.deletedAt is null")
 	Optional<Post> findByIdForUpdate(@Param("postId") Long postId);
 
 	/**
@@ -107,7 +112,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	 *         {@code exists} 조회를 두면 쿼리가 하나 늘 뿐 아니라 그 사이에 글이 지워질 수 있다.
 	 */
 	@Modifying
-	@Query("update Post p set p.likeCount = p.likeCount + 1 where p.id = :postId")
+	@Query("update Post p set p.likeCount = p.likeCount + 1 where p.id = :postId and p.deletedAt is null")
 	int increaseLikeCount(@Param("postId") Long postId);
 
 	/**
@@ -118,7 +123,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	 * 조건에서 막는 편이 낫다.
 	 */
 	@Modifying
-	@Query("update Post p set p.likeCount = p.likeCount - 1 where p.id = :postId and p.likeCount > 0")
+	@Query("update Post p set p.likeCount = p.likeCount - 1 where p.id = :postId and p.likeCount > 0 and p.deletedAt is null")
 	void decreaseLikeCount(@Param("postId") Long postId);
 
 	/**
@@ -129,11 +134,35 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	 * @return 바뀐 행 수. 0이면 그런 글이 없다는 뜻이라 존재 확인을 겸한다.
 	 */
 	@Modifying
-	@Query("update Post p set p.commentCount = p.commentCount + 1 where p.id = :postId")
+	@Query("update Post p set p.commentCount = p.commentCount + 1 where p.id = :postId and p.deletedAt is null")
 	int increaseCommentCount(@Param("postId") Long postId);
 
 	/** 댓글 수를 원자적으로 내린다. 삭제도 부모를 먼저 잠근 뒤 자식 행을 지운다. */
 	@Modifying
-	@Query("update Post p set p.commentCount = p.commentCount - 1 where p.id = :postId and p.commentCount > 0")
+	@Query("update Post p set p.commentCount = p.commentCount - 1 where p.id = :postId and p.commentCount > 0 and p.deletedAt is null")
 	void decreaseCommentCount(@Param("postId") Long postId);
+
+	/**
+	 * 살아 있는 글 하나. 지운 글은 없는 것과 같이 답한다 — 지운 뒤에도 읽히면 삭제가 아니다.
+	 *
+	 * <p>{@code findById}를 그대로 쓰지 않는 이유이기도 하다. 상속받은 그 메서드는 지운 글도
+	 * 돌려주므로, 사용자에게 보이는 경로에서는 반드시 이쪽을 쓴다.
+	 */
+	@Query("select p from Post p where p.id = :postId and p.deletedAt is null")
+	Optional<Post> findLive(@Param("postId") Long postId);
+
+	@Query("select count(p) > 0 from Post p where p.id = :postId and p.deletedAt is null")
+	boolean existsLive(@Param("postId") Long postId);
+
+	/**
+	 * 글을 지운다 — 행이 아니라 플래그를 세운다.
+	 *
+	 * <p>{@code deletedAt is null} 조건이 붙어 있어 이미 지운 글에는 0행이다. 두 요청이 동시에
+	 * 지워도 한쪽만 1을 받으므로, 뒤따르는 처리를 한 번만 하고 싶을 때 이 값을 보면 된다.
+	 *
+	 * @return 지운 행 수. 0이면 이미 지워졌거나 없는 글이다.
+	 */
+	@Modifying
+	@Query("update Post p set p.deletedAt = :now where p.id = :postId and p.deletedAt is null")
+	int softDelete(@Param("postId") Long postId, @Param("now") LocalDateTime now);
 }

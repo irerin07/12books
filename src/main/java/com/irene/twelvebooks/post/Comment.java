@@ -8,6 +8,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import java.time.LocalDateTime;
+
 /**
  * 감상평에 달린 댓글. <b>1단계뿐이다</b> — 대댓글이 없으므로 {@code parentId}를 두지 않는다.
  * 쓰지 않을 필드는 부채다: 있으면 조회마다 "이건 왜 항상 비어 있나"를 설명해야 하고,
@@ -35,6 +37,17 @@ public class Comment extends BaseTimeEntity {
 
 	@Column(nullable = false, length = MAX_CONTENT_LENGTH)
 	private String content;
+
+	/**
+	 * 지운 시각. {@code null}이면 살아 있다.
+	 *
+	 * <p>행을 지우지 않는 이유는 {@code V7__soft_delete.sql}에 있다. 여기서는 <b>모든 조회가
+	 * 이 조건을 직접 달아야 한다</b>는 점이 중요하다 — Hibernate의 {@code @SQLRestriction}으로
+	 * 한 번에 거는 방법도 있지만, 그러면 어느 쿼리에 조건이 붙었는지가 보이지 않고 통계나
+	 * 관리 조회에서 지운 것까지 보려 할 때 빠져나갈 구멍이 없다.
+	 */
+	@Column(name = "deleted_at")
+	private LocalDateTime deletedAt;
 
 	protected Comment() {
 	}
@@ -71,5 +84,9 @@ public class Comment extends BaseTimeEntity {
 
 	public String getContent() {
 		return content;
+	}
+
+	public LocalDateTime getDeletedAt() {
+		return deletedAt;
 	}
 }
