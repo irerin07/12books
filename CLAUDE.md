@@ -20,7 +20,7 @@ docker compose up -d                 # MySQL + Redis (통합 테스트에도 Doc
 QA용 시드 데이터가 필요하면 앱을 띄운 뒤:
 
 ```powershell
-python tools/seed-qa.py              # 계정 5개 + 책·서재·감상평·팔로우·목표
+python tools/seed-qa.py              # 계정 15개 + 책·서재·감상평·팔로우·목표·좋아요·댓글
 ```
 
 **공개 API만 써서 넣는다** — DB에 직접 쓰지 않으므로 시드가 성공한다는 것 자체가 그 경로들이

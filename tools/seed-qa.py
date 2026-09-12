@@ -152,6 +152,34 @@ def shelve(token, book_id, status_name, page_count=None, current_page=None, rati
     return reading
 
 
+def all_posts_of(token, handle):
+    """그 사람이 쓴 감상평을 [(id, 본문)]으로. 좋아요·댓글을 붙일 대상을 모을 때 쓴다."""
+    found, cursor = [], None
+    while True:
+        path = "/users/%s/posts?size=50" % handle + ("&cursor=%d" % cursor if cursor else "")
+        code, page = call("GET", path, token=token)
+        if code != 200:
+            return found
+        found += [(item["id"], item["content"]) for item in page["items"]]
+        if not page["hasNext"]:
+            return found
+        cursor = page["nextCursor"]
+
+
+def existing_comments(token, post_id):
+    """그 글에 달린 댓글을 [(id, 작성자 handle, 본문)]으로. 전부 훑는다."""
+    found, cursor = [], None
+    while True:
+        path = "/posts/%d/comments?size=50" % post_id + ("&cursor=%d" % cursor if cursor else "")
+        code, page = call("GET", path, token=token)
+        if code != 200:
+            return found
+        found += [(c["id"], c["author"]["handle"], c["content"]) for c in page["items"]]
+        if not page["hasNext"]:
+            return found
+        cursor = page["nextCursor"]
+
+
 def existing_posts(token, handle):
     """이미 쓴 감상평을 {본문: id}로. 있는 것은 건너뛰고 없는 것은 지우는 데 쓴다."""
     found, cursor = {}, None
@@ -465,6 +493,129 @@ for handle, target in (("test1", 24), ("test2", 12), ("test3", 30), ("test4", 12
     if code == 200:
         print("  %-6s 목표 %-3d 완독 %d" % (handle, goal["targetCount"], goal["finishedCount"]))
 
+# ── 7. 반응 (좋아요·댓글) ──────────────────────────────────
+# 누가 무엇에 반응하는지를 손으로 적지 않고 글 id에서 끌어낸다. 101개 글에 일일이 짝을
+# 지어 주면 목록이 글보다 길어지고, 글이 하나 늘 때마다 손을 봐야 한다.
+#
+# 규칙이 결정적이라 여러 번 돌려도 같은 상태가 된다. 0건인 글이 섞이는 것도 일부러다 —
+# 하트가 비어 있는 화면과 "댓글 없음" 화면을 볼 데가 있어야 한다.
+print("\n반응")
+
+by_handle = {info["handle"]: key for key, info in users.items()}
+everyone = list(users)
+
+# 글을 모은다. 작성자를 알아야 "자기 글에 좋아요"를 피할 수 있다.
+pool = []  # [(post_id, 작성자 key)]
+anchor_token = users["test1"]["token"]
+for key in everyone:
+    for post_id, _ in all_posts_of(anchor_token, users[key]["handle"]):
+        pool.append((post_id, key))
+pool.sort()
+
+if not pool:
+    raise SystemExit("감상평이 없어 반응을 붙일 수 없다")
+
+# 가장 최근 글 하나는 모두가 누른다 — "인기 글"이 하나는 있어야 한다.
+POPULAR_ID = pool[-1][0]
+# 그 다음 글에는 댓글을 많이 달아 커서 페이징(기본 20)이 넘어가는 것을 보게 한다.
+CHATTY_ID, CHATTY_AUTHOR = pool[-2]
+CHATTY_COUNT = 25
+
+COMMENTS = [
+    "저도 그 장에서 한참 멈췄어요.",
+    "이 대목 읽고 바로 책 주문했습니다.",
+    "저는 반대로 읽혔는데, 다시 봐야겠네요.",
+    "쪽수까지 적어 주셔서 찾아보기 편했습니다.",
+    "같은 책 읽는 중인데 아직 절반입니다. 스포 안 보고 갈게요.",
+    "이 작가 다른 책도 추천해 주실 수 있나요?",
+    "밑줄 그은 문장이 저랑 똑같아서 웃었습니다.",
+    "저는 이 부분이 제일 지루했어요. 사람마다 다르네요.",
+    "두 번째 읽을 때 확실히 다르게 읽히더라고요.",
+    "출퇴근길에 조금씩 읽고 있습니다. 이 속도면 다음 달쯤 끝나겠네요.",
+    "번역본으로 읽으셨나요? 원서랑 느낌이 많이 다르다고 해서요.",
+    "여기까지 읽고 덮어 뒀는데 다시 펴게 될 것 같습니다.",
+    "메모해 두신 쪽수 보고 그 장만 찾아 읽었습니다. 고맙습니다.",
+    "저도 이 책으로 독서 기록 시작했어요.",
+    "그 문장 어느 판본인지 알 수 있을까요? 제 책에는 안 보이네요.",
+    "읽다가 너무 좋아서 소리 내서 읽었습니다.",
+    "이 감상 보고 도서관에서 빌렸습니다.",
+    "저는 3장이 제일 좋았는데 그 얘기가 없어서 궁금하네요.",
+    "완독 축하드립니다.",
+    "다 읽고 나서 다시 와서 읽어 보겠습니다.",
+    "저랑 진도가 비슷하네요. 같이 읽는 느낌입니다.",
+    "이 부분 설명이 저한테는 너무 빨랐어요.",
+    "표지만 보고 어려울 줄 알았는데 아니었습니다.",
+    "저도 별 다섯 줬어요.",
+    "예전에 읽었는데 이 글 보고 기억이 났습니다.",
+]
+
+
+def likers_of(post_id, author_key):
+    """그 글에 좋아요를 누를 사람들. 0~4명이고 글마다 흩어진다."""
+    if post_id == POPULAR_ID:
+        return [k for k in everyone if k != author_key]
+    pool_keys = [k for k in everyone if k != author_key]
+    count = post_id % 5
+    start = (post_id * 7) % len(pool_keys)
+    return [pool_keys[(start + i) % len(pool_keys)] for i in range(count)]
+
+
+def comments_of(post_id, author_key):
+    """그 글에 달릴 댓글 [(작성자 key, 본문)]. 0~3건, 한 글만 스물다섯."""
+    pool_keys = [k for k in everyone if k != author_key]
+    count = CHATTY_COUNT if post_id == CHATTY_ID else post_id % 4
+    start = (post_id * 11) % len(COMMENTS)
+    who = (post_id * 3) % len(pool_keys)
+    return [(pool_keys[(who + i) % len(pool_keys)], COMMENTS[(start + i) % len(COMMENTS)])
+            for i in range(count)]
+
+
+# ── 좋아요 ────────────────────────────────────────────────
+# 409("이미 눌렀다")를 성공으로 친다. 누른 사람 목록을 돌려주는 API가 없어서 이쪽은
+# 더하기만 한다 — 규칙이 결정적이라 스크립트가 만든 상태는 다시 돌려도 같지만,
+# 손으로 누른 좋아요는 여기서 정리되지 않는다.
+liked = 0
+for post_id, author_key in pool:
+    for liker in likers_of(post_id, author_key):
+        code, _ = call("POST", "/posts/%d/likes" % post_id, token=users[liker]["token"])
+        if code in (204, 409):
+            liked += 1
+        else:
+            print("  좋아요 실패: post=%d %s %s" % (post_id, liker, code))
+print("  좋아요 %d건 (인기 글 #%d에 %d명)" % (liked, POPULAR_ID, len(everyone) - 1))
+
+# ── 댓글 ─────────────────────────────────────────────────
+# 여기는 목록을 읽을 수 있어서 목표 상태로 맞춘다. 없는 것은 달고, 목표에 없는데 달려
+# 있는 것은 지운다(글 작성자도 지울 수 있지만 댓글 작성자 권한으로 지운다).
+added = kept = dropped = 0
+for post_id, author_key in pool:
+    wanted = comments_of(post_id, author_key)
+    wanted_pairs = {(users[k]["handle"], text) for k, text in wanted}
+    have = existing_comments(anchor_token, post_id)
+    have_pairs = {(h, text) for _, h, text in have}
+
+    for key, text in wanted:
+        if (users[key]["handle"], text) in have_pairs:
+            kept += 1
+            continue
+        code, _ = call("POST", "/posts/%d/comments" % post_id, {"content": text},
+                       token=users[key]["token"])
+        if code == 201:
+            added += 1
+        else:
+            print("  댓글 실패: post=%d %s %s" % (post_id, key, code))
+
+    for comment_id, handle, text in have:
+        if (handle, text) not in wanted_pairs and handle in by_handle:
+            code, _ = call("DELETE", "/comments/%d" % comment_id,
+                           token=users[by_handle[handle]]["token"])
+            if code == 204:
+                dropped += 1
+print("  댓글 %d건 추가%s%s" % (added,
+                             "  (이미 있어 건너뜀 %d건)" % kept if kept else "",
+                             "  (목표에 없어 지움 %d건)" % dropped if dropped else ""))
+print("  댓글 많은 글 #%d — %d건, 커서 페이징이 넘어간다" % (CHATTY_ID, CHATTY_COUNT))
+
 # ── 확인 ──────────────────────────────────────────────────
 print("\n확인 (test1 기준)")
 for label, path in (("홈", "/feed"), ("팔로잉", "/feed/following"),
@@ -475,5 +626,10 @@ for label, path in (("홈", "/feed"), ("팔로잉", "/feed/following"),
 code, profile = call("GET", "/users/%s" % users["test2"]["handle"], token=users["test1"]["token"])
 print("  test2 프로필: 팔로워 %d 팔로잉 %d isFollowing=%s"
       % (profile["followerCount"], profile["followingCount"], profile["isFollowing"]))
+code, post = call("GET", "/posts/%d" % POPULAR_ID, token=users["test1"]["token"])
+print("  인기 글 #%d: 좋아요 %d 댓글 %d likedByMe=%s"
+      % (POPULAR_ID, post["likeCount"], post["commentCount"], post["likedByMe"]))
+code, page = call("GET", "/posts/%d/comments" % CHATTY_ID, token=users["test1"]["token"])
+print("  댓글 많은 글 #%d: 1쪽 %d건 hasNext=%s" % (CHATTY_ID, len(page["items"]), page["hasNext"]))
 code, page = call("GET", "/feed/following", token=users["test5"]["token"])
 print("  test5 팔로잉 피드: %d건 (비어 있어야 정상)" % len(page["items"]))
