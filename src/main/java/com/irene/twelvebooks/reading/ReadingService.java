@@ -105,6 +105,14 @@ public class ReadingService {
 		return readingRepository.findPastIds(userId, bookId, PageRequest.ofSize(1)).stream().findFirst();
 	}
 
+	/**
+	 * 지난 기록을 다시 꽂는다.
+	 *
+	 * <p><b>여기서 flush한다.</b> 지난 행을 잠가도 "새로 시작"의 insert는 직렬화되지 않는다 —
+	 * 둘이 겹치면 양쪽 모두 꽂힌 행이 되려 하고 {@code uk(user_id, shelved_book_id)}에 걸린다.
+	 * 한쪽이 실패하는 것은 맞지만, 그 예외가 트랜잭션 커밋까지 미뤄지면 409로 바꿀 자리를
+	 * 지나쳐 500으로 나간다. 사용자에게는 "서버 오류"고 다시 눌러 달라고 안내할 수도 없다.
+	 */
 	private Reading shelveAgain(Long readingId, ReadingStatus status) {
 		Reading reading = readingRepository.findAnyByIdForUpdate(readingId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.READING_NOT_FOUND));
@@ -113,6 +121,12 @@ public class ReadingService {
 			throw new BusinessException(ErrorCode.READING_ALREADY_EXISTS);
 		}
 		reading.shelveAgain(status, now());
+		try {
+			readingRepository.flush();
+		}
+		catch (DataIntegrityViolationException e) {
+			throw new BusinessException(ErrorCode.READING_ALREADY_EXISTS);
+		}
 		return reading;
 	}
 

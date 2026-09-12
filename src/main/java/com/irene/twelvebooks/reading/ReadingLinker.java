@@ -59,12 +59,16 @@ public class ReadingLinker {
 		}
 		// 전에 읽다 뺀 책이면 그 기록을 이어서 쓴다. 새 행을 만들면 사용자가 고르지도 않은
 		// "새로 시작"을 서버가 대신 고른 셈이 되고, 그 책에 두 벌의 기록이 생긴다.
-		Optional<Reading> past = readingRepository.findPastIds(userId, bookId, PageRequest.ofSize(1))
-				.stream().findFirst()
-				.flatMap(readingRepository::findById);
-		if (past.isPresent()) {
-			past.get().shelveAgain(ReadingStatus.READING, LocalDateTime.now(clock));
-			return Optional.of(past.get().getId());
+		//
+		// id만 찾은 뒤 잠금 조회로 엔티티를 처음 적재한다. 평범하게 읽어 두면 영속성 컨텍스트에
+		// 올라가고, 그 사이 다른 요청이 같은 기록을 다시 담아 진도를 옮겨도 이쪽은 옛 필드를
+		// 통째로 다시 써서 그 변경을 덮는다 — 완독해 둔 책이 읽는 중으로 되돌아간다.
+		Optional<Long> pastId = readingRepository.findPastIds(userId, bookId, PageRequest.ofSize(1))
+				.stream().findFirst();
+		if (pastId.isPresent()) {
+			return readingRepository.findAnyByIdForUpdate(pastId.get())
+					.map(this::shelveAgainIfRemoved)
+					.map(Reading::getId);
 		}
 		try {
 			return lock(readingInserter.insert(
@@ -81,6 +85,18 @@ public class ReadingLinker {
 			return readingRepository.findShelvedByUserIdAndBookIdForUpdate(userId, bookId)
 					.map(Reading::getId);
 		}
+	}
+
+	/**
+	 * 아직 빠져 있으면 "읽는 중"으로 다시 꽂는다. 잠금을 기다리는 사이 이미 누가 꽂았다면
+	 * <b>상태를 건드리지 않고 연결만 한다</b> — 그쪽이 정한 상태를 되돌릴 이유가 없고,
+	 * 사용자가 직접 완독으로 바꿨을 수도 있다.
+	 */
+	private Reading shelveAgainIfRemoved(Reading reading) {
+		if (!reading.isInBookshelf()) {
+			reading.shelveAgain(ReadingStatus.READING, LocalDateTime.now(clock));
+		}
+		return reading;
 	}
 
 	/** 승자 행을 PK로 잠근다. 이미 지워졌다면 빈 값이고, 그때는 연결 없이 쓴다. */
