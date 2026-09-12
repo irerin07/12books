@@ -91,4 +91,59 @@ class CommentConcurrentTest extends AbstractIntegrationTest {
 		assertThat(failures).isEmpty();
 		assertThat(postRepository.findById(postId).orElseThrow().getCommentCount()).isEqualTo(WRITERS);
 	}
+
+	/**
+	 * 댓글 작성자와 글 작성자가 <b>같은 댓글</b>을 동시에 지우는 경우. 둘 다 지울 권한이
+	 * 있으므로 실제로 일어난다.
+	 *
+	 * <p>조회한 뒤 엔티티를 지우면, 두 요청이 같은 행을 함께 읽고 차례로 지우게 된다.
+	 * 뒤엣것의 DELETE가 0행을 만나 Hibernate가 "예상 1행, 실제 0행"으로 예외를 던지고
+	 * 사용자에게는 500이 된다 — 언팔로우에서 이미 한 번 겪은 모양이다.
+	 *
+	 * <p>지우려던 댓글이 사라졌다는 결말은 두 요청 모두가 원한 것이다. 그래서 둘 다 성공이고,
+	 * 카운터는 <b>실제로 지운 쪽에서만</b> 내려가 정확히 하나가 빠진다.
+	 */
+	@RepeatedTest(5)
+	@DisplayName("같은 댓글을 동시에 지워도 둘 다 성공하고 카운터는 하나만 빠진다")
+	void concurrentDeleteOfSameComment() throws Exception {
+		Long postAuthorId = userRepository.save(
+				User.create("author@example.com", "hash", "irene", "아이린")).getId();
+		Long commentAuthorId = userRepository.save(
+				User.create("other@example.com", "hash", "other", "남")).getId();
+		Long bookId = bookRepository.save(Book.withIsbn13("9788960777330", "코드 컴플리트",
+				"스티브 맥코넬", "위키북스", null, null)).getId();
+		Long postId = postRepository.save(
+				Post.write(postAuthorId, bookId, null, "이름 짓기 장.", null, null, false)).getId();
+
+		Long commentId = commentService.write(commentAuthorId, postId,
+				new CommentCreateRequest("저도 그 장에서 멈췄어요.")).id();
+
+		CountDownLatch start = new CountDownLatch(1);
+		List<Throwable> failures = Collections.synchronizedList(new ArrayList<>());
+		ExecutorService pool = Executors.newFixedThreadPool(2);
+		try {
+			// 댓글 작성자와 글 작성자가 동시에 누른다. 둘 다 권한이 있다.
+			for (Long remover : List.of(commentAuthorId, postAuthorId)) {
+				pool.submit(() -> {
+					try {
+						start.await();
+						commentService.remove(remover, commentId);
+					}
+					catch (Throwable e) {
+						failures.add(e);
+					}
+				});
+			}
+			start.countDown();
+			pool.shutdown();
+			assertThat(pool.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
+		}
+		finally {
+			pool.shutdownNow();
+		}
+
+		assertThat(failures).isEmpty();
+		// 한 번만 빠져야 한다. 둘 다 내리면 음수가 되고, 아무도 안 내리면 지운 댓글이 남는다.
+		assertThat(postRepository.findById(postId).orElseThrow().getCommentCount()).isZero();
+	}
 }

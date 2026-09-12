@@ -76,6 +76,14 @@ public class CommentService {
 	 *
 	 * <p>남의 댓글에 404가 아니라 403을 주는 것은 감상평과 같은 이유다 — 공개된 글에 달린
 	 * 공개된 댓글이라 존재 자체가 비밀이 아니다.
+	 *
+	 * <p>권한을 확인한 뒤 <b>글 행을 먼저 잠근다.</b> 반응이 모두 그렇게 하고, 여기서는
+	 * 지우기와 카운터 감소를 한 덩어리로 묶는 일도 겸한다.
+	 *
+	 * <p>그다음 <b>한 문장으로</b> 지우고 지운 행 수를 본다. 댓글 작성자와 글 작성자가 동시에
+	 * 누르면 둘 다 권한 확인을 통과하는데, 조회한 엔티티를 지우는 방식이면 뒤엣것이 0행을
+	 * 만나 500이 된다. 지우려던 댓글이 사라졌다는 결말은 두 요청 모두가 원한 것이므로 둘 다
+	 * 성공으로 끝내고, 카운터는 실제로 지운 쪽에서만 내린다.
 	 */
 	@Transactional
 	public void remove(Long userId, Long commentId) {
@@ -84,8 +92,10 @@ public class CommentService {
 		if (!comment.writtenBy(userId) && !postAuthorIs(comment.getPostId(), userId)) {
 			throw new BusinessException(ErrorCode.FORBIDDEN);
 		}
-		commentRepository.delete(comment);
-		postRepository.decreaseCommentCount(comment.getPostId());
+		postRepository.findByIdForUpdate(comment.getPostId());
+		if (commentRepository.deleteComment(commentId) == 1) {
+			postRepository.decreaseCommentCount(comment.getPostId());
+		}
 	}
 
 	/**
