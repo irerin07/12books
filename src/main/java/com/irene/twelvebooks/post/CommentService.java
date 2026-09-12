@@ -96,7 +96,11 @@ public class CommentService {
 		if (!comment.writtenBy(userId) && !postAuthorIs(comment.getPostId(), userId)) {
 			throw new BusinessException(ErrorCode.FORBIDDEN);
 		}
-		postRepository.findByIdForUpdate(comment.getPostId());
+		// 글이 지워졌으면 그 댓글에도 닿을 길이 없다. 여기서 멈추지 않으면 댓글만 지워지고
+		// 카운터는 그대로 남는다 — 카운터를 내리는 UPDATE가 살아 있는 글에만 걸리기 때문이다.
+		// 보존해 둔 글의 숫자가 실제와 어긋나면 남긴 의미가 없다.
+		postRepository.findByIdForUpdate(comment.getPostId())
+				.orElseThrow(() -> new BusinessException(ErrorCode.COMMENT_NOT_FOUND));
 		if (commentRepository.softDelete(commentId, LocalDateTime.now(clock)) == 1) {
 			postRepository.decreaseCommentCount(comment.getPostId());
 		}

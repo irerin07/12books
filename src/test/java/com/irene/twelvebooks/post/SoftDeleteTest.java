@@ -152,6 +152,40 @@ class SoftDeleteTest extends AbstractIntegrationTest {
 	}
 
 	@Test
+	@DisplayName("지워진 글의 댓글은 지울 수 없고, 좋아요 취소는 아무것도 바꾸지 않는다")
+	void doesNotTouchChildrenOfDeletedPost() throws Exception {
+		String body = mockMvc.perform(post("/api/v1/posts/" + postId + "/comments")
+						.header("Authorization", otherBearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"content\": \"저도 그 장에서 멈췄어요.\"}"))
+				.andExpect(status().isCreated())
+				.andReturn().getResponse().getContentAsString();
+		long commentId = ((Number) JsonPath.parse(body).read("$.id")).longValue();
+
+		mockMvc.perform(post("/api/v1/posts/" + postId + "/likes").header("Authorization", otherBearer))
+				.andExpect(status().isNoContent());
+
+		mockMvc.perform(delete("/api/v1/posts/" + postId).header("Authorization", bearer))
+				.andExpect(status().isNoContent());
+
+		// 지워진 글의 댓글에는 닿을 길이 없다. 지울 수 있으면 남겨 둔 글의 commentCount만
+		// 어긋난다 — 카운터를 내리는 UPDATE는 살아 있는 글에만 걸리기 때문이다.
+		mockMvc.perform(delete("/api/v1/comments/" + commentId).header("Authorization", otherBearer))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("P003"));
+
+		// 취소는 멱등이라 성공으로 답하되, 지워진 글의 좋아요는 건드리지 않는다.
+		// 행만 지우고 카운터가 그대로면 보존해 둔 글의 숫자가 틀어진다.
+		mockMvc.perform(delete("/api/v1/posts/" + postId + "/likes").header("Authorization", otherBearer))
+				.andExpect(status().isNoContent());
+
+		assertThat(rows("comments", "id = " + commentId + " and deleted_at is null")).isEqualTo(1);
+		assertThat(rows("post_likes", "post_id = " + postId)).isEqualTo(1);
+		assertThat(rows("posts", "id = " + postId + " and like_count = 1 and comment_count = 1"))
+				.isEqualTo(1);
+	}
+
+	@Test
 	@DisplayName("서재에서 뺀 기록은 행이 남고, 같은 책을 다시 담으면 되살아난다")
 	void softDeletesReadingAndRevivesOnReshelve() throws Exception {
 		// setUp의 감상평이 bookId를 이미 서재에 담았다(글을 쓰면 자동으로 담긴다). 담기부터

@@ -78,7 +78,7 @@ class PostControllerTest extends AbstractIntegrationTest {
 				{"bookId":%d,"content":"47~92쪽. 화자가 갑자기 믿을 수 없어진다.","fromPage":47,"toPage":92}"""
 				.formatted(bookId));
 
-		Reading reading = readingRepository.findByUserIdAndBookId(myId, bookId).orElseThrow();
+		Reading reading = readingRepository.findLiveByUserIdAndBookId(myId, bookId).orElseThrow();
 		assertThat(reading.getStatus()).isEqualTo(ReadingStatus.READING);
 		assertThat(reading.getStartedAt()).isNotNull();
 		assertThat(JsonPath.parse(body).read("$.readingId", Long.class)).isEqualTo(reading.getId());

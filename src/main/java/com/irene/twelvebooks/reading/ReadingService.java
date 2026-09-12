@@ -41,6 +41,10 @@ public class ReadingService {
 	 * 함께 "지워져 있다"를 보고 둘 다 201로 답한다. <b>행이 있는 것을 안 뒤에만</b> 잠그는데,
 	 * 없는 행을 잠금 읽기하면 갭 잠금이 걸려 이어지는 insert가 막힐 수 있어서다.
 	 *
+	 * <p>그 사전 확인은 <b>id만</b> 읽는다. 엔티티를 읽으면 영속성 컨텍스트에 올라가고, 뒤이은
+	 * 잠금 조회가 잠금만 잡은 채 그 인스턴스를 그대로 돌려준다 — 잠금을 기다리는 동안 앞
+	 * 요청이 되살려 커밋해도 이쪽은 옛 {@code deletedAt}을 보고 또 되살린다.
+	 *
 	 * <p>처음 담는 책이면 그냥 넣는다. 사전 조회와 insert 사이도 비어 있어 동시 요청이 함께
 	 * 통과할 수 있으므로, 마지막 방어선은 여전히 유니크 제약이다. 제약 위반을 409로 바꿔
 	 * 던지기만 하므로 트랜잭션이 rollback-only가 되는 것은 문제가 되지 않는다.
@@ -52,9 +56,9 @@ public class ReadingService {
 			throw new BusinessException(ErrorCode.BOOK_NOT_FOUND);
 		}
 
-		Optional<Reading> existing = readingRepository.findByUserIdAndBookId(userId, request.bookId());
-		if (existing.isPresent()) {
-			Reading reading = readingRepository.findAnyByIdForUpdate(existing.get().getId())
+		Optional<Long> existingId = readingRepository.findAnyIdByUserIdAndBookId(userId, request.bookId());
+		if (existingId.isPresent()) {
+			Reading reading = readingRepository.findAnyByIdForUpdate(existingId.get())
 					.orElseThrow(() -> new BusinessException(ErrorCode.READING_NOT_FOUND));
 			if (!reading.isDeleted()) {
 				throw new BusinessException(ErrorCode.READING_ALREADY_EXISTS);

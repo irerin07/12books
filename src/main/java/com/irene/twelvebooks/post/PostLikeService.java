@@ -62,6 +62,8 @@ public class PostLikeService {
 	 * <p>여기서도 <b>글 행을 먼저 잠근다.</b> 누르기처럼 카운터 UPDATE를 앞세울 수는 없다 —
 	 * 지운 행 수를 봐야 내릴지 정할 수 있기 때문이다. 그래서 잠금만 따로 먼저 잡는다.
 	 *
+	 * <p>글이 지워졌으면 아무것도 바꾸지 않는다. 이유는 아래 본문에 적었다.
+	 *
 	 * <p>순서를 지키지 않으면, 같은 사람이 하트를 연달아 두 번 눌렀을 때 교착이 난다:
 	 * 취소가 좋아요 행을 지우고 그 잠금을 쥔 채 카운터를 기다리는 동안, 누르기는 카운터를
 	 * 올려 글 잠금을 쥔 채 <b>같은 유니크 키</b> insert에서 취소를 기다린다. 서로 다른 사람의
@@ -69,7 +71,12 @@ public class PostLikeService {
 	 */
 	@Transactional
 	public void unlike(Long userId, Long postId) {
-		postRepository.findByIdForUpdate(postId);
+		if (postRepository.findByIdForUpdate(postId).isEmpty()) {
+			// 지워졌거나 없는 글이다. 취소는 멱등이라 성공으로 답하되 아무것도 바꾸지 않는다 —
+			// 여기서 좋아요 행만 지우면 카운터는 그대로 남아(그 UPDATE는 살아 있는 글에만
+			// 걸린다) 보존해 둔 글의 숫자가 실제와 어긋난다.
+			return;
+		}
 		if (postLikeRepository.deleteLike(postId, userId) == 1) {
 			postRepository.decreaseLikeCount(postId);
 		}

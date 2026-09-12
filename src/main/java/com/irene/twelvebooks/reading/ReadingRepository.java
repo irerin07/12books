@@ -15,10 +15,15 @@ import java.util.Optional;
 public interface ReadingRepository extends JpaRepository<Reading, Long> {
 
 	/**
-	 * 상태를 가리지 않고 찾는다. 다시 담기가 <b>되살릴 행이 있는지</b> 볼 때만 쓴다 —
-	 * 사용자에게 보이는 조회에는 쓰지 않는다.
+	 * 상태를 가리지 않고 <b>id만</b> 찾는다. 다시 담기가 "되살릴 행이 있는가"를 볼 때 쓴다.
+	 *
+	 * <p>엔티티가 아니라 id를 돌려주는 것이 핵심이다. 여기서 엔티티를 읽어 오면 그것이
+	 * 영속성 컨텍스트에 올라가고, 뒤이은 잠금 조회는 <b>잠금만 잡고 이미 들고 있던 인스턴스를
+	 * 그대로 돌려준다.</b> 그러면 잠금을 기다리는 동안 남이 바꿔 커밋한 내용을 보지 못한 채
+	 * 옛 필드로 판단하게 된다 — 잠갔는데도 직렬화가 되지 않는다.
 	 */
-	Optional<Reading> findByUserIdAndBookId(Long userId, Long bookId);
+	@Query("select r.id from Reading r where r.userId = :userId and r.bookId = :bookId")
+	Optional<Long> findAnyIdByUserIdAndBookId(@Param("userId") Long userId, @Param("bookId") Long bookId);
 
 	/** 되살리기가 확인과 쓰기 사이를 직렬화하려고 잠그는 경로. 지운 행도 돌려준다. */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
