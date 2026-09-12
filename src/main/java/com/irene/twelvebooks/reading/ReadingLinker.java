@@ -1,6 +1,7 @@
 package com.irene.twelvebooks.reading;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,6 +57,19 @@ public class ReadingLinker {
 		if (found.isPresent()) {
 			return lock(found.get().getId());
 		}
+		// 전에 읽다 뺀 책이면 그 기록을 이어서 쓴다. 새 행을 만들면 사용자가 고르지도 않은
+		// "새로 시작"을 서버가 대신 고른 셈이 되고, 그 책에 두 벌의 기록이 생긴다.
+		//
+		// id만 찾은 뒤 잠금 조회로 엔티티를 처음 적재한다. 평범하게 읽어 두면 영속성 컨텍스트에
+		// 올라가고, 그 사이 다른 요청이 같은 기록을 다시 담아 진도를 옮겨도 이쪽은 옛 필드를
+		// 통째로 다시 써서 그 변경을 덮는다 — 완독해 둔 책이 읽는 중으로 되돌아간다.
+		Optional<Long> pastId = readingRepository.findPastIds(userId, bookId, PageRequest.ofSize(1))
+				.stream().findFirst();
+		if (pastId.isPresent()) {
+			return readingRepository.findAnyByIdForUpdate(pastId.get())
+					.map(this::shelveAgainIfRemoved)
+					.map(Reading::getId);
+		}
 		try {
 			return lock(readingInserter.insert(
 					Reading.of(userId, bookId, ReadingStatus.READING, LocalDateTime.now(clock))).getId());
@@ -68,18 +82,15 @@ public class ReadingLinker {
 			// 시작할 때의 스냅샷을 계속 보므로 방금 남이 커밋한 그 행을 찾지 못한다. insert를
 			// 독립 트랜잭션으로 격리해도 바깥 트랜잭션의 읽기 시점까지 옮겨 주지는 않는다.
 			//
-			// 뺀 책이어서 걸린 경우도 여기로 온다. 기록이 남아 있어 유니크 제약에 걸리지만
-			// 사용자에게 그 책은 "서재에 없는 책"이므로, 다시 꽂아서 연결한다 —
-			// 글을 썼다는 것은 그 책을 읽고 있다는 뜻이다.
-			return readingRepository.findByUserIdAndBookIdForUpdate(userId, bookId)
-					.map(this::shelveAgainIfRemoved)
+			return readingRepository.findShelvedByUserIdAndBookIdForUpdate(userId, bookId)
 					.map(Reading::getId);
 		}
 	}
 
 	/**
-	 * 뺀 기록이면 "읽는 중"으로 다시 꽂는다. 서재에 있으면 <b>건드리지 않는다</b> — 잠시
-	 * 덮어 둔 책에 감상을 남긴다고 사용자가 정한 상태를 서버가 되돌리면 안 된다.
+	 * 아직 빠져 있으면 "읽는 중"으로 다시 꽂는다. 잠금을 기다리는 사이 이미 누가 꽂았다면
+	 * <b>상태를 건드리지 않고 연결만 한다</b> — 그쪽이 정한 상태를 되돌릴 이유가 없고,
+	 * 사용자가 직접 완독으로 바꿨을 수도 있다.
 	 */
 	private Reading shelveAgainIfRemoved(Reading reading) {
 		if (!reading.isInBookshelf()) {

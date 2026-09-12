@@ -15,15 +15,44 @@ import java.util.Optional;
 public interface ReadingRepository extends JpaRepository<Reading, Long> {
 
 	/**
-	 * 서재에 있든 없든 <b>id만</b> 찾는다. 다시 담기가 "이미 기록이 있는가"를 볼 때 쓴다.
+	 * 지금 서재에 꽂혀 있는 기록의 <b>id만</b> 찾는다. 다시 담기가 "이미 있는가"를 볼 때 쓴다.
 	 *
 	 * <p>엔티티가 아니라 id를 돌려주는 것이 핵심이다. 여기서 엔티티를 읽어 오면 그것이
 	 * 영속성 컨텍스트에 올라가고, 뒤이은 잠금 조회는 <b>잠금만 잡고 이미 들고 있던 인스턴스를
 	 * 그대로 돌려준다.</b> 그러면 잠금을 기다리는 동안 남이 바꿔 커밋한 내용을 보지 못한 채
 	 * 옛 필드로 판단하게 된다 — 잠갔는데도 직렬화가 되지 않는다.
 	 */
-	@Query("select r.id from Reading r where r.userId = :userId and r.bookId = :bookId")
-	Optional<Long> findIdByUserIdAndBookId(@Param("userId") Long userId, @Param("bookId") Long bookId);
+	@Query("""
+			select r.id from Reading r
+			where r.userId = :userId and r.bookId = :bookId and r.inBookshelf = true
+			""")
+	Optional<Long> findShelvedId(@Param("userId") Long userId, @Param("bookId") Long bookId);
+
+	/**
+	 * 이 책의 <b>지난 독서 중 가장 최근 것</b>. 다시 담기가 "이어서 읽을 것이 있는가"를 볼 때 쓴다.
+	 *
+	 * <p>여러 벌일 수 있다 — 새로 시작을 고를 때마다 한 행이 쌓인다. 이어서 읽는 대상은
+	 * 언제나 마지막 것이다.
+	 */
+	@Query("""
+			select r.id from Reading r
+			where r.userId = :userId and r.bookId = :bookId and r.inBookshelf = false
+			order by r.id desc
+			""")
+	List<Long> findPastIds(@Param("userId") Long userId, @Param("bookId") Long bookId, Pageable pageable);
+
+	/**
+	 * 이 책에 대한 내 기록 하나. <b>서재에 있으면 그것, 없으면 가장 최근 지난 독서</b>다.
+	 *
+	 * <p>화면이 담기 버튼을 그리기 전에 부른다 — "담김"으로 표시할지, "200쪽까지 읽으셨어요.
+	 * 이어서 읽을까요?"를 물을지가 이 한 번의 조회로 정해진다.
+	 */
+	@Query("""
+			select r from Reading r
+			where r.userId = :userId and r.bookId = :bookId
+			order by r.inBookshelf desc, r.id desc
+			""")
+	List<Reading> findMine(@Param("userId") Long userId, @Param("bookId") Long bookId, Pageable pageable);
 
 	/** 다시 담기가 확인과 쓰기 사이를 직렬화하려고 잠그는 경로. 뺀 기록도 돌려준다. */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -66,8 +95,8 @@ public interface ReadingRepository extends JpaRepository<Reading, Long> {
 	 * "이미 누가 만들었다"는 신호를 받은 뒤에만 부른다.
 	 */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
-	@Query("select r from Reading r where r.userId = :userId and r.bookId = :bookId")
-	Optional<Reading> findByUserIdAndBookIdForUpdate(@Param("userId") Long userId,
+	@Query("select r from Reading r where r.userId = :userId and r.bookId = :bookId and r.inBookshelf = true")
+	Optional<Reading> findShelvedByUserIdAndBookIdForUpdate(@Param("userId") Long userId,
 			@Param("bookId") Long bookId);
 
 	/**
