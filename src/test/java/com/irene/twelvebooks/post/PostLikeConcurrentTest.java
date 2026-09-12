@@ -2,6 +2,8 @@ package com.irene.twelvebooks.post;
 
 import com.irene.twelvebooks.book.Book;
 import com.irene.twelvebooks.book.BookRepository;
+import com.irene.twelvebooks.common.error.BusinessException;
+import com.irene.twelvebooks.common.error.ErrorCode;
 import com.irene.twelvebooks.support.AbstractIntegrationTest;
 import com.irene.twelvebooks.user.User;
 import com.irene.twelvebooks.user.UserRepository;
@@ -94,11 +96,8 @@ class PostLikeConcurrentTest extends AbstractIntegrationTest {
 	/**
 	 * 누르기와 취소가 겹치는 경우.
 	 *
-	 * <p>둘은 두 테이블을 반대 순서로 만진다 — 누르기는 {@code posts}를 먼저 잠그고,
-	 * 취소는 지운 행 수를 봐야 하므로 {@code post_likes}를 먼저 만진다. 반대 순서는 교착의
-	 * 전형적인 재료라 실제로 그런지 확인해 둔다. 자식 행 DELETE가 부모 행에 잠금을 잡지
-	 * 않아서 지금은 괜찮은데, 그 성질에 기대고 있다는 사실이 어디에도 안 적혀 있으면
-	 * 누군가 취소에 부모 조회를 하나 더해 놓고 이유를 모른 채 교착을 만난다.
+	 * <p>서로 <b>다른 사람</b>의 누르기와 취소다. 둘 다 글 행을 먼저 잠그므로 순서가 같고,
+	 * 기다릴 뿐 물리지 않는다. 같은 사람일 때의 더 좁은 경우는 아래 테스트가 본다.
 	 */
 	@RepeatedTest(3)
 	@DisplayName("같은 글에 누르기와 취소가 겹쳐도 교착 없이 끝난다")
@@ -143,6 +142,69 @@ class PostLikeConcurrentTest extends AbstractIntegrationTest {
 		// 절반이 빠지고 절반이 들어왔으니 그대로다. 숫자가 맞는지보다 교착이 없었는지가 핵심이다.
 		assertThat(postRepository.findById(postId).orElseThrow().getLikeCount())
 				.isEqualTo(LIKERS / 2);
+	}
+
+	/**
+	 * <b>같은 사람</b>이 같은 글에 누르기와 취소를 동시에 보내는 경우. 하트를 연달아 두 번
+	 * 누르면 실제로 일어난다.
+	 *
+	 * <p>앞의 테스트는 누르는 사람과 취소하는 사람이 서로 달라서 이것을 잡지 못한다. 같은
+	 * 사람이어야 두 요청이 <b>같은 유니크 키</b>를 두고 맞물린다:
+	 *
+	 * <ol>
+	 *   <li>취소가 좋아요 행을 지우고 그 행의 잠금을 쥔다.
+	 *   <li>누르기가 글의 카운터를 올리고 글 행의 잠금을 쥔다.
+	 *   <li>누르기가 같은 키를 insert하려다 취소가 쥔 행 잠금을 기다린다.
+	 *   <li>취소가 카운터를 내리려다 누르기가 쥔 글 잠금을 기다린다.
+	 * </ol>
+	 *
+	 * <p>둘 중 하나가 409로 끝나는 것은 정상이다 — 취소가 먼저 커밋되면 누르기가 성공하고,
+	 * 누르기가 먼저면 이미 눌린 상태라 409다. <b>교착만</b>은 안 된다. 사용자에게 500이고,
+	 * 다시 눌러 달라고 할 수도 없다.
+	 */
+	@RepeatedTest(5)
+	@DisplayName("같은 사람이 누르기와 취소를 동시에 보내도 교착이 나지 않는다")
+	void sameUserLikeAndUnlikeDoNotDeadlock() throws Exception {
+		Long authorId = userRepository.save(
+				User.create("author@example.com", "hash", "irene", "아이린")).getId();
+		Long bookId = bookRepository.save(Book.withIsbn13("9788960777330", "코드 컴플리트",
+				"스티브 맥코넬", "위키북스", null, null)).getId();
+		Long postId = postRepository.save(
+				Post.write(authorId, bookId, null, "이름 짓기 장.", null, null, false)).getId();
+
+		List<Long> likerIds = new ArrayList<>();
+		for (int i = 0; i < LIKERS; i++) {
+			Long likerId = userRepository.save(
+					User.create("liker%d@example.com".formatted(i), "hash",
+							"liker%d".formatted(i), "독자%d".formatted(i))).getId();
+			likerIds.add(likerId);
+			// 이미 눌러 둔 상태에서 시작해야 취소가 지울 행이 있다.
+			postLikeService.like(likerId, postId);
+		}
+
+		CountDownLatch start = new CountDownLatch(1);
+		List<Throwable> failures = Collections.synchronizedList(new ArrayList<>());
+		ExecutorService pool = Executors.newFixedThreadPool(LIKERS * 2);
+		try {
+			for (Long likerId : likerIds) {
+				pool.submit(() -> run(start, failures, () -> postLikeService.unlike(likerId, postId)));
+				pool.submit(() -> run(start, failures, () -> postLikeService.like(likerId, postId)));
+			}
+			start.countDown();
+			pool.shutdown();
+			assertThat(pool.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
+		}
+		finally {
+			pool.shutdownNow();
+		}
+
+		// 이미 눌렀다는 409는 정상적인 결말이다. 교착은 아니다.
+		assertThat(failures)
+				.as("교착이 나면 안 된다. 409(ALREADY_LIKED)는 정상")
+				.allSatisfy(failure -> assertThat(failure)
+						.isInstanceOf(BusinessException.class)
+						.extracting(e -> ((BusinessException) e).getErrorCode())
+						.isEqualTo(ErrorCode.ALREADY_LIKED));
 	}
 
 	private void run(CountDownLatch start, List<Throwable> failures, Runnable action) {

@@ -33,9 +33,24 @@ public class CommentService {
 		this.userRepository = userRepository;
 	}
 
+	/**
+	 * 댓글을 단다.
+	 *
+	 * <p><b>카운터를 먼저 올리고 댓글 행을 넣는다.</b> 좋아요와 같은 이유다 —
+	 * {@code comments} insert는 외래 키 때문에 부모인 {@code posts} 행에 공유 잠금을 잡는데,
+	 * 이어지는 카운터 UPDATE가 같은 행에 배타 잠금을 요구한다. 같은 글에 여럿이 동시에 달면
+	 * 서로 공유 잠금을 쥔 채 상대의 배타 잠금을 기다린다. 글 행을 먼저 배타로 잡으면
+	 * 승격이 없어진다.
+	 *
+	 * <p>존재 확인도 그 UPDATE가 겸한다. 앞에 {@code exists}를 두면 쿼리가 하나 늘고,
+	 * 그 사이에 글이 지워지면 결국 외래 키에서 터진다.
+	 *
+	 * <p>입력이 규칙에 어긋나 예외로 끝나도 카운터는 함께 되돌아간다. 한 트랜잭션이라
+	 * 댓글 없이 숫자만 오르는 상태가 생기지 않는다.
+	 */
 	@Transactional
 	public CommentResponse write(Long authorId, Long postId, CommentCreateRequest request) {
-		if (!postRepository.existsById(postId)) {
+		if (postRepository.increaseCommentCount(postId) == 0) {
 			throw new BusinessException(ErrorCode.POST_NOT_FOUND);
 		}
 		User author = userRepository.findById(authorId)
@@ -52,9 +67,7 @@ public class CommentService {
 			throw new BusinessException(ErrorCode.INVALID_INPUT);
 		}
 
-		CommentResponse response = CommentResponse.of(commentRepository.save(comment), author);
-		postRepository.increaseCommentCount(postId);
-		return response;
+		return CommentResponse.of(commentRepository.save(comment), author);
 	}
 
 	/**

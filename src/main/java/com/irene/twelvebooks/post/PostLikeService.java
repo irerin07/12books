@@ -59,13 +59,17 @@ public class PostLikeService {
 	 * <p><b>지운 행이 1일 때만</b> 카운터를 내린다. 0행에도 내리면 취소를 두 번 눌러 남의
 	 * 좋아요를 지울 수 있다.
 	 *
-	 * <p>여기는 누르기와 달리 {@code post_likes}를 먼저 만진다. 지운 행 수를 봐야 카운터를
-	 * 내릴지 정할 수 있기 때문이다. 자식 행 DELETE는 부모 행에 잠금을 잡지 않아 누르기에서
-	 * 났던 승격 교착이 생기지 않는다 — 그래도 누르기와 취소가 섞인 상황은
-	 * {@code PostLikeConcurrentTest}가 지킨다.
+	 * <p>여기서도 <b>글 행을 먼저 잠근다.</b> 누르기처럼 카운터 UPDATE를 앞세울 수는 없다 —
+	 * 지운 행 수를 봐야 내릴지 정할 수 있기 때문이다. 그래서 잠금만 따로 먼저 잡는다.
+	 *
+	 * <p>순서를 지키지 않으면, 같은 사람이 하트를 연달아 두 번 눌렀을 때 교착이 난다:
+	 * 취소가 좋아요 행을 지우고 그 잠금을 쥔 채 카운터를 기다리는 동안, 누르기는 카운터를
+	 * 올려 글 잠금을 쥔 채 <b>같은 유니크 키</b> insert에서 취소를 기다린다. 서로 다른 사람의
+	 * 누르기·취소로는 재현되지 않아서 처음엔 이 순서가 필요 없다고 판단했는데, 틀렸다.
 	 */
 	@Transactional
 	public void unlike(Long userId, Long postId) {
+		postRepository.findByIdForUpdate(postId);
 		if (postLikeRepository.deleteLike(postId, userId) == 1) {
 			postRepository.decreaseLikeCount(postId);
 		}
