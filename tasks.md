@@ -281,23 +281,25 @@
 
 > 소셜 루프를 닫는다.
 
-- [ ] `V6__reactions.sql` — `post_likes`(대리 키 + `uk(post_id, user_id)`), `comments`
-- [ ] `post/domain/PostLike`, `post/domain/Comment` (**대댓글 없음. `parent_id`를 만들지 않는다**)
-- [ ] `POST|DELETE /posts/{id}/likes`
-- [ ] `GET|POST /posts/{id}/comments`, `DELETE /comments/{id}`
-- [ ] 카운터는 **반드시 원자적 UPDATE**. 읽고-더하고-쓰지 않는다
-- [ ] 중복 좋아요: insert 시도 → `DataIntegrityViolationException` → 409
+- [x] `V6__reactions.sql` — `post_likes`(대리 키 + `uk(post_id, user_id)`), `comments`
+- [x] `post/PostLike`, `post/Comment` (**대댓글 없음. `parent_id`를 만들지 않는다**)
+- [x] `POST|DELETE /posts/{id}/likes`
+- [x] `GET|POST /posts/{id}/comments`, `DELETE /comments/{id}`
+- [x] 카운터는 **반드시 원자적 UPDATE**. 읽고-더하고-쓰지 않는다
+- [x] 중복 좋아요: insert 시도 → `DataIntegrityViolationException` → 409
       ("먼저 조회해서 있으면 스킵"은 경쟁 조건에서 샌다)
-- [ ] 좋아요 취소는 **delete 반환 행 수가 1일 때만** 카운터 감소
-- [ ] `likedByMe` — 페이지의 postId 집합으로 **한 번에 조회**해 Set으로 매핑 (N+1 금지)
-- [ ] 댓글 삭제 권한: 댓글 작성자 **또는** 글 작성자
+- [x] 좋아요 취소는 **delete 반환 행 수가 1일 때만** 카운터 감소
+- [x] 좋아요는 **카운터를 먼저 올리고 행을 넣는다** — 반대로 하면 자식 insert가 부모 행에
+      잡는 공유 잠금이 이어지는 UPDATE의 배타 잠금과 물려 동시 요청이 교착에 빠진다
+- [x] `likedByMe` — 페이지의 postId 집합으로 **한 번에 조회**해 Set으로 매핑 (N+1 금지)
+- [x] 댓글 삭제 권한: 댓글 작성자 **또는** 글 작성자
 
 **완료 기준**
 
-- [ ] 좋아요 → 1, 같은 사용자가 다시 → 409, 취소 → 0
-- [ ] **동시성 테스트**: N명이 동시에 눌러도 카운터가 정확히 N
-- [ ] 댓글 작성 시 `commentCount` 증가, 삭제 시 감소
-- [ ] 피드 응답의 `likedByMe`가 정확
+- [x] 좋아요 → 1, 같은 사용자가 다시 → 409, 취소 → 0
+- [x] **동시성 테스트**: N명이 동시에 눌러도 카운터가 정확히 N
+- [x] 댓글 작성 시 `commentCount` 증가, 삭제 시 감소
+- [x] 피드 응답의 `likedByMe`가 정확
 
 ---
 

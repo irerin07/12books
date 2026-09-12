@@ -2,6 +2,7 @@ package com.irene.twelvebooks.post;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -74,4 +75,40 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			""")
 	List<Post> findTimelinePage(@Param("authorIds") List<Long> authorIds,
 			@Param("cursor") Long cursor, Pageable pageable);
+
+	/**
+	 * 좋아요 수를 <b>원자적으로</b> 올린다.
+	 *
+	 * <p>읽어서 더한 뒤 쓰면 동시에 들어온 두 요청이 같은 값을 읽고 같은 값을 써서 하나가
+	 * 유실된다. 백 명이 동시에 누르면 카운터는 백이 아니다. DB가 행을 잠근 채로 더하게 하면
+	 * 순서가 어떻든 결과가 같다(plan.md T5).
+	 *
+	 * <p>같은 이유로 엔티티에 {@code likeCount++}를 두지 않았다 — 그 메서드가 있으면 언젠가
+	 * 누가 부른다.
+	 *
+	 * @return 바뀐 행 수. 0이면 그런 글이 없다는 뜻이라 존재 확인을 겸한다 — 앞에 따로
+	 *         {@code exists} 조회를 두면 쿼리가 하나 늘 뿐 아니라 그 사이에 글이 지워질 수 있다.
+	 */
+	@Modifying
+	@Query("update Post p set p.likeCount = p.likeCount + 1 where p.id = :postId")
+	int increaseLikeCount(@Param("postId") Long postId);
+
+	/**
+	 * 좋아요 수를 원자적으로 내린다. 호출부가 <b>좋아요 행을 실제로 지웠을 때만</b> 부른다 —
+	 * 누른 적 없는 사람의 취소에도 내리면 취소를 두 번 눌러 남의 좋아요를 지울 수 있다.
+	 *
+	 * <p>{@code likeCount > 0}은 그래도 남겨 둔다. 스키마의 CHECK에 걸려 500이 되기 전에
+	 * 조건에서 막는 편이 낫다.
+	 */
+	@Modifying
+	@Query("update Post p set p.likeCount = p.likeCount - 1 where p.id = :postId and p.likeCount > 0")
+	void decreaseLikeCount(@Param("postId") Long postId);
+
+	@Modifying
+	@Query("update Post p set p.commentCount = p.commentCount + 1 where p.id = :postId")
+	void increaseCommentCount(@Param("postId") Long postId);
+
+	@Modifying
+	@Query("update Post p set p.commentCount = p.commentCount - 1 where p.id = :postId and p.commentCount > 0")
+	void decreaseCommentCount(@Param("postId") Long postId);
 }
