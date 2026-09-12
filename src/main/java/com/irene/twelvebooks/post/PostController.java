@@ -39,8 +39,8 @@ public class PostController {
 	}
 
 	@GetMapping("/posts/{id}")
-	public PostResponse read(@PathVariable Long id) {
-		return postService.read(id);
+	public PostResponse read(@AuthUser Long userId, @PathVariable Long id) {
+		return postService.read(userId, id);
 	}
 
 	@DeleteMapping("/posts/{id}")
@@ -53,16 +53,16 @@ public class PostController {
 	 * 그 사람이 쓴 감상평. 프로필의 글 목록이자 "내 글만 보기"다 — 내 handle로 부르면 내 글이다.
 	 */
 	@GetMapping("/users/{handle}/posts")
-	public CursorPage<PostResponse> byAuthor(@PathVariable String handle,
+	public CursorPage<PostResponse> byAuthor(@AuthUser Long userId, @PathVariable String handle,
 			@RequestParam(required = false) Long cursor,
 			@RequestParam(defaultValue = "20") int size) {
-		return postService.byAuthor(handle, cursor, PageSize.clamp(size));
+		return postService.byAuthor(userId, handle, cursor, PageSize.clamp(size));
 	}
 
 	@GetMapping("/books/{bookId}/posts")
-	public CursorPage<PostResponse> byBook(@PathVariable Long bookId,
+	public CursorPage<PostResponse> byBook(@AuthUser Long userId, @PathVariable Long bookId,
 			@RequestParam(required = false) Long cursor,
 			@RequestParam(defaultValue = "20") int size) {
-		return postService.byBook(bookId, cursor, PageSize.clamp(size));
+		return postService.byBook(userId, bookId, cursor, PageSize.clamp(size));
 	}
 }

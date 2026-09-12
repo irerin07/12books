@@ -1,11 +1,15 @@
 package com.irene.twelvebooks.post;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface PostRepository extends JpaRepository<Post, Long> {
 
@@ -74,4 +78,62 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			""")
 	List<Post> findTimelinePage(@Param("authorIds") List<Long> authorIds,
 			@Param("cursor") Long cursor, Pageable pageable);
+
+	/**
+	 * 글 행을 <b>먼저 배타로 잡는다.</b> 반응(좋아요·댓글)은 모두 {@code posts}를 먼저 잠근 뒤
+	 * 자식 행을 만진다 — 순서가 엇갈리면 한쪽이 자식 행 잠금을 쥔 채 부모를 기다리고 다른
+	 * 쪽이 그 반대가 되어 교착에 빠진다.
+	 *
+	 * <p>좋아요 취소가 이 메서드를 쓴다. 취소는 <b>지운 행 수를 봐야</b> 카운터를 내릴지 정할 수
+	 * 있어서 카운터 UPDATE를 먼저 둘 수 없고, 그래서 잠금만 따로 먼저 잡는다.
+	 *
+	 * <p>글이 없으면 빈 값이다. 잠글 것이 없으니 뒤이은 삭제도 0행이고, 취소는 어차피 멱등이다.
+	 */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select p from Post p where p.id = :postId")
+	Optional<Post> findByIdForUpdate(@Param("postId") Long postId);
+
+	/**
+	 * 좋아요 수를 <b>원자적으로</b> 올린다.
+	 *
+	 * <p>읽어서 더한 뒤 쓰면 동시에 들어온 두 요청이 같은 값을 읽고 같은 값을 써서 하나가
+	 * 유실된다. 백 명이 동시에 누르면 카운터는 백이 아니다. DB가 행을 잠근 채로 더하게 하면
+	 * 순서가 어떻든 결과가 같다(plan.md T5).
+	 *
+	 * <p>같은 이유로 엔티티에 {@code likeCount++}를 두지 않았다 — 그 메서드가 있으면 언젠가
+	 * 누가 부른다.
+	 *
+	 * @return 바뀐 행 수. 0이면 그런 글이 없다는 뜻이라 존재 확인을 겸한다 — 앞에 따로
+	 *         {@code exists} 조회를 두면 쿼리가 하나 늘 뿐 아니라 그 사이에 글이 지워질 수 있다.
+	 */
+	@Modifying
+	@Query("update Post p set p.likeCount = p.likeCount + 1 where p.id = :postId")
+	int increaseLikeCount(@Param("postId") Long postId);
+
+	/**
+	 * 좋아요 수를 원자적으로 내린다. 호출부가 <b>좋아요 행을 실제로 지웠을 때만</b> 부른다 —
+	 * 누른 적 없는 사람의 취소에도 내리면 취소를 두 번 눌러 남의 좋아요를 지울 수 있다.
+	 *
+	 * <p>{@code likeCount > 0}은 그래도 남겨 둔다. 스키마의 CHECK에 걸려 500이 되기 전에
+	 * 조건에서 막는 편이 낫다.
+	 */
+	@Modifying
+	@Query("update Post p set p.likeCount = p.likeCount - 1 where p.id = :postId and p.likeCount > 0")
+	void decreaseLikeCount(@Param("postId") Long postId);
+
+	/**
+	 * 댓글 수를 원자적으로 올린다. 좋아요와 같은 이유로 <b>댓글 행을 넣기 전에</b> 부른다 —
+	 * {@code comments} insert가 외래 키 때문에 부모인 {@code posts} 행에 잡는 공유 잠금이,
+	 * 뒤따르는 이 UPDATE의 배타 잠금과 물려 동시 요청을 교착에 빠뜨린다.
+	 *
+	 * @return 바뀐 행 수. 0이면 그런 글이 없다는 뜻이라 존재 확인을 겸한다.
+	 */
+	@Modifying
+	@Query("update Post p set p.commentCount = p.commentCount + 1 where p.id = :postId")
+	int increaseCommentCount(@Param("postId") Long postId);
+
+	/** 댓글 수를 원자적으로 내린다. 삭제도 부모를 먼저 잠근 뒤 자식 행을 지운다. */
+	@Modifying
+	@Query("update Post p set p.commentCount = p.commentCount - 1 where p.id = :postId and p.commentCount > 0")
+	void decreaseCommentCount(@Param("postId") Long postId);
 }

@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -31,13 +32,16 @@ public class PostService {
 	private final BookRepository bookRepository;
 	private final UserRepository userRepository;
 	private final ReadingLinker readingLinker;
+	private final PostLikeService postLikeService;
 
 	public PostService(PostRepository postRepository, BookRepository bookRepository,
-			UserRepository userRepository, ReadingLinker readingLinker) {
+			UserRepository userRepository, ReadingLinker readingLinker,
+			PostLikeService postLikeService) {
 		this.postRepository = postRepository;
 		this.bookRepository = bookRepository;
 		this.userRepository = userRepository;
 		this.readingLinker = readingLinker;
+		this.postLikeService = postLikeService;
 	}
 
 	/**
@@ -73,18 +77,20 @@ public class PostService {
 			log.debug("감상평이 불변식에 걸렸습니다: authorId={}", authorId, e);
 			throw new BusinessException(ErrorCode.INVALID_INPUT);
 		}
-		return PostResponse.of(postRepository.save(post), author, book);
+		// 방금 만든 글이라 좋아요가 있을 수 없다. 확인하러 가는 것은 답을 아는 질문이다.
+		return PostResponse.of(postRepository.save(post), author, book, false);
 	}
 
 	@Transactional(readOnly = true)
-	public PostResponse read(Long postId) {
+	public PostResponse read(Long viewerId, Long postId) {
 		Post post = postRepository.findById(postId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
 		User author = userRepository.findById(post.getAuthorId())
 				.orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 		Book book = bookRepository.findById(post.getBookId())
 				.orElseThrow(() -> new BusinessException(ErrorCode.BOOK_NOT_FOUND));
-		return PostResponse.of(post, author, book);
+		return PostResponse.of(post, author, book,
+				!postLikeService.likedAmong(viewerId, List.of(postId)).isEmpty());
 	}
 
 	/**
@@ -102,12 +108,13 @@ public class PostService {
 	}
 
 	@Transactional(readOnly = true)
-	public CursorPage<PostResponse> byBook(Long bookId, Long cursor, int size) {
+	public CursorPage<PostResponse> byBook(Long viewerId, Long bookId, Long cursor, int size) {
 		if (!bookRepository.existsById(bookId)) {
 			// 빈 목록으로 답하면 "글이 아직 없는 책"과 "없는 책"이 구분되지 않는다.
 			throw new BusinessException(ErrorCode.BOOK_NOT_FOUND);
 		}
-		return assemble(postRepository.findBookPage(bookId, cursor, PageRequest.ofSize(size + 1)), size);
+		return assemble(viewerId,
+				postRepository.findBookPage(bookId, cursor, PageRequest.ofSize(size + 1)), size);
 	}
 
 	/**
@@ -117,12 +124,13 @@ public class PostService {
 	 * 부르면 내 글이다. 경로를 나누면 같은 조회가 둘이 되고 한쪽만 고쳐지는 날이 온다.
 	 */
 	@Transactional(readOnly = true)
-	public CursorPage<PostResponse> byAuthor(String handle, Long cursor, int size) {
+	public CursorPage<PostResponse> byAuthor(Long viewerId, String handle, Long cursor, int size) {
 		Long authorId = userRepository.findByHandle(handle)
 				// 빈 목록으로 답하면 "아직 안 쓴 사람"과 "없는 사람"이 구분되지 않는다.
 				.orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND))
 				.getId();
-		return assemble(postRepository.findAuthorPage(authorId, cursor, PageRequest.ofSize(size + 1)), size);
+		return assemble(viewerId,
+				postRepository.findAuthorPage(authorId, cursor, PageRequest.ofSize(size + 1)), size);
 	}
 
 	/**
@@ -135,25 +143,27 @@ public class PostService {
 	@Transactional(readOnly = true)
 	public CursorPage<PostResponse> home(Long viewerId, List<Long> followeeIds, Long cursor, int size) {
 		List<Long> excluded = Stream.concat(Stream.of(viewerId), followeeIds.stream()).distinct().toList();
-		return assemble(postRepository.findHomePage(excluded, cursor, PageRequest.ofSize(size + 1)), size);
+		return assemble(viewerId,
+				postRepository.findHomePage(excluded, cursor, PageRequest.ofSize(size + 1)), size);
 	}
 
 	@Transactional(readOnly = true)
-	public CursorPage<PostResponse> timeline(List<Long> followeeIds, Long cursor, int size) {
+	public CursorPage<PostResponse> timeline(Long viewerId, List<Long> followeeIds, Long cursor, int size) {
 		if (followeeIds.isEmpty()) {
 			return new CursorPage<>(List.of(), null, false);
 		}
-		return assemble(postRepository.findTimelinePage(followeeIds, cursor, PageRequest.ofSize(size + 1)), size);
+		return assemble(viewerId,
+				postRepository.findTimelinePage(followeeIds, cursor, PageRequest.ofSize(size + 1)), size);
 	}
 
 	/**
 	 * 페이지의 글들을 응답으로 바꾼다.
 	 *
-	 * <p>작성자와 책은 <b>페이지 전체를 모아 한 번씩</b> 조회한다. 글마다 따로 읽으면 페이지
-	 * 크기만큼 쿼리가 늘어나고, 그 비용은 Phase 5의 피드에서 그대로 커진다. 이 방식은 한 페이지가
-	 * 20건이든 50건이든 쿼리가 세 번이다.
+	 * <p>작성자와 책, 그리고 <b>내가 누른 좋아요</b>는 페이지 전체를 모아 한 번씩 조회한다.
+	 * 글마다 따로 읽으면 페이지 크기만큼 쿼리가 늘어나고, 그 비용은 피드에서 그대로 커진다.
+	 * 이 방식은 한 페이지가 20건이든 50건이든 쿼리 수가 같다.
 	 */
-	private CursorPage<PostResponse> assemble(List<Post> rows, int size) {
+	private CursorPage<PostResponse> assemble(Long viewerId, List<Post> rows, int size) {
 		CursorPage<Post> page = CursorPage.of(rows, size, Post::getId);
 
 		Map<Long, User> authors = userRepository.findAllById(
@@ -163,10 +173,13 @@ public class PostService {
 						page.items().stream().map(Post::getBookId).distinct().toList()).stream()
 				.collect(Collectors.toMap(Book::getId, Function.identity()));
 
+		Set<Long> liked = postLikeService.likedAmong(viewerId,
+				page.items().stream().map(Post::getId).toList());
+
 		return new CursorPage<>(
 				page.items().stream()
 						.map(post -> PostResponse.of(post, authors.get(post.getAuthorId()),
-								books.get(post.getBookId())))
+								books.get(post.getBookId()), liked.contains(post.getId())))
 						.toList(),
 				page.nextCursor(), page.hasNext());
 	}

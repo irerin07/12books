@@ -46,7 +46,7 @@ public class FeedController {
 	public CursorPage<PostResponse> following(@AuthUser Long userId,
 			@RequestParam(required = false) Long cursor,
 			@RequestParam(defaultValue = "20") int size) {
-		return postService.timeline(followService.followeeIds(userId), cursor, PageSize.clamp(size));
+		return postService.timeline(userId, followService.followeeIds(userId), cursor, PageSize.clamp(size));
 	}
 
 }
