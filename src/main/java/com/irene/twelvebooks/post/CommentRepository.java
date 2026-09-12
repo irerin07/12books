@@ -6,7 +6,9 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface CommentRepository extends JpaRepository<Comment, Long> {
 
@@ -21,24 +23,28 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 	@Query("""
 			select c from Comment c
 			where c.postId = :postId
+			  and c.deletedAt is null
 			  and (:cursor is null or c.id < :cursor)
 			order by c.id desc
 			""")
 	List<Comment> findPostPage(@Param("postId") Long postId, @Param("cursor") Long cursor,
 			Pageable pageable);
 
+	/** 살아 있는 댓글 하나. 지운 댓글은 없는 것과 같이 답한다. */
+	@Query("select c from Comment c where c.id = :commentId and c.deletedAt is null")
+	Optional<Comment> findLive(@Param("commentId") Long commentId);
+
 	/**
-	 * 댓글을 <b>한 문장</b>으로 지운다.
+	 * 댓글을 지운다 — 행이 아니라 플래그를 세운다. <b>한 문장</b>으로 한다.
 	 *
-	 * <p>조회한 엔티티를 지우면, 댓글 작성자와 글 작성자가 동시에 눌렀을 때 둘 다 같은 행을
-	 * 읽고 차례로 지우게 된다. 뒤엣것의 DELETE가 0행을 만나 Hibernate가 "예상 1행, 실제 0행"으로
-	 * 예외를 던지고 사용자에게는 500이 된다 — 언팔로우에서 이미 한 번 겪은 모양이다.
-	 * 한 문장으로 지우면 0행은 그냥 0행이다.
+	 * <p>조회한 엔티티를 고쳐 지우면, 댓글 작성자와 글 작성자가 동시에 눌렀을 때 둘 다 같은
+	 * 행을 읽고 차례로 쓰게 되어 카운터가 두 번 내려간다. 한 문장에 {@code deletedAt is null}을
+	 * 달면 먼저 온 쪽만 1행을 받는다.
 	 *
 	 * @return 지운 행 수. <b>1일 때만</b> 카운터를 내린다. 0이면 그사이 다른 요청이 지웠다는
 	 *         뜻이고, 그쪽이 이미 카운터를 내렸다.
 	 */
 	@Modifying
-	@Query("delete from Comment c where c.id = :commentId")
-	int deleteComment(@Param("commentId") Long commentId);
+	@Query("update Comment c set c.deletedAt = :now where c.id = :commentId and c.deletedAt is null")
+	int softDelete(@Param("commentId") Long commentId, @Param("now") LocalDateTime now);
 }

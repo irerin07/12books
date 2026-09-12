@@ -4,6 +4,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -13,7 +14,23 @@ import java.util.Optional;
 
 public interface ReadingRepository extends JpaRepository<Reading, Long> {
 
+	/**
+	 * 상태를 가리지 않고 찾는다. 다시 담기가 <b>되살릴 행이 있는지</b> 볼 때만 쓴다 —
+	 * 사용자에게 보이는 조회에는 쓰지 않는다.
+	 */
 	Optional<Reading> findByUserIdAndBookId(Long userId, Long bookId);
+
+	/** 되살리기가 확인과 쓰기 사이를 직렬화하려고 잠그는 경로. 지운 행도 돌려준다. */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select r from Reading r where r.id = :id")
+	Optional<Reading> findAnyByIdForUpdate(@Param("id") Long id);
+
+	/**
+	 * 살아 있는 기록만 찾는다. 서재에서 뺀 기록은 행이 남아 있어도 없는 것과 같이 답해야
+	 * 한다 — 그러지 않으면 뺀 책이 감상평 쓰기에서 되살아나 연결된다.
+	 */
+	@Query("select r from Reading r where r.userId = :userId and r.bookId = :bookId and r.deletedAt is null")
+	Optional<Reading> findLiveByUserIdAndBookId(@Param("userId") Long userId, @Param("bookId") Long bookId);
 
 	/**
 	 * 수정·삭제가 읽어 가는 경로. 행에 쓰기 잠금을 건다.
@@ -28,7 +45,7 @@ public interface ReadingRepository extends JpaRepository<Reading, Long> {
 	 * 충돌 오류가 뜨는 것은 고칠 방법이 없는 오류다.
 	 */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
-	@Query("select r from Reading r where r.id = :id")
+	@Query("select r from Reading r where r.id = :id and r.deletedAt is null")
 	Optional<Reading> findByIdForUpdate(@Param("id") Long id);
 
 	/**
@@ -63,6 +80,7 @@ public interface ReadingRepository extends JpaRepository<Reading, Long> {
 	@Query("""
 			select r from Reading r
 			where r.userId = :userId
+			  and r.deletedAt is null
 			  and (:status is null or r.status = :status)
 			  and (:startedFrom is null or (r.startedAt >= :startedFrom and r.startedAt < :startedTo))
 			  and (:finishedFrom is null or (r.finishedAt >= :finishedFrom and r.finishedAt < :finishedTo))
@@ -87,9 +105,19 @@ public interface ReadingRepository extends JpaRepository<Reading, Long> {
 	@Query("""
 			select count(r) from Reading r
 			where r.userId = :userId
+			  and r.deletedAt is null
 			  and r.status = com.irene.twelvebooks.reading.ReadingStatus.FINISHED
 			  and r.finishedAt >= :from and r.finishedAt < :to
 			""")
 	long countFinishedBetween(@Param("userId") Long userId,
 			@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+	/**
+	 * 서재에서 뺀다 — 행이 아니라 플래그를 세운다.
+	 *
+	 * @return 지운 행 수. 0이면 이미 빠져 있다는 뜻이다.
+	 */
+	@Modifying
+	@Query("update Reading r set r.deletedAt = :now where r.id = :id and r.deletedAt is null")
+	int softDelete(@Param("id") Long id, @Param("now") LocalDateTime now);
 }

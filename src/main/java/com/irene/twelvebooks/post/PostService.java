@@ -16,6 +16,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -33,15 +35,17 @@ public class PostService {
 	private final UserRepository userRepository;
 	private final ReadingLinker readingLinker;
 	private final PostLikeService postLikeService;
+	private final Clock clock;
 
 	public PostService(PostRepository postRepository, BookRepository bookRepository,
 			UserRepository userRepository, ReadingLinker readingLinker,
-			PostLikeService postLikeService) {
+			PostLikeService postLikeService, Clock clock) {
 		this.postRepository = postRepository;
 		this.bookRepository = bookRepository;
 		this.userRepository = userRepository;
 		this.readingLinker = readingLinker;
 		this.postLikeService = postLikeService;
+		this.clock = clock;
 	}
 
 	/**
@@ -83,7 +87,7 @@ public class PostService {
 
 	@Transactional(readOnly = true)
 	public PostResponse read(Long viewerId, Long postId) {
-		Post post = postRepository.findById(postId)
+		Post post = postRepository.findLive(postId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
 		User author = userRepository.findById(post.getAuthorId())
 				.orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
@@ -99,12 +103,15 @@ public class PostService {
 	 */
 	@Transactional
 	public void remove(Long userId, Long postId) {
-		Post post = postRepository.findById(postId)
+		Post post = postRepository.findLive(postId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
 		if (!post.writtenBy(userId)) {
 			throw new BusinessException(ErrorCode.FORBIDDEN);
 		}
-		postRepository.delete(post);
+		// 행은 남기고 플래그만 세운다. 달려 있던 좋아요·댓글도 함께 남는데, 글이 안 보이면
+		// 거기에 닿는 경로가 전부 404라 화면에는 사라진 것과 같다. 지운 뒤에 "무엇이 있었나"를
+		// 물을 수 있어야 해서 그 둘도 지우지 않는다.
+		postRepository.softDelete(postId, LocalDateTime.now(clock));
 	}
 
 	@Transactional(readOnly = true)

@@ -150,6 +150,9 @@ class PostJourneyE2ETest extends AbstractIntegrationTest {
 		mockMvc.perform(get("/api/v1/posts/" + postId).header("Authorization", bearer))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.content").value("여기까지 읽었다"))
-				.andExpect(jsonPath("$.readingId").doesNotExist());
+				// 연결도 함께 남는다. 예전에는 행이 지워지면서 on delete set null이 이 값을
+				// 비웠는데, 이제 행이 남으므로 "그때 이 기록에 매달려 쓴 글"이라는 사실이
+				// 보존된다. 글에 실리는 것은 연결이 아니라 책 정보라 화면은 달라지지 않는다.
+				.andExpect(jsonPath("$.readingId").value(readingId));
 	}
 }

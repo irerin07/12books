@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 @Service
 public class ReadingService {
@@ -32,9 +33,17 @@ public class ReadingService {
 	/**
 	 * 책을 서재에 담는다.
 	 *
-	 * <p>중복은 유니크 제약이 1차 방어선이다. 사전 조회만으로는 동시에 들어온 두 요청이 함께
-	 * 통과할 수 있다. 여기서는 제약 위반을 409로 바꿔 던지기만 하므로, 트랜잭션이 rollback-only가
-	 * 되는 것이 문제가 되지 않는다 — 잡아서 복구하는 게 아니라 그대로 끝내기 때문이다.
+	 * <p>전에 뺐던 책이면 <b>되살린다.</b> 뺀 기록의 행이 남아 있어 {@code uk(user_id, book_id)}에
+	 * 걸리기 때문이기도 하지만, 그 제약의 본뜻("한 사람이 한 책을 서재에 한 번")은 뺀 뒤에도
+	 * 옳다. 되살리면서 진도·별점은 초기화한다 — {@link Reading#revive} 참고.
+	 *
+	 * <p>확인과 되살리기 사이를 잠금으로 직렬화한다. 그러지 않으면 동시에 들어온 두 요청이
+	 * 함께 "지워져 있다"를 보고 둘 다 201로 답한다. <b>행이 있는 것을 안 뒤에만</b> 잠그는데,
+	 * 없는 행을 잠금 읽기하면 갭 잠금이 걸려 이어지는 insert가 막힐 수 있어서다.
+	 *
+	 * <p>처음 담는 책이면 그냥 넣는다. 사전 조회와 insert 사이도 비어 있어 동시 요청이 함께
+	 * 통과할 수 있으므로, 마지막 방어선은 여전히 유니크 제약이다. 제약 위반을 409로 바꿔
+	 * 던지기만 하므로 트랜잭션이 rollback-only가 되는 것은 문제가 되지 않는다.
 	 */
 	@Transactional
 	public Reading add(Long userId, ReadingCreateRequest request) {
@@ -42,9 +51,21 @@ public class ReadingService {
 			// FK 위반으로 흘려보내면 "이미 담긴 책"과 구분되지 않는 409가 된다.
 			throw new BusinessException(ErrorCode.BOOK_NOT_FOUND);
 		}
-		Reading reading = Reading.of(userId, request.bookId(), request.statusOrDefault(), now());
+
+		Optional<Reading> existing = readingRepository.findByUserIdAndBookId(userId, request.bookId());
+		if (existing.isPresent()) {
+			Reading reading = readingRepository.findAnyByIdForUpdate(existing.get().getId())
+					.orElseThrow(() -> new BusinessException(ErrorCode.READING_NOT_FOUND));
+			if (!reading.isDeleted()) {
+				throw new BusinessException(ErrorCode.READING_ALREADY_EXISTS);
+			}
+			reading.revive(request.statusOrDefault(), now());
+			return reading;
+		}
+
 		try {
-			return readingRepository.saveAndFlush(reading);
+			return readingRepository.saveAndFlush(
+					Reading.of(userId, request.bookId(), request.statusOrDefault(), now()));
 		}
 		catch (DataIntegrityViolationException e) {
 			throw new BusinessException(ErrorCode.READING_ALREADY_EXISTS);
@@ -80,9 +101,16 @@ public class ReadingService {
 		return reading;
 	}
 
+	/**
+	 * 서재에서 뺀다 — 행은 남기고 플래그만 세운다.
+	 *
+	 * <p>이 책에 쓴 감상평은 그대로 남는다. 예전에는 {@code on delete set null}이 글의 연결을
+	 * 비웠는데, 행이 남으므로 이제 연결도 그대로 남는다. 글에 실리는 것은 연결 자체가 아니라
+	 * 책 정보라 화면은 달라지지 않고, "그때 이 기록에 매달려 쓴 글"이라는 사실이 보존된다.
+	 */
 	@Transactional
 	public void remove(Long userId, Long readingId) {
-		readingRepository.delete(mine(userId, readingId));
+		readingRepository.softDelete(mine(userId, readingId).getId(), now());
 	}
 
 	/**

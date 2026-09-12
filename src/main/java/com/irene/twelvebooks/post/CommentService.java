@@ -13,6 +13,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -25,12 +27,14 @@ public class CommentService {
 	private final CommentRepository commentRepository;
 	private final PostRepository postRepository;
 	private final UserRepository userRepository;
+	private final Clock clock;
 
 	public CommentService(CommentRepository commentRepository, PostRepository postRepository,
-			UserRepository userRepository) {
+			UserRepository userRepository, Clock clock) {
 		this.commentRepository = commentRepository;
 		this.postRepository = postRepository;
 		this.userRepository = userRepository;
+		this.clock = clock;
 	}
 
 	/**
@@ -87,13 +91,13 @@ public class CommentService {
 	 */
 	@Transactional
 	public void remove(Long userId, Long commentId) {
-		Comment comment = commentRepository.findById(commentId)
+		Comment comment = commentRepository.findLive(commentId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.COMMENT_NOT_FOUND));
 		if (!comment.writtenBy(userId) && !postAuthorIs(comment.getPostId(), userId)) {
 			throw new BusinessException(ErrorCode.FORBIDDEN);
 		}
 		postRepository.findByIdForUpdate(comment.getPostId());
-		if (commentRepository.deleteComment(commentId) == 1) {
+		if (commentRepository.softDelete(commentId, LocalDateTime.now(clock)) == 1) {
 			postRepository.decreaseCommentCount(comment.getPostId());
 		}
 	}
@@ -106,7 +110,7 @@ public class CommentService {
 	 */
 	@Transactional(readOnly = true)
 	public CursorPage<CommentResponse> byPost(Long postId, Long cursor, int size) {
-		if (!postRepository.existsById(postId)) {
+		if (!postRepository.existsLive(postId)) {
 			// 빈 목록으로 답하면 "댓글이 없는 글"과 "없는 글"이 구분되지 않는다.
 			throw new BusinessException(ErrorCode.POST_NOT_FOUND);
 		}
@@ -126,7 +130,7 @@ public class CommentService {
 	}
 
 	private boolean postAuthorIs(Long postId, Long userId) {
-		return postRepository.findById(postId)
+		return postRepository.findLive(postId)
 				.map(post -> post.writtenBy(userId))
 				.orElse(false);
 	}

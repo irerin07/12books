@@ -34,8 +34,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * 감상평을 저장하는 사이에 그 서재 기록이 사라지는 순서.
  *
- * <p>{@code on delete set null}은 <b>이미 저장된</b> 글만 지킨다. 아직 insert하지 않은 글이
- * 사라진 기록의 id를 들고 있으면 외래 키 검사에 그대로 걸린다 — 사용자에게는 500이다.
+ * <p>삭제가 플래그가 된 뒤로 외래 키가 깨질 일은 없어졌지만, "연결하려던 기록이 그사이
+ * 서재에서 빠졌다"는 상황 자체는 그대로 남는다. 그때 글쓰기를 막지 않고 연결만 비우는지를
+ * 여기서 지킨다.
  *
  * <p>실제로는 행 잠금이 삭제를 커밋까지 기다리게 하므로 이 순서는 잠금을 잡기 <b>전</b>에만
  * 성립한다. 스레드로 재현하면 불안정하므로 조회 직후 삭제가 커밋된 상태를 만든다.
@@ -94,7 +95,7 @@ class PostWriteAgainstReadingRemovalTest extends AbstractIntegrationTest {
 				removeInSeparateTransaction(readingId);
 			}
 			return found;
-		}).given(readingRepository).findByUserIdAndBookId(myId, bookId);
+		}).given(readingRepository).findLiveByUserIdAndBookId(myId, bookId);
 
 		mockMvc.perform(post("/api/v1/posts").header("Authorization", bearer)
 						.contentType(MediaType.APPLICATION_JSON)
@@ -110,15 +111,18 @@ class PostWriteAgainstReadingRemovalTest extends AbstractIntegrationTest {
 
 	private Optional<Reading> lookUp() {
 		return entityManager.createQuery(
-						"select r from Reading r where r.userId = :userId and r.bookId = :bookId",
+						"select r from Reading r where r.userId = :userId and r.bookId = :bookId "
+								+ "and r.deletedAt is null",
 						Reading.class)
 				.setParameter("userId", myId).setParameter("bookId", bookId)
 				.getResultList().stream().findFirst();
 	}
 
+	/** 사용자가 실제로 쓰는 경로와 같게 뺀다 — 행은 남고 플래그만 선다. */
 	private void removeInSeparateTransaction(Long readingId) {
 		TransactionTemplate template = new TransactionTemplate(transactionManager);
 		template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-		template.executeWithoutResult(status -> readingRepository.deleteById(readingId));
+		template.executeWithoutResult(
+				status -> readingRepository.softDelete(readingId, LocalDateTime.now()));
 	}
 }
