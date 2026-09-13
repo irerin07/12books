@@ -188,6 +188,38 @@ feat: 감상평 작성 API
 팔로워 반정규화 카운터, 대댓글, Elasticsearch는 **실측 근거가 생기기 전까지 넣지 않는다.**
 요청받지 않은 최적화·문서·리팩터링을 곁들이지 않는다.
 
+## QA 배포
+
+`Dockerfile`이 있어서 컨테이너를 받는 곳이면 그대로 뜬다. **DB는 개발용과 따로 쓴다** —
+시드가 계정·글을 지우고 다시 만들기 때문에 같은 DB를 보면 서로의 상태를 밟는다.
+
+환경변수. 뒤의 셋은 기본값이 없어 **없으면 앱이 아예 뜨지 않는다.**
+
+```
+SPRING_DATASOURCE_URL        jdbc:mysql://<host>:3306/twelvebooks?characterEncoding=UTF-8&serverTimezone=Asia/Seoul
+SPRING_DATASOURCE_USERNAME   SPRING_DATASOURCE_PASSWORD
+SPRING_DATA_REDIS_HOST       SPRING_DATA_REDIS_PORT
+CORS_ALLOWED_ORIGINS         https://프런트주소  (쉼표로 여럿)
+REFRESH_COOKIE_SAME_SITE     프런트가 다른 사이트면 None
+JWT_SECRET  KAKAO_REST_API_KEY  BOOK_SIGNATURE_SECRET
+```
+
+프로필은 따로 만들지 않는다. Spring Boot가 이 이름들을 그대로 바인딩하고, Flyway가 뜰 때
+V1부터 전부 깐다. 빈 DB를 가리키면 스키마가 저절로 생긴다.
+
+**QA용 MySQL은 8.0.16 이상이어야 한다.** `CHECK` 제약이 그 아래에서는 파싱만 되고 무시되며,
+V8의 생성 컬럼과 내림차순 인덱스도 MySQL 8 문법이다(MariaDB 아님). 문자셋은 마이그레이션이
+테이블마다 `utf8mb4`를 직접 선언하므로 서버 기본값과 무관하다.
+
+시드는 배포된 주소를 가리켜 넣는다.
+
+```powershell
+$env:TWELVEBOOKS_URL = "https://qa.example.com"; python tools/seed-qa.py
+```
+
+> **공개 주소에 올리면 시드 계정이 공개된다.** 비밀번호가 전부 `123456789`이고 가입도 열려
+> 있다. QA 동안은 감수하더라도, 그 상태라는 것은 알고 올린다.
+
 ## 최초 1회 세팅
 
 새로 클론했다면 로컬 git 훅을 연결한다 (main 직접 push 차단):

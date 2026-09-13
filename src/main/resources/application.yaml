@@ -1,3 +1,7 @@
+server:
+  # 플랫폼이 포트를 정해 주는 곳(Railway·Render 등)은 PORT로 알려 준다. 없으면 8080.
+  port: ${PORT:8080}
+
 spring:
   application:
     name: twelvebooks
@@ -14,6 +18,14 @@ spring:
     # 실제로는 적용된 적 없는 V1이 적용된 것으로 취급돼 마이그레이션 누락이 조용히 숨는다.
 
 twelvebooks:
+  # 브라우저에서 이 API를 부를 수 있는 오리진. 쉼표로 구분한다.
+  # 비워 두면 CORS를 아예 열지 않는다 — 깜빡한 것이 전면 개방으로 이어지면 안 된다.
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:}
+  auth:
+    # 프런트가 다른 사이트에 뜨는 배포에서만 None으로 낮춘다. 낮추면 이 쿠키의 CSRF 방어가
+    # 사라지므로 그 결정이 배포 설정에 남아야 한다.
+    refresh-cookie-same-site: ${REFRESH_COOKIE_SAME_SITE:Strict}
   book:
     signature-secret: ${BOOK_SIGNATURE_SECRET}
   jwt:
