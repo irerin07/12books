@@ -3,6 +3,8 @@ package com.irene.twelvebooks.post;
 import com.irene.twelvebooks.common.error.BusinessException;
 import com.irene.twelvebooks.common.error.ErrorCode;
 import com.irene.twelvebooks.common.support.CursorPage;
+import com.irene.twelvebooks.notification.ReactionEvents;
+import org.springframework.context.ApplicationEventPublisher;
 import com.irene.twelvebooks.post.dto.CommentCreateRequest;
 import com.irene.twelvebooks.post.dto.CommentResponse;
 import com.irene.twelvebooks.user.User;
@@ -28,13 +30,15 @@ public class CommentService {
 	private final PostRepository postRepository;
 	private final UserRepository userRepository;
 	private final Clock clock;
+	private final ApplicationEventPublisher events;
 
 	public CommentService(CommentRepository commentRepository, PostRepository postRepository,
-			UserRepository userRepository, Clock clock) {
+			UserRepository userRepository, Clock clock, ApplicationEventPublisher events) {
 		this.commentRepository = commentRepository;
 		this.postRepository = postRepository;
 		this.userRepository = userRepository;
 		this.clock = clock;
+		this.events = events;
 	}
 
 	/**
@@ -71,7 +75,11 @@ public class CommentService {
 			throw new BusinessException(ErrorCode.INVALID_INPUT);
 		}
 
-		return CommentResponse.of(commentRepository.save(comment), author);
+		CommentResponse response = CommentResponse.of(commentRepository.save(comment), author);
+		// 좋아요와 같은 이유로 커밋 뒤에 알린다.
+		postRepository.findById(postId).ifPresent(post ->
+				events.publishEvent(new ReactionEvents.PostCommented(postId, post.getAuthorId(), authorId)));
+		return response;
 	}
 
 	/**

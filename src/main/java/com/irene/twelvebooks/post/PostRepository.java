@@ -1,6 +1,7 @@
 package com.irene.twelvebooks.post;
 
 import jakarta.persistence.LockModeType;
+import com.irene.twelvebooks.notification.PostView;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -150,6 +151,27 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	 */
 	@Query("select p from Post p where p.id = :postId and p.deletedAt is null")
 	Optional<Post> findLive(@Param("postId") Long postId);
+
+	/**
+	 * 살아 있는 글 여럿. 목록에 글을 곁들일 때 쓴다.
+	 *
+	 * <p>상속받은 {@code findAllById}를 쓰면 <b>지운 글까지 딸려 온다.</b> 알림 목록에 그것을
+	 * 그대로 실으면 지운 본문이 다시 보이고, 삭제가 삭제가 아니게 된다.
+	 */
+	@Query("select p from Post p where p.id in :postIds and p.deletedAt is null")
+	List<Post> findAllLive(@Param("postIds") List<Long> postIds);
+
+	/**
+	 * 알림 목록에 곁들일 글의 <b>id와 본문만</b>. 지운 글은 빠진다.
+	 *
+	 * <p>엔티티를 읽으면 쪽수·카운터·연결 같은 것이 전부 따라오는데 알림 한 줄에는 쓰이지
+	 * 않는다.
+	 */
+	@Query("""
+			select new com.irene.twelvebooks.notification.PostView(p.id, p.content)
+			from Post p where p.id in :postIds and p.deletedAt is null
+			""")
+	List<PostView> findLivePostViews(@Param("postIds") List<Long> postIds);
 
 	@Query("select count(p) > 0 from Post p where p.id = :postId and p.deletedAt is null")
 	boolean existsLive(@Param("postId") Long postId);

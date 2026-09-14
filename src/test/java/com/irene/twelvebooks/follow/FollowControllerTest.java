@@ -1,6 +1,7 @@
 package com.irene.twelvebooks.follow;
 
 import com.irene.twelvebooks.auth.JwtProvider;
+import com.irene.twelvebooks.notification.NotificationRepository;
 import com.irene.twelvebooks.support.AbstractIntegrationTest;
 import com.irene.twelvebooks.user.User;
 import com.irene.twelvebooks.user.UserRepository;
@@ -36,6 +37,9 @@ class FollowControllerTest extends AbstractIntegrationTest {
 
 	@Autowired
 	SessionFactory sessionFactory;
+
+	@Autowired
+	NotificationRepository notificationRepository;
 
 	private String bearer;
 	private String otherBearer;
@@ -270,7 +274,20 @@ class FollowControllerTest extends AbstractIntegrationTest {
 			follow("Bearer " + jwtProvider.createAccessToken(fan.getId(), fan.getHandle()), "irene");
 		}
 
+		// 팔로우는 커밋 뒤에 알림을 만든다. 그 일이 다른 스레드에서 도는 동안 측정하면
+		// Hibernate의 Statistics가 전역이라 배경 쿼리가 이 요청의 쿼리 수로 잡힌다.
+		// 측정 전에 끝나기를 기다린다.
+		awaitNotificationsSettled(30);
+
 		assertThat(followerQueriesFor(30)).isEqualTo(followerQueriesFor(5));
+	}
+
+	/** 알림 30건이 모두 만들어질 때까지. 고정 시간을 자면 느린 기계에서 깨진다. */
+	private void awaitNotificationsSettled(long expected) throws Exception {
+		for (int attempt = 0; attempt < 50 && notificationRepository.count() < expected; attempt++) {
+			Thread.sleep(100);
+		}
+		assertThat(notificationRepository.count()).isEqualTo(expected);
 	}
 
 	private long followerQueriesFor(int size) throws Exception {

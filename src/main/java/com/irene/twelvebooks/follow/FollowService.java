@@ -2,6 +2,8 @@ package com.irene.twelvebooks.follow;
 
 import com.irene.twelvebooks.common.error.BusinessException;
 import com.irene.twelvebooks.common.error.ErrorCode;
+import com.irene.twelvebooks.notification.ReactionEvents;
+import org.springframework.context.ApplicationEventPublisher;
 import com.irene.twelvebooks.common.support.CursorPage;
 import com.irene.twelvebooks.follow.dto.FollowItemResponse;
 import com.irene.twelvebooks.user.User;
@@ -22,10 +24,13 @@ public class FollowService {
 
 	private final FollowRepository followRepository;
 	private final UserRepository userRepository;
+	private final ApplicationEventPublisher events;
 
-	public FollowService(FollowRepository followRepository, UserRepository userRepository) {
+	public FollowService(FollowRepository followRepository, UserRepository userRepository,
+			ApplicationEventPublisher events) {
 		this.followRepository = followRepository;
 		this.userRepository = userRepository;
+		this.events = events;
 	}
 
 	/**
@@ -47,6 +52,8 @@ public class FollowService {
 		catch (DataIntegrityViolationException e) {
 			throw new BusinessException(ErrorCode.ALREADY_FOLLOWING);
 		}
+		// 커밋 뒤에 알린다. 언팔로우해도 알림은 남는다 — 있었던 일의 기록이다.
+		events.publishEvent(new ReactionEvents.Followed(followeeId, followerId));
 	}
 
 	/**

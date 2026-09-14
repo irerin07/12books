@@ -2,6 +2,8 @@ package com.irene.twelvebooks.post;
 
 import com.irene.twelvebooks.common.error.BusinessException;
 import com.irene.twelvebooks.common.error.ErrorCode;
+import com.irene.twelvebooks.notification.ReactionEvents;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,10 +16,13 @@ public class PostLikeService {
 
 	private final PostLikeRepository postLikeRepository;
 	private final PostRepository postRepository;
+	private final ApplicationEventPublisher events;
 
-	public PostLikeService(PostLikeRepository postLikeRepository, PostRepository postRepository) {
+	public PostLikeService(PostLikeRepository postLikeRepository, PostRepository postRepository,
+			ApplicationEventPublisher events) {
 		this.postLikeRepository = postLikeRepository;
 		this.postRepository = postRepository;
+		this.events = events;
 	}
 
 	/**
@@ -50,6 +55,10 @@ public class PostLikeService {
 		catch (DataIntegrityViolationException e) {
 			throw new BusinessException(ErrorCode.ALREADY_LIKED);
 		}
+		// 알림은 커밋 뒤에 만들어진다. 여기서 직접 만들면 알림 저장 실패가 좋아요를
+		// 되돌려, 사용자는 눌렀는데 눌리지 않은 화면을 본다.
+		postRepository.findById(postId).ifPresent(post ->
+				events.publishEvent(new ReactionEvents.PostLiked(postId, post.getAuthorId(), userId)));
 	}
 
 	/**
