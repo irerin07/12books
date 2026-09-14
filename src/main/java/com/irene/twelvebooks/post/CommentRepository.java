@@ -24,6 +24,7 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 			select c from Comment c
 			where c.postId = :postId
 			  and c.deletedAt is null
+			  and c.hiddenAt is null
 			  and (:cursor is null or c.id < :cursor)
 			order by c.id desc
 			""")
@@ -31,7 +32,7 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 			Pageable pageable);
 
 	/** 살아 있는 댓글 하나. 지운 댓글은 없는 것과 같이 답한다. */
-	@Query("select c from Comment c where c.id = :commentId and c.deletedAt is null")
+	@Query("select c from Comment c where c.id = :commentId and c.deletedAt is null and c.hiddenAt is null")
 	Optional<Comment> findLive(@Param("commentId") Long commentId);
 
 	/**
@@ -47,4 +48,32 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 	@Modifying
 	@Query("update Comment c set c.deletedAt = :now where c.id = :commentId and c.deletedAt is null")
 	int softDelete(@Param("commentId") Long commentId, @Param("now") LocalDateTime now);
+
+	/**
+	 * 운영자가 댓글을 내리거나 다시 올린다.
+	 *
+	 * <p>지운 댓글은 대상이 아니다({@code deletedAt is null}). 이미 안 보이는 것을 또 내릴
+	 * 이유가 없고, 무엇보다 <b>댓글 수가 두 번 줄어든다</b> — 삭제가 이미 한 번 내렸다.
+	 *
+	 * @return 바뀐 행 수. <b>1일 때만</b> 댓글 수를 조정한다.
+	 */
+	@Modifying
+	@Query("update Comment c set c.hiddenAt = :now where c.id = :commentId and c.hiddenAt is null and c.deletedAt is null")
+	int hide(@Param("commentId") Long commentId, @Param("now") LocalDateTime now);
+
+	@Modifying
+	@Query("update Comment c set c.hiddenAt = null where c.id = :commentId and c.hiddenAt is not null and c.deletedAt is null")
+	int unhide(@Param("commentId") Long commentId);
+
+	/** 운영자 목록에 곁들일 댓글. 지운 것도 숨긴 것도 나온다 — 판단하려면 봐야 한다. */
+	@Query("""
+			select new com.irene.twelvebooks.report.ContentView(c.id, c.content)
+			from Comment c where c.id in :commentIds
+			""")
+	List<com.irene.twelvebooks.report.ContentView> findAnyCommentViews(
+			@Param("commentIds") List<Long> commentIds);
+
+	/** 숨김이 댓글 수를 조정할 때 어느 글의 것인지 알아야 한다. */
+	@Query("select c.postId from Comment c where c.id = :commentId")
+	java.util.Optional<Long> findPostId(@Param("commentId") Long commentId);
 }

@@ -26,6 +26,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			select p from Post p
 			where p.bookId = :bookId
 			  and p.deletedAt is null
+			  and p.hiddenAt is null
 			  and (:cursor is null or p.id < :cursor)
 			order by p.id desc
 			""")
@@ -41,6 +42,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			select p from Post p
 			where p.authorId = :authorId
 			  and p.deletedAt is null
+			  and p.hiddenAt is null
 			  and (:cursor is null or p.id < :cursor)
 			order by p.id desc
 			""")
@@ -60,6 +62,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			select p from Post p
 			where p.authorId not in :excludedIds
 			  and p.deletedAt is null
+			  and p.hiddenAt is null
 			  and (:cursor is null or p.id < :cursor)
 			order by p.id desc
 			""")
@@ -79,6 +82,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			select p from Post p
 			where p.authorId in :authorIds
 			  and p.deletedAt is null
+			  and p.hiddenAt is null
 			  and (:cursor is null or p.id < :cursor)
 			order by p.id desc
 			""")
@@ -96,7 +100,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	 * <p>글이 없으면 빈 값이다. 잠글 것이 없으니 뒤이은 삭제도 0행이고, 취소는 어차피 멱등이다.
 	 */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
-	@Query("select p from Post p where p.id = :postId and p.deletedAt is null")
+	@Query("select p from Post p where p.id = :postId and p.deletedAt is null and p.hiddenAt is null")
 	Optional<Post> findByIdForUpdate(@Param("postId") Long postId);
 
 	/**
@@ -113,7 +117,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	 *         {@code exists} 조회를 두면 쿼리가 하나 늘 뿐 아니라 그 사이에 글이 지워질 수 있다.
 	 */
 	@Modifying
-	@Query("update Post p set p.likeCount = p.likeCount + 1 where p.id = :postId and p.deletedAt is null")
+	@Query("update Post p set p.likeCount = p.likeCount + 1 where p.id = :postId and p.deletedAt is null and p.hiddenAt is null")
 	int increaseLikeCount(@Param("postId") Long postId);
 
 	/**
@@ -124,7 +128,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	 * 조건에서 막는 편이 낫다.
 	 */
 	@Modifying
-	@Query("update Post p set p.likeCount = p.likeCount - 1 where p.id = :postId and p.likeCount > 0 and p.deletedAt is null")
+	@Query("update Post p set p.likeCount = p.likeCount - 1 where p.id = :postId and p.likeCount > 0 and p.deletedAt is null and p.hiddenAt is null")
 	void decreaseLikeCount(@Param("postId") Long postId);
 
 	/**
@@ -135,12 +139,12 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	 * @return 바뀐 행 수. 0이면 그런 글이 없다는 뜻이라 존재 확인을 겸한다.
 	 */
 	@Modifying
-	@Query("update Post p set p.commentCount = p.commentCount + 1 where p.id = :postId and p.deletedAt is null")
+	@Query("update Post p set p.commentCount = p.commentCount + 1 where p.id = :postId and p.deletedAt is null and p.hiddenAt is null")
 	int increaseCommentCount(@Param("postId") Long postId);
 
 	/** 댓글 수를 원자적으로 내린다. 삭제도 부모를 먼저 잠근 뒤 자식 행을 지운다. */
 	@Modifying
-	@Query("update Post p set p.commentCount = p.commentCount - 1 where p.id = :postId and p.commentCount > 0 and p.deletedAt is null")
+	@Query("update Post p set p.commentCount = p.commentCount - 1 where p.id = :postId and p.commentCount > 0 and p.deletedAt is null and p.hiddenAt is null")
 	void decreaseCommentCount(@Param("postId") Long postId);
 
 	/**
@@ -149,7 +153,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	 * <p>{@code findById}를 그대로 쓰지 않는 이유이기도 하다. 상속받은 그 메서드는 지운 글도
 	 * 돌려주므로, 사용자에게 보이는 경로에서는 반드시 이쪽을 쓴다.
 	 */
-	@Query("select p from Post p where p.id = :postId and p.deletedAt is null")
+	@Query("select p from Post p where p.id = :postId and p.deletedAt is null and p.hiddenAt is null")
 	Optional<Post> findLive(@Param("postId") Long postId);
 
 	/**
@@ -158,7 +162,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	 * <p>상속받은 {@code findAllById}를 쓰면 <b>지운 글까지 딸려 온다.</b> 알림 목록에 그것을
 	 * 그대로 실으면 지운 본문이 다시 보이고, 삭제가 삭제가 아니게 된다.
 	 */
-	@Query("select p from Post p where p.id in :postIds and p.deletedAt is null")
+	@Query("select p from Post p where p.id in :postIds and p.deletedAt is null and p.hiddenAt is null")
 	List<Post> findAllLive(@Param("postIds") List<Long> postIds);
 
 	/**
@@ -170,10 +174,11 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	@Query("""
 			select new com.irene.twelvebooks.notification.PostView(p.id, p.content)
 			from Post p where p.id in :postIds and p.deletedAt is null
+			  and p.hiddenAt is null
 			""")
 	List<PostView> findLivePostViews(@Param("postIds") List<Long> postIds);
 
-	@Query("select count(p) > 0 from Post p where p.id = :postId and p.deletedAt is null")
+	@Query("select count(p) > 0 from Post p where p.id = :postId and p.deletedAt is null and p.hiddenAt is null")
 	boolean existsLive(@Param("postId") Long postId);
 
 	/**
@@ -187,4 +192,34 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	@Modifying
 	@Query("update Post p set p.deletedAt = :now where p.id = :postId and p.deletedAt is null")
 	int softDelete(@Param("postId") Long postId, @Param("now") LocalDateTime now);
+
+	/**
+	 * 운영자가 글을 내리거나 다시 올린다.
+	 *
+	 * <p>{@code hiddenAt}의 현재 상태를 조건에 달아 <b>바뀔 때만 1행</b>이 된다. 두 운영자가
+	 * 동시에 같은 신고를 처리해도 한쪽만 1을 받으므로, 뒤따르는 처리를 한 번만 하고 싶을 때
+	 * 이 값을 보면 된다.
+	 *
+	 * <p>{@code findAnyPostViews}와 달리 지운 글도 대상에 넣는다 — 작성자가 지운 뒤에 신고가
+	 * 처리될 수 있고, 그때 숨김 기록은 남아야 한다.
+	 */
+	@Modifying
+	@Query("update Post p set p.hiddenAt = :now where p.id = :postId and p.hiddenAt is null")
+	int hide(@Param("postId") Long postId, @Param("now") LocalDateTime now);
+
+	@Modifying
+	@Query("update Post p set p.hiddenAt = null where p.id = :postId and p.hiddenAt is not null")
+	int unhide(@Param("postId") Long postId);
+
+	/**
+	 * 운영자 목록에 곁들일 글의 id와 본문. <b>지운 글도 숨긴 글도 나온다.</b>
+	 *
+	 * <p>사용자용 조회와 정반대인 것이 요점이다 — 내용을 못 보면 운영자가 무엇을 내릴지
+	 * 판단할 수 없고, 이미 내린 것을 되돌릴지도 정할 수 없다.
+	 */
+	@Query("""
+			select new com.irene.twelvebooks.report.ContentView(p.id, p.content)
+			from Post p where p.id in :postIds
+			""")
+	List<com.irene.twelvebooks.report.ContentView> findAnyPostViews(@Param("postIds") List<Long> postIds);
 }

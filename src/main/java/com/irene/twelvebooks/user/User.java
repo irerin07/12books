@@ -3,6 +3,8 @@ package com.irene.twelvebooks.user;
 import com.irene.twelvebooks.common.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -34,6 +36,16 @@ public class User extends BaseTimeEntity {
 	@Column(name = "avatar_url", length = 500)
 	private String avatarUrl;
 
+	/**
+	 * 권한. 토큰이 아니라 <b>이 행</b>이 진실이다.
+	 *
+	 * <p>역할을 토큰에 실으면 권한을 뺏어도 그 사람의 토큰이 만료될 때까지 관리자로 남는다.
+	 * 뺏는 이유를 생각하면 그 시차가 가장 곤란한 순간에 열려 있는 셈이다.
+	 */
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 20)
+	private UserRole role;
+
 	protected User() {
 	}
 
@@ -42,6 +54,7 @@ public class User extends BaseTimeEntity {
 		this.passwordHash = passwordHash;
 		this.handle = handle;
 		this.displayName = displayName;
+		this.role = UserRole.USER;
 	}
 
 	public static User create(String email, String passwordHash, String handle, String displayName) {
@@ -95,5 +108,9 @@ public class User extends BaseTimeEntity {
 
 	public String getAvatarUrl() {
 		return avatarUrl;
+	}
+
+	public UserRole getRole() {
+		return role;
 	}
 }
