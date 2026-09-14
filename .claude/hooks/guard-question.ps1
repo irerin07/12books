@@ -146,7 +146,18 @@ function Get-Key($payload) {
 
 # 훅이 어떤 이유로든 깨지면 질문을 막지 않는다. 보호 장치가 대화를 인질로 잡으면 안 된다.
 try {
-    $raw = [Console]::In.ReadToEnd()
+    # stdin을 UTF-8로 "직접" 읽는다. [Console]::In은 콘솔 입력 인코딩으로 디코딩하는데
+    # 그 기본값이 한국어 Windows에서는 cp949, GitHub 러너에서는 437이라 한글 라벨이 통째로
+    # 깨져 도착한다. 그러면 "아직 정하지 않는다" 같은 보류 선택지를 알아보지 못해 멀쩡한
+    # 질문이 걸린다 - 실제로 CI에서 그렇게 드러났다.
+    $stdin = New-Object System.IO.StreamReader(
+        [Console]::OpenStandardInput(), (New-Object System.Text.UTF8Encoding($false)))
+    try {
+        $raw = $stdin.ReadToEnd()
+    }
+    finally {
+        $stdin.Dispose()
+    }
     if ([string]::IsNullOrWhiteSpace($raw)) { Allow }
     $payload = $raw | ConvertFrom-Json
 
