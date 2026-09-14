@@ -3,6 +3,7 @@ package com.irene.twelvebooks.report;
 import com.irene.twelvebooks.book.Book;
 import com.irene.twelvebooks.book.BookRepository;
 import com.irene.twelvebooks.common.error.BusinessException;
+import com.irene.twelvebooks.common.error.ErrorCode;
 import com.irene.twelvebooks.post.Comment;
 import com.irene.twelvebooks.post.CommentRepository;
 import com.irene.twelvebooks.post.CommentService;
@@ -18,9 +19,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -39,8 +41,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       모른 채 한 번 더 줄인다. 댓글 하나가 사라졌는데 숫자는 둘이 줄어든다.</li>
  * </ul>
  *
- * <p>그래서 이 테스트는 <b>예외가 없었는지</b>와 <b>숫자가 실제 보이는 댓글 수와 같은지</b>를
+ * <p>그래서 이 테스트는 <b>누가 어떤 예외로 죽었는지</b>와 <b>남은 댓글 수가 정확히 둘인지</b>를
  * 함께 본다. 앞만 보면 숫자가 어긋난 채로 통과하고, 뒤만 보면 교착으로 죽은 요청을 놓친다.
+ * 예외는 종류까지 본다 — 뭉뚱그려 넘기면 교착도 권한 실패도 함께 묻힌다.
  */
 class ModerationConcurrentTest extends AbstractIntegrationTest {
 
@@ -100,20 +103,30 @@ class ModerationConcurrentTest extends AbstractIntegrationTest {
 			Long reportId = jdbcTemplate.queryForObject(
 					"select max(id) from reports", Long.class);
 
-			List<Throwable> failures = collide(
-					() -> commentService.remove(commenterId, target),
-					() -> reportAdminService.handle(adminId, reportId, ReportStatus.ACTIONED));
+			Map<String, Throwable> failures = collide(new LinkedHashMap<>(Map.of(
+					"삭제", () -> commentService.remove(commenterId, target),
+					"숨김", () -> reportAdminService.handle(adminId, reportId, ReportStatus.ACTIONED))));
 
-			// 교착으로 죽은 요청이 있으면 여기서 드러난다. 한쪽이 "이미 없는 댓글"을 만나는
-			// 것은 정상이므로 그것만 걸러 낸다.
-			assertThat(failures.stream().filter(t -> !(t instanceof BusinessException)).toList())
-					.isEmpty();
+			// 삭제가 <b>이미 없는 댓글</b>을 만나는 것만 정상이다. 예외 종류를 안 보고 넘기면
+			// 교착도, 권한·신고 조회 실패도 함께 묻힌다 — 테스트가 아무것도 지키지 않게 된다.
+			Throwable deletion = failures.get("삭제");
+			if (deletion != null) {
+				assertThat(deletion).as("%d번째 라운드의 삭제", round)
+						.isInstanceOf(BusinessException.class);
+				assertThat(((BusinessException) deletion).getErrorCode())
+						.isEqualTo(ErrorCode.COMMENT_NOT_FOUND);
+			}
+			// 운영자 처리는 어떤 이유로도 실패하면 안 된다. 교착이 여기서 드러난다.
+			assertThat(failures.get("숨김")).as("%d번째 라운드의 숨김 처리", round).isNull();
 
 			long visible = commentRepository.findPostPage(postId, null,
 					org.springframework.data.domain.PageRequest.ofSize(10)).size();
+			// 셋 중 하나가 사라졌으니 답은 2다. "조회 결과와 같다"만 보면 둘 다 함께
+			// 틀렸을 때 통과한다.
+			assertThat(visible).as("%d번째 라운드의 보이는 댓글", round).isEqualTo(2);
 			assertThat(postRepository.findById(postId).orElseThrow().getCommentCount())
 					.as("%d번째 라운드의 댓글 수", round)
-					.isEqualTo((int) visible);
+					.isEqualTo(2);
 		}
 	}
 
@@ -130,19 +143,20 @@ class ModerationConcurrentTest extends AbstractIntegrationTest {
 		return target;
 	}
 
-	private List<Throwable> collide(Runnable first, Runnable second) throws Exception {
+	/** 두 일을 동시에 던지고, 이름별로 터진 예외를 돌려준다. */
+	private Map<String, Throwable> collide(Map<String, Runnable> tasks) throws Exception {
 		CountDownLatch start = new CountDownLatch(1);
-		List<Throwable> failures = new CopyOnWriteArrayList<>();
-		ExecutorService pool = Executors.newFixedThreadPool(2);
+		Map<String, Throwable> failures = new ConcurrentHashMap<>();
+		ExecutorService pool = Executors.newFixedThreadPool(tasks.size());
 		try {
-			for (Runnable task : List.of(first, second)) {
+			for (Map.Entry<String, Runnable> task : tasks.entrySet()) {
 				pool.submit(() -> {
 					try {
 						start.await();
-						task.run();
+						task.getValue().run();
 					}
 					catch (Throwable t) {
-						failures.add(t);
+						failures.put(task.getKey(), t);
 					}
 				});
 			}
