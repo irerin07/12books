@@ -177,4 +177,60 @@ class AdminReportTest extends AbstractIntegrationTest {
 		mockMvc.perform(get("/api/v1/posts/{id}", postId).header("Authorization", bearer))
 				.andExpect(jsonPath("$.commentCount").value(0));
 	}
+
+	/**
+	 * 숨긴 글 아래의 댓글을 처리하는 경우.
+	 *
+	 * <p>운영자의 카운터 조정은 <b>부모 글이 보이든 안 보이든</b> 반영돼야 한다. 사용자 경로의
+	 * 조건(살아 있고 안 숨겨진 글에만)을 그대로 쓰면, 글을 숨긴 상태에서 그 아래 댓글을 내렸을
+	 * 때 숫자가 줄지 않는다. 나중에 글을 되돌리면 보이는 댓글은 하나인데 숫자는 둘이다.
+	 */
+	@Test
+	@DisplayName("숨긴 글 아래 댓글을 내려도 댓글 수가 어긋나지 않는다")
+	void keepsCommentCountWhenParentIsHidden() throws Exception {
+		Long first = writeComment("먼저 단 댓글");
+		writeComment("나중에 단 댓글");
+
+		Long commentReport = reportComment(first);
+		Long postReport = reportPost();
+
+		handle(postReport, "ACTIONED").andExpect(status().isNoContent());
+		handle(commentReport, "ACTIONED").andExpect(status().isNoContent());
+		handle(postReport, "REJECTED").andExpect(status().isNoContent());
+
+		mockMvc.perform(get("/api/v1/posts/{id}/comments", postId).header("Authorization", bearer))
+				.andExpect(jsonPath("$.items.length()").value(1));
+		mockMvc.perform(get("/api/v1/posts/{id}", postId).header("Authorization", bearer))
+				.andExpect(jsonPath("$.commentCount").value(1));
+	}
+
+	private Long writeComment(String content) throws Exception {
+		String body = mockMvc.perform(post("/api/v1/posts/{id}/comments", postId)
+						.header("Authorization", bearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"content": "%s"}""".formatted(content)))
+				.andExpect(status().isCreated())
+				.andReturn().getResponse().getContentAsString();
+		return ((Number) JsonPath.read(body, "$.id")).longValue();
+	}
+
+	/** 글쓴이가 신고한다 - 댓글 작성자는 자기 댓글을 신고할 수 없다. */
+	private Long reportComment(Long commentId) throws Exception {
+		mockMvc.perform(post("/api/v1/comments/{id}/reports", commentId)
+						.header("Authorization", authorBearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"reason": "ABUSE"}"""))
+				.andExpect(status().isNoContent());
+		return latestReportId();
+	}
+
+	private Long latestReportId() throws Exception {
+		String list = mockMvc.perform(get("/api/v1/admin/reports").param("status", "PENDING")
+						.header("Authorization", adminBearer))
+				.andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString();
+		return ((Number) JsonPath.read(list, "$.items[0].id")).longValue();
+	}
 }

@@ -222,4 +222,30 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			from Post p where p.id in :postIds
 			""")
 	List<com.irene.twelvebooks.report.ContentView> findAnyPostViews(@Param("postIds") List<Long> postIds);
+
+	/**
+	 * 글 행을 잠근다 — <b>숨겨졌든 지워졌든.</b>
+	 *
+	 * <p>운영자 처리가 이것을 쓴다. {@link #findByIdForUpdate}는 사용자에게 보이는 글만
+	 * 잠그는데, 숨긴 글 아래의 댓글을 처리할 때는 그 글을 잠글 수 없어 <b>잠금 없이</b>
+	 * 카운터를 만지게 된다. 그러면 작성자의 삭제와 부딪힌다.
+	 */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select p from Post p where p.id = :postId")
+	Optional<Post> findAnyByIdForUpdate(@Param("postId") Long postId);
+
+	/**
+	 * 운영자 처리가 쓰는 댓글 수 조정. <b>부모 글이 보이지 않아도 반영된다.</b>
+	 *
+	 * <p>사용자 경로의 조건(살아 있고 안 숨겨진 글)을 그대로 쓰면, 글을 숨긴 상태에서 그 아래
+	 * 댓글을 내렸을 때 숫자가 줄지 않는다. 나중에 글을 되돌리면 보이는 댓글은 하나인데 숫자는
+	 * 둘이다 — 되돌릴 수 있게 만든 장치가 되돌릴 때 어긋난다.
+	 */
+	@Modifying
+	@Query("update Post p set p.commentCount = p.commentCount - 1 where p.id = :postId and p.commentCount > 0")
+	void decreaseCommentCountByModerator(@Param("postId") Long postId);
+
+	@Modifying
+	@Query("update Post p set p.commentCount = p.commentCount + 1 where p.id = :postId")
+	void increaseCommentCountByModerator(@Param("postId") Long postId);
 }

@@ -109,9 +109,17 @@ public class CommentService {
 		// 보존해 둔 글의 숫자가 실제와 어긋나면 남긴 의미가 없다.
 		postRepository.findByIdForUpdate(comment.getPostId())
 				.orElseThrow(() -> new BusinessException(ErrorCode.COMMENT_NOT_FOUND));
-		if (commentRepository.softDelete(commentId, LocalDateTime.now(clock)) == 1) {
+		// 세어져 있는 댓글만 지우는 문장을 먼저 던진다. 앞의 findLive는 잠금 밖에서 읽은
+		// 값이라, 그사이 운영자가 이 댓글을 내렸으면 카운터는 이미 한 번 줄어 있다.
+		// "먼저 물어보고 지우기"로는 그 틈을 못 막는다 — 잠금 없는 조회는 옛 스냅샷을 본다.
+		LocalDateTime now = LocalDateTime.now(clock);
+		if (commentRepository.softDeleteIfCounted(commentId, now) == 1) {
 			postRepository.decreaseCommentCount(comment.getPostId());
+			return;
 		}
+		// 여기까지 왔으면 이미 지워졌거나 운영자가 내린 댓글이다. 지우기는 해 두되 숫자는
+		// 건드리지 않는다 — 내릴 때 이미 줄었다.
+		commentRepository.softDelete(commentId, now);
 	}
 
 	/**

@@ -41,9 +41,14 @@ public class User extends BaseTimeEntity {
 	 *
 	 * <p>역할을 토큰에 실으면 권한을 뺏어도 그 사람의 토큰이 만료될 때까지 관리자로 남는다.
 	 * 뺏는 이유를 생각하면 그 시차가 가장 곤란한 순간에 열려 있는 셈이다.
+	 *
+	 * <p>{@code updatable = false}인 이유가 따로 있다. 프로필 수정은 dirty checking으로
+	 * <b>전체 UPDATE</b>를 날리는데, 거기에 이 값이 실리면 수정 요청이 엔티티를 읽은 뒤
+	 * 운영자가 권한을 회수했을 때 <b>회수가 취소된다</b> — 옛 값이 그대로 다시 저장된다.
+	 * 역할을 바꾸는 경로는 SQL뿐이므로(CLAUDE.md) JPA는 이 컬럼을 읽기만 한다.
 	 */
 	@Enumerated(EnumType.STRING)
-	@Column(nullable = false, length = 20)
+	@Column(nullable = false, length = 20, updatable = false)
 	private UserRole role;
 
 	protected User() {

@@ -76,4 +76,20 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 	/** 숨김이 댓글 수를 조정할 때 어느 글의 것인지 알아야 한다. */
 	@Query("select c.postId from Comment c where c.id = :commentId")
 	java.util.Optional<Long> findPostId(@Param("commentId") Long commentId);
+
+	/**
+	 * <b>댓글 수에 세어져 있는 댓글만</b> 지운다. 1행이면 그 요청이 지웠고, 지우기 전까지
+	 * 세어져 있었다는 뜻이라 그때만 카운터를 내린다.
+	 *
+	 * <p>"먼저 물어보고 지우기"로 하지 않는 이유가 있다. MySQL의 기본 격리 수준에서 <b>잠금
+	 * 없는 SELECT는 트랜잭션이 시작할 때의 스냅샷</b>을 본다. 그사이 운영자가 이 댓글을 내려
+	 * 카운터를 이미 줄였어도 조회는 "아직 세어져 있다"고 답하고, 그 답을 믿으면 한 댓글에
+	 * 숫자가 둘 줄어든다. UPDATE는 언제나 최신 행을 보므로 <b>조건을 문장 안에 넣어야</b>
+	 * 이 틈이 사라진다.
+	 *
+	 * @return 지운 행 수. 0이면 이미 지워졌거나 <b>이미 내려간</b> 댓글이다.
+	 */
+	@Modifying
+	@Query("update Comment c set c.deletedAt = :now where c.id = :commentId and c.deletedAt is null and c.hiddenAt is null")
+	int softDeleteIfCounted(@Param("commentId") Long commentId, @Param("now") LocalDateTime now);
 }
