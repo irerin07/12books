@@ -1,12 +1,14 @@
 package com.irene.twelvebooks.common.config;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.irene.twelvebooks.notification.NotificationOverflow;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import java.time.Clock;
 import java.util.concurrent.Executor;
 
 /**
@@ -23,8 +25,6 @@ public class AsyncConfig {
 
 	public static final String NOTIFICATION_EXECUTOR = "notificationExecutor";
 
-	private static final Logger log = LoggerFactory.getLogger(AsyncConfig.class);
-
 	/**
 	 * 알림 전용 실행기.
 	 *
@@ -35,12 +35,12 @@ public class AsyncConfig {
 	 *
 	 * <p>넘치면 <b>버린다.</b> {@code CallerRunsPolicy}는 쓰지 않는다 — 요청 스레드에서 다시
 	 * 실행되어 위에 적은 커넥션 경합을 그대로 되살린다. 알림 한 건을 잃는 것이 응답이 느려지거나
-	 * 메모리가 차는 것보다 낫다. 버린 사실은 로그로 남긴다.
+	 * 메모리가 차는 것보다 낫다. 버린 사실을 어떻게 남기는지는 {@link NotificationOverflow}에 있다.
 	 *
 	 * <p>종료할 때는 하던 일을 잠깐 기다린다. 배포마다 진행 중인 알림을 버릴 이유는 없다.
 	 */
 	@Bean(NOTIFICATION_EXECUTOR)
-	public Executor notificationExecutor() {
+	public Executor notificationExecutor(MeterRegistry meterRegistry, Clock clock) {
 		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
 		executor.setThreadNamePrefix("notification-");
 		executor.setCorePoolSize(2);
@@ -48,10 +48,20 @@ public class AsyncConfig {
 		executor.setQueueCapacity(500);
 		executor.setWaitForTasksToCompleteOnShutdown(true);
 		executor.setAwaitTerminationSeconds(10);
-		executor.setRejectedExecutionHandler((task, pool) ->
-				log.warn("알림 대기열이 가득 차 한 건을 버립니다. 활성 {} 대기 {}",
-						pool.getActiveCount(), pool.getQueue().size()));
+		executor.setRejectedExecutionHandler(new NotificationOverflow(meterRegistry, clock));
 		executor.initialize();
+
+		// 얼마나 밀려 있는지를 밖에서 볼 수 있게 한다. 버린 건수만 세면 "버리기 직전"을
+		// 알아챌 수 없어 손 쓸 시점을 놓친다.
+		Gauge.builder("twelvebooks.notifications.queue.size", executor,
+						e -> e.getThreadPoolExecutor().getQueue().size())
+				.description("알림 대기열에 쌓인 수")
+				.register(meterRegistry);
+		Gauge.builder("twelvebooks.notifications.active", executor,
+						ThreadPoolTaskExecutor::getActiveCount)
+				.description("알림을 처리 중인 스레드 수")
+				.register(meterRegistry);
+
 		return executor;
 	}
 }

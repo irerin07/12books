@@ -3,7 +3,7 @@ package com.irene.twelvebooks.notification.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.irene.twelvebooks.notification.Notification;
 import com.irene.twelvebooks.notification.NotificationType;
-import com.irene.twelvebooks.user.User;
+import com.irene.twelvebooks.notification.ActorView;
 import com.irene.twelvebooks.user.dto.UserSummaryResponse;
 
 import java.time.LocalDateTime;
@@ -26,9 +26,9 @@ public record NotificationResponse(Long id, NotificationType type, UserSummaryRe
 	public record PostBrief(Long id, String content) {
 	}
 
-	public static NotificationResponse of(Notification notification, User actor, PostBrief post) {
+	public static NotificationResponse of(Notification notification, ActorView actor, PostBrief post) {
 		return new NotificationResponse(notification.getId(), notification.getType(),
-				UserSummaryResponse.from(actor), post, notification.isRead(),
-				notification.getCreatedAt());
+				new UserSummaryResponse(actor.handle(), actor.displayName(), actor.avatarUrl()),
+				post, notification.isRead(), notification.getCreatedAt());
 	}
 }

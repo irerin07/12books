@@ -4,10 +4,9 @@ import com.irene.twelvebooks.common.error.BusinessException;
 import com.irene.twelvebooks.common.error.ErrorCode;
 import com.irene.twelvebooks.common.support.CursorPage;
 import com.irene.twelvebooks.notification.dto.NotificationResponse;
-import com.irene.twelvebooks.post.Post;
 import com.irene.twelvebooks.post.PostRepository;
-import com.irene.twelvebooks.user.User;
 import com.irene.twelvebooks.user.UserRepository;
+import org.hibernate.exception.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -26,6 +25,9 @@ import java.util.stream.Collectors;
 public class NotificationService {
 
 	private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
+
+	/** {@code V9__notifications.sql}이 선언한 이름. 같은 일을 두 번 알리지 않게 막는다. */
+	private static final String DUPLICATE_CONSTRAINT = "uk_notifications_event";
 
 	private final NotificationRepository notificationRepository;
 	private final UserRepository userRepository;
@@ -65,8 +67,31 @@ public class NotificationService {
 					Notification.of(recipientId, actorId, type, targetType, targetId));
 		}
 		catch (DataIntegrityViolationException e) {
+			if (!isDuplicate(e)) {
+				// 외래 키·NOT NULL 위반 같은 진짜 실패다. 삼키면 알림이 사라졌는데 아무
+				// 흔적도 남지 않고, 로그는 "이미 알렸다"고 거짓말한다.
+				throw e;
+			}
 			log.debug("이미 알린 일입니다: recipient={} actor={} type={}", recipientId, actorId, type);
 		}
+	}
+
+	/**
+	 * 알림 중복 제약을 어긴 것인지.
+	 *
+	 * <p>{@link DataIntegrityViolationException}은 유니크·외래 키·NOT NULL 위반을 모두 담는
+	 * 넓은 예외다. 제약 <b>이름</b>으로 가른다 — 메시지 문구는 DB 버전에 따라 바뀌지만
+	 * 이름은 우리가 마이그레이션에 적은 그대로다.
+	 *
+	 * <p>MySQL은 이름을 {@code notifications.uk_notifications_event}처럼 테이블까지 붙여
+	 * 돌려준다. 접두사는 DB마다 다를 수 있어 <b>끝부분만</b> 본다.
+	 */
+	private boolean isDuplicate(DataIntegrityViolationException e) {
+		if (!(e.getCause() instanceof ConstraintViolationException violation)) {
+			return false;
+		}
+		String name = violation.getConstraintName();
+		return name != null && name.toLowerCase().endsWith(DUPLICATE_CONSTRAINT);
 	}
 
 	/**
@@ -74,6 +99,10 @@ public class NotificationService {
 	 *
 	 * <p>행위자와 글은 <b>페이지 전체를 모아 한 번씩</b> 읽는다. 알림마다 따로 읽으면 목록
 	 * 크기만큼 쿼리가 늘어난다 — 감상평 목록과 같은 방식이다.
+	 *
+	 * <p>엔티티가 아니라 <b>화면에 쓰는 값만</b> 읽는다({@link ActorView}·{@link PostView}).
+	 * 쿼리 수는 그대로지만 쓰지 않는 컬럼이 따라오지 않고, 특히 목록을 열 때마다 사람들의
+	 * 비밀번호 해시를 메모리로 올리지 않는다.
 	 *
 	 * <p>지워진 글에 달렸던 알림은 <b>글 정보 없이</b> 나간다. 알림은 남기고 글만 사라진
 	 * 상태가 정상이고, 그때 목록이 통째로 깨지면 안 된다. 지운 본문이 여기로 새면 삭제가
@@ -85,20 +114,19 @@ public class NotificationService {
 				notificationRepository.findPage(userId, cursor, PageRequest.ofSize(size + 1)),
 				size, Notification::getId);
 
-		Map<Long, User> actors = userRepository.findAllById(
+		Map<Long, ActorView> actors = userRepository.findActorViews(
 						page.items().stream().map(Notification::getActorId).distinct().toList()).stream()
-				.collect(Collectors.toMap(User::getId, Function.identity()));
+				.collect(Collectors.toMap(ActorView::id, Function.identity()));
 
+		// 지운 글은 조회에서 빠진다. 실으면 지운 본문이 알림으로 다시 보인다.
 		List<Long> postIds = page.items().stream()
 				.filter(n -> n.getTargetType() == NotificationTarget.POST)
 				.map(Notification::getTargetId)
 				.distinct()
 				.toList();
-		// 지운 글은 빼고 가져온다. findAllById는 지운 글까지 돌려주고, 그것을 실으면
-		// 지운 본문이 알림으로 다시 보인다.
-		Map<Long, Post> posts = postIds.isEmpty() ? Map.of()
-				: postRepository.findAllLive(postIds).stream()
-						.collect(Collectors.toMap(Post::getId, Function.identity()));
+		Map<Long, PostView> posts = postIds.isEmpty() ? Map.of()
+				: postRepository.findLivePostViews(postIds).stream()
+						.collect(Collectors.toMap(PostView::id, Function.identity()));
 
 		return new CursorPage<>(
 				page.items().stream()
@@ -132,11 +160,11 @@ public class NotificationService {
 		notificationRepository.markAllRead(userId, LocalDateTime.now(clock));
 	}
 
-	private NotificationResponse.PostBrief briefOf(Notification notification, Map<Long, Post> posts) {
+	private NotificationResponse.PostBrief briefOf(Notification notification, Map<Long, PostView> posts) {
 		if (notification.getTargetType() != NotificationTarget.POST) {
 			return null;
 		}
-		Post post = posts.get(notification.getTargetId());
-		return post == null ? null : new NotificationResponse.PostBrief(post.getId(), post.getContent());
+		PostView post = posts.get(notification.getTargetId());
+		return post == null ? null : new NotificationResponse.PostBrief(post.id(), post.content());
 	}
 }

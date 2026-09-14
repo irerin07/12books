@@ -11,10 +11,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -247,5 +249,24 @@ class NotificationTest extends AbstractIntegrationTest {
 				.andExpect(jsonPath("$.items.length()").value(1))
 				.andExpect(jsonPath("$.items[0].type").value("POST_LIKED"))
 				.andExpect(jsonPath("$.items[0].post").doesNotHaveJsonPath());
+	}
+
+	/**
+	 * 중복이 아닌 저장 실패까지 "이미 알렸다"로 삼키면 안 된다.
+	 *
+	 * <p>{@code DataIntegrityViolationException}에는 유니크 위반뿐 아니라 외래 키·NOT NULL
+	 * 위반도 들어온다. 전부 같게 다루면 <b>알림이 사라졌는데 아무 흔적도 남지 않는다.</b>
+	 * 원인을 잘못 기록하는 쪽이 아무것도 기록하지 않는 것보다 나쁘다 — 나중에 "왜 알림이
+	 * 안 왔지"를 쫓을 때 로그가 "이미 알렸다"고 거짓말한다.
+	 */
+	@Test
+	@DisplayName("중복이 아닌 저장 실패는 삼키지 않는다")
+	void doesNotSwallowRealFailures() {
+		Long recipient = userRepository.findByHandle("irene").orElseThrow().getId();
+
+		// 없는 사람이 행위자다 — 외래 키에 걸린다. 중복과는 다른 사건이다.
+		assertThatThrownBy(() -> notificationService.notify(recipient, 999_999L,
+				NotificationType.POST_LIKED, NotificationTarget.POST, postId))
+				.isInstanceOf(DataIntegrityViolationException.class);
 	}
 }
