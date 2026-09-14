@@ -412,27 +412,32 @@
 
 > 반응이 있었는데 본인이 모르면 반응이 없는 것과 같다.
 
-- [ ] `V9__notifications.sql` — `uk(recipient_id, type, actor_id, target_type, target_id)`
-- [ ] `notification/Notification`
-- [ ] 좋아요 · 댓글 · 팔로우에서 알림 생성
-- [ ] **생성은 `@TransactionalEventListener(AFTER_COMMIT)` + 독립 트랜잭션** —
+- [x] `V9__notifications.sql` — `uk(recipient_id, type, actor_id, target_type, target_id)`
+- [x] `notification/Notification`
+- [x] 좋아요 · 댓글 · 팔로우에서 알림 생성
+- [x] **생성은 `@TransactionalEventListener(AFTER_COMMIT)` + `@Async`** —
       같은 트랜잭션에 두면 알림 저장 실패가 좋아요를 롤백시킨다
-- [ ] **안 읽은 개수에 카운터를 두지 않는다** — `users`에 더하면 Phase 6에서 세 번 겪은
+- [x] **같은 스레드에서 `REQUIRES_NEW`로 하지 않는다** — 커밋 시점에 커넥션이 둘 필요해져
+      동시 요청이 풀 크기에 닿으면 전부 멈춘다. 동시 좋아요 10건에서 실제로 겪었다
+- [x] **안 읽은 개수에 카운터를 두지 않는다** — `users`에 더하면 Phase 6에서 세 번 겪은
       잠금 승격 교착이 그대로 온다. `count` 쿼리로 시작
-- [ ] 같은 대상에 반복해도 **한 건** (제약 위반은 "이미 알렸다"이므로 삼킨다)
-- [ ] **취소해도 알림은 남긴다** — 알림은 있었던 일의 기록이다
-- [ ] 본인 행동은 알리지 않는다
-- [ ] `GET /notifications?cursor=` · `GET /notifications/unread-count`
-- [ ] `PATCH /notifications/{id}/read` · `POST /notifications/read-all`
-- [ ] 행위자·글은 페이지 전체를 모아 한 번씩 (N+1 금지)
+- [x] 같은 대상에 반복해도 **한 건** (제약 위반은 "이미 알렸다"이므로 삼킨다)
+- [x] 팔로우 알림의 대상을 비우지 않는다 — 유니크 인덱스가 NULL을 서로 다른 값으로 봐서
+      제약이 발동하지 않는다
+- [x] **취소해도 알림은 남긴다** — 알림은 있었던 일의 기록이다
+- [x] 본인 행동은 알리지 않는다
+- [x] `GET /notifications?cursor=` · `GET /notifications/unread-count`
+- [x] `PATCH /notifications/{id}/read` · `POST /notifications/read-all`
+- [x] 남의 알림은 403이 아니라 404 — 알림은 공개물이 아니라 존재 자체가 사적이다
+- [x] 행위자·글은 페이지 전체를 모아 한 번씩 (N+1 금지)
 
 **완료 기준**
 
-- [ ] 남이 좋아요·댓글·팔로우하면 알림이 하나 생긴다
-- [ ] 내 행동은 알림을 만들지 않는다
-- [ ] 같은 사람이 같은 대상에 반복해도 한 건이다
-- [ ] 안 읽은 개수가 맞고 읽음 처리하면 0이 된다
-- [ ] 목록 크기를 바꿔도 쿼리 수가 늘지 않는다
+- [x] 남이 좋아요·댓글·팔로우하면 알림이 하나 생긴다
+- [x] 내 행동은 알림을 만들지 않는다
+- [x] 같은 사람이 같은 대상에 반복해도 한 건이다
+- [x] 안 읽은 개수가 맞고 읽음 처리하면 0이 된다
+- [x] 목록 크기를 바꿔도 쿼리 수가 늘지 않는다
 
 ---
 

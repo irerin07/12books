@@ -20,6 +20,7 @@ public enum ErrorCode {
 	POST_NOT_FOUND(HttpStatus.NOT_FOUND, "P001", "감상평을 찾을 수 없습니다."),
 	ALREADY_LIKED(HttpStatus.CONFLICT, "P002", "이미 좋아요를 눌렀습니다."),
 	COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "P003", "댓글을 찾을 수 없습니다."),
+	NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "N001", "알림을 찾을 수 없습니다."),
 	SELF_FOLLOW_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "F001", "자기 자신은 팔로우할 수 없습니다."),
 	ALREADY_FOLLOWING(HttpStatus.CONFLICT, "F002", "이미 팔로우하고 있습니다."),
 	FORBIDDEN(HttpStatus.FORBIDDEN, "A004", "권한이 없습니다."),
