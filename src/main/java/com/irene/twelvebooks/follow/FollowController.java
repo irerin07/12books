@@ -1,6 +1,7 @@
 package com.irene.twelvebooks.follow;
 
 import com.irene.twelvebooks.auth.AuthUser;
+import com.irene.twelvebooks.common.ratelimit.RateLimit;
 import com.irene.twelvebooks.common.support.CursorPage;
 import com.irene.twelvebooks.common.support.PageSize;
 import com.irene.twelvebooks.follow.dto.FollowItemResponse;
@@ -27,6 +28,7 @@ public class FollowController {
 		this.followService = followService;
 	}
 
+	@RateLimit(name = "follow", limit = 60, windowSeconds = 60, scope = RateLimit.Scope.USER)
 	@PostMapping("/follow")
 	public ResponseEntity<Void> follow(@AuthUser Long userId, @PathVariable String handle) {
 		followService.follow(userId, handle);

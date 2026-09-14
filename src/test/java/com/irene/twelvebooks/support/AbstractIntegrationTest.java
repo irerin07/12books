@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.jdbc.core.ConnectionCallback;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -59,6 +60,21 @@ public abstract class AbstractIntegrationTest {
 	 * <p>상위 클래스의 {@code @BeforeEach}가 하위 것보다 먼저 실행되므로, 각 테스트의 준비
 	 * 코드는 빈 DB에서 시작한다.
 	 */
+	@Autowired
+	private StringRedisTemplate redis;
+
+	/**
+	 * Redis도 함께 비운다.
+	 *
+	 * <p>요청 제한 카운터가 여기 쌓이는데, 테스트 사이에 남으면 <b>앞 테스트 때문에 뒤
+	 * 테스트가 429를 받는다.</b> 실행 순서에 따라 통과와 실패가 갈리는 불안정한 테스트가
+	 * 되고, 원인이 자기 코드에 없어서 찾기도 어렵다. refresh 세션도 같은 이유로 비운다.
+	 */
+	@BeforeEach
+	void cleanRedis() {
+		redis.getConnectionFactory().getConnection().serverCommands().flushDb();
+	}
+
 	@BeforeEach
 	void cleanDatabase() {
 		List<String> tables = jdbcTemplate.queryForList("""

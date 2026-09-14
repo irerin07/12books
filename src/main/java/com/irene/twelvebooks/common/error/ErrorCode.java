@@ -25,6 +25,8 @@ public enum ErrorCode {
 	ALREADY_FOLLOWING(HttpStatus.CONFLICT, "F002", "이미 팔로우하고 있습니다."),
 	FORBIDDEN(HttpStatus.FORBIDDEN, "A004", "권한이 없습니다."),
 	EXTERNAL_API_ERROR(HttpStatus.BAD_GATEWAY, "E001", "외부 서비스를 이용할 수 없습니다."),
+	TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "C003",
+			"요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요."),
 	INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "C002", "서버 오류가 발생했습니다.");
 
 	private final HttpStatus status;
