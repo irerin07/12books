@@ -233,4 +233,42 @@ class AdminReportTest extends AbstractIntegrationTest {
 				.andReturn().getResponse().getContentAsString();
 		return ((Number) JsonPath.read(list, "$.items[0].id")).longValue();
 	}
+
+	/**
+	 * 같은 글에 신고가 여럿일 때.
+	 *
+	 * <p>기각은 <b>그 신고에 대한 판단</b>이지 대상 전체를 열라는 뜻이 아니다. 욕설로 내린 글을
+	 * "스포일러는 아니다"라는 판단 하나로 다시 공개하면, 인정된 신고가 그대로 남아 있는데도
+	 * 글이 돌아온다.
+	 *
+	 * <p>그래서 <b>인정된 신고가 하나라도 남아 있으면 숨김을 유지한다.</b> 마지막 하나까지
+	 * 기각됐을 때 비로소 열린다.
+	 */
+	@Test
+	@DisplayName("신고 하나를 기각해도 다른 신고가 인정돼 있으면 계속 숨긴다")
+	void keepsHiddenWhileAnotherReportStands() throws Exception {
+		Long abuse = reportPost();
+		Long spoiler = reportPostAs(adminBearer);
+
+		handle(abuse, "ACTIONED").andExpect(status().isNoContent());
+		assertPostVisible(false);
+
+		// "스포일러는 아니다"는 판단이지, 욕설 신고를 뒤집는 것이 아니다.
+		handle(spoiler, "REJECTED").andExpect(status().isNoContent());
+		assertPostVisible(false);
+
+		// 마지막 하나까지 기각되면 열린다.
+		handle(abuse, "REJECTED").andExpect(status().isNoContent());
+		assertPostVisible(true);
+	}
+
+	private Long reportPostAs(String reporterBearer) throws Exception {
+		mockMvc.perform(post("/api/v1/posts/{id}/reports", postId)
+						.header("Authorization", reporterBearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"reason": "SPOILER"}"""))
+				.andExpect(status().isNoContent());
+		return latestReportId();
+	}
 }

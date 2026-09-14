@@ -116,7 +116,21 @@ public class ReportAdminService {
 		}
 	}
 
+	/**
+	 * 기각한다 — 다만 <b>다른 신고가 아직 인정돼 있으면 대상은 그대로 둔다.</b>
+	 *
+	 * <p>기각은 그 신고에 대한 판단이지 대상 전체를 열라는 뜻이 아니다. 욕설과 스포일러로
+	 * 각각 신고된 글에서 스포일러 쪽만 기각했다고 글이 돌아오면, 인정된 욕설 신고가 그대로
+	 * 남아 있는데도 공개된다. 마지막 하나까지 기각됐을 때 비로소 열린다.
+	 *
+	 * <p>반대로 "마지막 판단이 대상 전체에 적용된다"는 정책도 가능하지만, 그러려면 개별 신고
+	 * 기각과 콘텐츠 복구를 가르는 API와 화면이 따로 있어야 한다. 지금은 없다.
+	 */
 	private void restore(Report report) {
+		if (reportRepository.existsOtherWithStatus(report.getTargetType(), report.getTargetId(),
+				ReportStatus.ACTIONED, report.getId())) {
+			return;
+		}
 		switch (report.getTargetType()) {
 			case POST -> postRepository.unhide(report.getTargetId());
 			case COMMENT -> onComment(report.getTargetId(), commentRepository::unhide,
