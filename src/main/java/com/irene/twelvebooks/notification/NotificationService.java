@@ -48,8 +48,13 @@ public class NotificationService {
 	 *
 	 * <p>같은 일이 반복되면 유니크 제약에 걸리는데 <b>그것은 오류가 아니다.</b> "이미 알렸다"는
 	 * 뜻이므로 삼킨다 — 하트를 껐다 켰다 할 때마다 알림이 쌓이면 목록이 한 사람으로 도배된다.
+	 *
+	 * <p><b>여기에 {@code @Transactional}을 두지 않는다.</b> 두면 제약 위반을 잡아도 소용이
+	 * 없다 — 예외를 삼켜도 그 트랜잭션의 rollback-only 표시는 남아서, 정상 종료한 뒤 커밋
+	 * 시점에 {@code UnexpectedRollbackException}이 난다. 저장 자체가 리포지토리의 트랜잭션
+	 * 안에서 끝나므로 우리는 그 <b>바깥에서</b> 잡으면 되고, 그래야 정상적인 반복 행동이
+	 * ERROR 로그를 쌓지 않는다.
 	 */
-	@Transactional
 	public void notify(Long recipientId, Long actorId, NotificationType type,
 			NotificationTarget targetType, Long targetId) {
 		if (recipientId.equals(actorId)) {
@@ -70,8 +75,9 @@ public class NotificationService {
 	 * <p>행위자와 글은 <b>페이지 전체를 모아 한 번씩</b> 읽는다. 알림마다 따로 읽으면 목록
 	 * 크기만큼 쿼리가 늘어난다 — 감상평 목록과 같은 방식이다.
 	 *
-	 * <p>지워진 글에 달렸던 알림은 글 정보 없이 나간다. 알림은 남기고 글만 사라진 상태가
-	 * 정상이고, 그때 목록이 통째로 깨지면 안 된다.
+	 * <p>지워진 글에 달렸던 알림은 <b>글 정보 없이</b> 나간다. 알림은 남기고 글만 사라진
+	 * 상태가 정상이고, 그때 목록이 통째로 깨지면 안 된다. 지운 본문이 여기로 새면 삭제가
+	 * 삭제가 아니게 된다.
 	 */
 	@Transactional(readOnly = true)
 	public CursorPage<NotificationResponse> list(Long userId, Long cursor, int size) {
@@ -88,8 +94,10 @@ public class NotificationService {
 				.map(Notification::getTargetId)
 				.distinct()
 				.toList();
+		// 지운 글은 빼고 가져온다. findAllById는 지운 글까지 돌려주고, 그것을 실으면
+		// 지운 본문이 알림으로 다시 보인다.
 		Map<Long, Post> posts = postIds.isEmpty() ? Map.of()
-				: postRepository.findAllById(postIds).stream()
+				: postRepository.findAllLive(postIds).stream()
 						.collect(Collectors.toMap(Post::getId, Function.identity()));
 
 		return new CursorPage<>(

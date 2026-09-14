@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -41,6 +42,9 @@ class NotificationTest extends AbstractIntegrationTest {
 
 	@Autowired
 	JwtProvider jwtProvider;
+
+	@Autowired
+	NotificationService notificationService;
 
 	/** 글쓴이 — 알림을 받는 쪽 */
 	private String authorBearer;
@@ -202,5 +206,46 @@ class NotificationTest extends AbstractIntegrationTest {
 
 		mockMvc.perform(patch("/api/v1/notifications/" + id + "/read").header("Authorization", otherBearer))
 				.andExpect(status().isNotFound());
+	}
+
+	/**
+	 * 같은 일을 두 번 알리려 할 때.
+	 *
+	 * <p>유니크 제약에 걸리는 것은 정상이고 호출부가 삼킨다. 그런데 <b>예외를 잡아도
+	 * 트랜잭션의 rollback-only 표시는 사라지지 않는다</b> — 저장을 감싼 트랜잭션이 이 메서드
+	 * 경계라면, 잡고 나서 정상 종료해도 커밋 시점에 {@code UnexpectedRollbackException}이 난다.
+	 *
+	 * <p>알림은 한 건으로 유지되지만 정상적인 반복 행동이 ERROR 로그를 쌓는다. 진짜 장애가
+	 * 그 안에 묻힌다.
+	 */
+	@Test
+	@DisplayName("같은 알림을 두 번 만들어도 예외가 새어 나오지 않는다")
+	void duplicateNotificationDoesNotThrow() {
+		Long recipient = userRepository.findByHandle("irene").orElseThrow().getId();
+		Long actor = userRepository.findByHandle("other").orElseThrow().getId();
+
+		notificationService.notify(recipient, actor, NotificationType.POST_LIKED,
+				NotificationTarget.POST, postId);
+
+		assertThatNoException().isThrownBy(() -> notificationService.notify(
+				recipient, actor, NotificationType.POST_LIKED, NotificationTarget.POST, postId));
+	}
+
+	@Test
+	@DisplayName("글을 지우면 알림은 남되 그 글의 본문은 실리지 않는다")
+	void hidesDeletedPostFromNotification() throws Exception {
+		mockMvc.perform(post("/api/v1/posts/" + postId + "/likes").header("Authorization", otherBearer))
+				.andExpect(status().isNoContent());
+		awaitUnreadCount(authorBearer, 1);
+
+		mockMvc.perform(delete("/api/v1/posts/" + postId).header("Authorization", authorBearer))
+				.andExpect(status().isNoContent());
+
+		// 알림 자체는 남는다 — 있었던 일의 기록이다. 다만 지워진 글의 본문이 여기로 새면
+		// 삭제가 삭제가 아니게 된다.
+		mockMvc.perform(get("/api/v1/notifications").header("Authorization", authorBearer))
+				.andExpect(jsonPath("$.items.length()").value(1))
+				.andExpect(jsonPath("$.items[0].type").value("POST_LIKED"))
+				.andExpect(jsonPath("$.items[0].post").doesNotHaveJsonPath());
 	}
 }

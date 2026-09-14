@@ -1,5 +1,6 @@
 package com.irene.twelvebooks.notification;
 
+import com.irene.twelvebooks.common.config.AsyncConfig;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -17,6 +18,9 @@ import org.springframework.transaction.event.TransactionalEventListener;
  *
  * <p>대가는 알림이 <b>조금 늦게</b> 생긴다는 것이다. 요청이 200을 돌려준 직후에는 아직 없을
  * 수 있다. 알림에는 받아들일 만한 지연이고, 그 대신 반응 자체가 절대 느려지지 않는다.
+ *
+ * <p>기본 실행기가 아니라 전용 실행기를 쓴다 — 기본은 대기열에 상한이 없어서 밀리면 메모리에
+ * 무한정 쌓인다({@link AsyncConfig#notificationExecutor}).
  */
 @Component
 public class NotificationListener {
@@ -27,21 +31,21 @@ public class NotificationListener {
 		this.notificationService = notificationService;
 	}
 
-	@Async
+	@Async(AsyncConfig.NOTIFICATION_EXECUTOR)
 	@TransactionalEventListener
 	public void on(ReactionEvents.PostLiked event) {
 		notificationService.notify(event.authorId(), event.actorId(), NotificationType.POST_LIKED,
 				NotificationTarget.POST, event.postId());
 	}
 
-	@Async
+	@Async(AsyncConfig.NOTIFICATION_EXECUTOR)
 	@TransactionalEventListener
 	public void on(ReactionEvents.PostCommented event) {
 		notificationService.notify(event.authorId(), event.actorId(), NotificationType.POST_COMMENTED,
 				NotificationTarget.POST, event.postId());
 	}
 
-	@Async
+	@Async(AsyncConfig.NOTIFICATION_EXECUTOR)
 	@TransactionalEventListener
 	public void on(ReactionEvents.Followed event) {
 		// 대상을 팔로우당한 본인으로 둔다. 비워 두면 유니크 제약이 발동하지 않아
