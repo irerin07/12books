@@ -36,13 +36,10 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 			return true;
 		}
 
-		String bucket = limit.name() + ":" + subjectOf(limit.scope(), request);
-		Duration window = Duration.ofSeconds(limit.windowSeconds());
-
-		// 실패만 세는 경로는 여기서 올리지 않는다. 올리면 성공한 요청까지 한도를 깎는다.
-		RateLimiter.Decision decision = limit.failuresOnly()
-				? rateLimiter.peek(bucket, limit.limit(), window)
-				: rateLimiter.check(bucket, limit.limit(), window);
+		// 실패만 세는 경로도 여기서 먼저 센다. 보고 나서 세면 그 틈에 여러 요청이 함께
+		// 통과해 한도를 넘겨 버린다. 성공하면 아래에서 돌려준다.
+		RateLimiter.Decision decision = rateLimiter.check(
+				bucketOf(limit, request), limit.limit(), Duration.ofSeconds(limit.windowSeconds()));
 		if (!decision.allowed()) {
 			throw new RateLimitExceededException(decision.retryAfter());
 		}
@@ -50,10 +47,13 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 	}
 
 	/**
-	 * 결과가 나온 뒤에 센다. {@code failuresOnly}인 경로만 해당한다.
+	 * 성공했으면 아까 센 한 번을 돌려준다. {@code failuresOnly}인 경로만 해당한다.
 	 *
-	 * <p>4xx·5xx를 실패로 본다. 401(자격증명 불일치)이 주 대상이고, 400처럼 형식이 틀린
-	 * 요청도 함께 센다 — 자동화된 시도는 보통 그쪽에서도 실수를 낸다.
+	 * <p>4xx·5xx는 돌려주지 않는다. 401(자격증명 불일치)이 주 대상이고, 400처럼 형식이 틀린
+	 * 요청도 남겨 둔다 — 자동화된 시도는 보통 그쪽에서도 실수를 낸다.
+	 *
+	 * <p>막혀서 429가 된 요청도 그대로 둔다. 이미 센 것이고, 창의 만료 시각은 처음 셀 때
+	 * 한 번만 정해지므로 두드린다고 차단이 길어지지는 않는다.
 	 */
 	@Override
 	public void afterCompletion(HttpServletRequest request, HttpServletResponse response,
@@ -62,16 +62,13 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 			return;
 		}
 		RateLimit limit = method.getMethodAnnotation(RateLimit.class);
-		if (limit == null || !limit.failuresOnly() || response.getStatus() < 400) {
-			return;
+		if (limit != null && limit.failuresOnly() && response.getStatus() < 400) {
+			rateLimiter.refund(bucketOf(limit, request));
 		}
-		// 이미 막혀서 429가 된 요청은 또 세지 않는다. 세면 두드릴수록 창이 길어져
-		// 사실상 영구 차단이 된다.
-		if (response.getStatus() == 429) {
-			return;
-		}
-		rateLimiter.record(limit.name() + ":" + subjectOf(limit.scope(), request),
-				Duration.ofSeconds(limit.windowSeconds()));
+	}
+
+	private String bucketOf(RateLimit limit, HttpServletRequest request) {
+		return limit.name() + ":" + subjectOf(limit.scope(), request);
 	}
 
 	/**

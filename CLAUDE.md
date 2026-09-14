@@ -224,8 +224,17 @@ SPRING_DATASOURCE_USERNAME   SPRING_DATASOURCE_PASSWORD
 SPRING_DATA_REDIS_HOST       SPRING_DATA_REDIS_PORT
 CORS_ALLOWED_ORIGINS         https://프런트주소  (쉼표로 여럿)
 REFRESH_COOKIE_SAME_SITE     프런트가 다른 사이트면 None
+FORWARD_HEADERS_STRATEGY     framework  (아래 조건을 확인한 뒤에만)
 JWT_SECRET  KAKAO_REST_API_KEY  BOOK_SIGNATURE_SECRET
 ```
+
+**`FORWARD_HEADERS_STRATEGY`는 조건을 확인한 뒤에 켠다.** 요청 제한이 IP로 세는데, 켜지 않으면
+프록시 뒤에서 모든 요청이 한 주소로 보여 전체 사용자가 한 버킷을 나눠 쓴다. 그렇다고 그냥 켜면
+`X-Forwarded-For`를 믿게 되므로, **프록시가 클라이언트가 보낸 그 헤더를 지우고 다시 쓰지 않으면
+헤더 한 줄로 제한을 우회할 수 있다.** 앱에 직접 닿는 경로가 열려 있어도 마찬가지다.
+
+> 안 켜면 과하게 막힐 뿐이고, 잘못 켜면 아예 안 막힌다. 그래서 기본은 꺼짐이다.
+> 켜기 전에 그 플랫폼이 클라이언트 헤더를 덮어쓰는지 실제로 확인한다.
 
 프로필은 따로 만들지 않는다. Spring Boot가 이 이름들을 그대로 바인딩하고, Flyway가 뜰 때
 V1부터 전부 깐다. 빈 DB를 가리키면 스키마가 저절로 생긴다.

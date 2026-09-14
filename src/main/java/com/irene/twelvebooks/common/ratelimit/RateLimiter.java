@@ -35,6 +35,15 @@ public class RateLimiter {
 			return { count, redis.call('TTL', KEYS[1]) }
 			""", List.class);
 
+	/** 돌려주되 0 아래로는 내려가지 않는다. */
+	private static final RedisScript<Long> REFUND = new DefaultRedisScript<>("""
+			local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+			if current > 0 then
+			  return redis.call('DECR', KEYS[1])
+			end
+			return 0
+			""", Long.class);
+
 	private final StringRedisTemplate redis;
 
 	public RateLimiter(StringRedisTemplate redis) {
@@ -54,27 +63,36 @@ public class RateLimiter {
 		long count = ((Number) result.get(0)).longValue();
 		long ttl = ((Number) result.get(1)).longValue();
 
-		// TTL이 음수로 오는 짧은 틈이 있다(막 만료됐거나 아직 안 걸렸을 때).
-		// 그대로 Retry-After에 실으면 클라이언트가 해석할 수 없는 값이 된다.
-		long retryAfter = ttl > 0 ? ttl : window.toSeconds();
-		return new Decision(count <= limit, retryAfter);
+		return new Decision(count <= limit, retryAfterFrom(ttl, window));
 	}
 
 	/**
-	 * <b>세지 않고</b> 현재 상태만 본다. 실패만 세는 경로가 요청을 받아들일지 판단할 때 쓴다 —
-	 * 여기서 올리면 성공한 요청까지 한도를 깎는다.
+	 * 남은 시간을 {@code Retry-After}에 실을 수 있는 값으로 바꾼다.
+	 *
+	 * <p>{@code 0}은 <b>곧 풀린다</b>는 뜻이지 오류가 아니다. 그것을 창 전체로 바꾸면 1초 뒤면
+	 * 되는 사람에게 5분을 기다리라고 안내하게 된다. 음수만 이상 신호로 보고 창 길이를 준다 —
+	 * {@code -1}은 만료가 안 걸린 키, {@code -2}는 그사이 사라진 키다.
 	 */
-	public Decision peek(String bucket, int limit, Duration window) {
-		String raw = redis.opsForValue().get(key(bucket));
-		long count = raw == null ? 0 : Long.parseLong(raw);
-		Long ttl = redis.getExpire(key(bucket));
-		long retryAfter = ttl != null && ttl > 0 ? ttl : window.toSeconds();
-		return new Decision(count < limit, retryAfter);
+	static long retryAfterFrom(long ttl, Duration window) {
+		if (ttl > 0) {
+			return ttl;
+		}
+		return ttl == 0 ? 1 : window.toSeconds();
 	}
 
-	/** 한 번 올린다. 결과를 보고 나서 세는 경로가 쓴다. */
-	public void record(String bucket, Duration window) {
-		redis.execute(COUNT_AND_EXPIRE, List.of(key(bucket)), String.valueOf(window.toSeconds()));
+	/**
+	 * 세었던 한 번을 돌려준다. 실패만 세는 경로가 <b>성공했을 때</b> 부른다.
+	 *
+	 * <p>"보고 나서 센다"가 아니라 "먼저 세고 성공하면 돌려준다"인 이유가 있다. 앞엣것은 본
+	 * 시점과 세는 시점 사이에 틈이 있어, 그 틈에 수십 개가 함께 통과하면 한도를 넘는 만큼
+	 * 비밀번호를 더 시험해 볼 수 있다. 먼저 세면 그 틈이 없다 — {@code INCR}이 원자적이라
+	 * 동시에 들어와도 각자 다른 번호를 받는다.
+	 *
+	 * <p>0 아래로는 내려가지 않게 한다. 키가 그사이 만료됐는데 빼기만 하면 음수가 남아,
+	 * 다음 창에서 한도가 그만큼 늘어난다.
+	 */
+	public void refund(String bucket) {
+		redis.execute(REFUND, List.of(key(bucket)));
 	}
 
 	private String key(String bucket) {

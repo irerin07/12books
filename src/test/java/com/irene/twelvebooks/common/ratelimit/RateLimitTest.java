@@ -8,6 +8,7 @@ import com.irene.twelvebooks.user.User;
 import com.irene.twelvebooks.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -15,6 +16,12 @@ import org.springframework.http.MediaType;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -170,5 +177,71 @@ class RateLimitTest extends AbstractIntegrationTest {
 		}
 
 		assertThat(status).isEqualTo(200);
+	}
+
+	/**
+	 * 한꺼번에 들이닥치는 경우.
+	 *
+	 * <p>"보고 나서 센다"는 방식에는 본 시점과 세는 시점 사이에 틈이 있다. 그 틈에 수십 개가
+	 * 함께 검사를 통과하면 <b>한도를 넘는 만큼 비밀번호를 더 시험해 볼 수 있다.</b> 고정 창의
+	 * 경계에서 두 배가 지나가는 것과는 다른 문제다 — 이쪽은 동시 요청 수만큼 커진다.
+	 */
+	@RepeatedTest(3)
+	@DisplayName("한꺼번에 들이닥쳐도 한도를 넘겨 통과하지 않는다")
+	void doesNotOvershootUnderConcurrency() throws Exception {
+		int attempts = 60;
+		CountDownLatch start = new CountDownLatch(1);
+		AtomicInteger passed = new AtomicInteger();
+		ExecutorService pool = Executors.newFixedThreadPool(attempts);
+		try {
+			for (int i = 0; i < attempts; i++) {
+				pool.submit(() -> {
+					try {
+						start.await();
+						if (login("203.0.113.77").getResponse().getStatus() != 429) {
+							passed.incrementAndGet();
+						}
+					}
+					catch (Exception ignored) {
+						// 여기서 실패해도 통과 수에 넣지 않는다 — 그쪽이 보수적이다.
+					}
+				});
+			}
+			start.countDown();
+			pool.shutdown();
+			assertThat(pool.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
+		}
+		finally {
+			pool.shutdownNow();
+		}
+
+		// 전부 실패하는 시도다. 한도(20)를 넘겨 비밀번호를 시험해 볼 수 있으면 안 된다.
+		assertThat(passed.get()).isLessThanOrEqualTo(20);
+	}
+
+	/**
+	 * 전달 헤더는 기본으로 믿지 않는다.
+	 *
+	 * <p>믿으면 IP 제한이 무의미해진다 — 헤더 한 줄만 바꾸면 매번 새 버킷을 쓴다. 프록시가
+	 * 클라이언트가 보낸 헤더를 지우고 다시 쓰는 환경에서만 켤 수 있는 설정이라, 기본을
+	 * 켜 두면 그 보장이 없는 곳에서 조용히 뚫린다.
+	 */
+	@Test
+	@DisplayName("X-Forwarded-For를 지어내도 버킷이 갈리지 않는다")
+	void doesNotTrustForwardedHeaderByDefault() throws Exception {
+		for (int attempt = 0; attempt < 40; attempt++) {
+			mockMvc.perform(post("/api/v1/auth/login")
+					.header("X-Forwarded-For", "10.0.0." + attempt)
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("""
+							{"email":"me@example.com","password":"틀린비밀번호"}"""));
+		}
+
+		mockMvc.perform(post("/api/v1/auth/login")
+						.header("X-Forwarded-For", "10.0.0.250")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"email":"me@example.com","password":"틀린비밀번호"}"""))
+				.andExpect(status().isTooManyRequests());
 	}
 }
