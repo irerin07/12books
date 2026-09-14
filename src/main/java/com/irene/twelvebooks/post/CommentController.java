@@ -3,6 +3,7 @@ package com.irene.twelvebooks.post;
 import com.irene.twelvebooks.auth.AuthUser;
 import com.irene.twelvebooks.common.support.CursorPage;
 import com.irene.twelvebooks.common.support.PageSize;
+import com.irene.twelvebooks.common.ratelimit.RateLimit;
 import com.irene.twelvebooks.post.dto.CommentCreateRequest;
 import com.irene.twelvebooks.post.dto.CommentResponse;
 import jakarta.validation.Valid;
@@ -32,6 +33,7 @@ public class CommentController {
 		this.commentService = commentService;
 	}
 
+	@RateLimit(name = "comment-write", limit = 60, windowSeconds = 60, scope = RateLimit.Scope.USER)
 	@PostMapping("/posts/{postId}/comments")
 	public ResponseEntity<CommentResponse> write(@AuthUser Long userId, @PathVariable Long postId,
 			@Valid @RequestBody CommentCreateRequest request) {

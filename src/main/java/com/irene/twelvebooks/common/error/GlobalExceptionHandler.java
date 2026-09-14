@@ -2,6 +2,8 @@ package com.irene.twelvebooks.common.error;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.irene.twelvebooks.common.ratelimit.RateLimitExceededException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -17,6 +19,21 @@ import java.util.List;
 public class GlobalExceptionHandler {
 
 	private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+	/**
+	 * 한도를 넘은 요청. 일반 업무 예외보다 <b>먼저</b> 잡는다 — 더 좁은 타입이라 이쪽이
+	 * 우선하지만, 순서가 눈에 보이도록 위에 둔다.
+	 *
+	 * <p>{@code Retry-After}를 함께 보낸다. 없으면 클라이언트가 계속 두드려서 막는 의미가
+	 * 반감되고 서버 부하도 그대로 남는다.
+	 */
+	@ExceptionHandler(RateLimitExceededException.class)
+	public ResponseEntity<ErrorResponse> handleRateLimit(RateLimitExceededException e) {
+		ErrorCode errorCode = e.getErrorCode();
+		return ResponseEntity.status(errorCode.getStatus())
+				.header(HttpHeaders.RETRY_AFTER, String.valueOf(e.getRetryAfterSeconds()))
+				.body(new ErrorResponse(errorCode.getCode(), errorCode.getMessage(), List.of()));
+	}
 
 	@ExceptionHandler(BusinessException.class)
 	public ResponseEntity<ErrorResponse> handleBusiness(BusinessException e) {

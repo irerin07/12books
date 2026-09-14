@@ -1,6 +1,7 @@
 package com.irene.twelvebooks.post;
 
 import com.irene.twelvebooks.auth.AuthUser;
+import com.irene.twelvebooks.common.ratelimit.RateLimit;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,6 +23,9 @@ public class PostLikeController {
 		this.postLikeService = postLikeService;
 	}
 
+	// 목록을 훑으며 연달아 누르는 것이 정상 사용이라 넉넉히 둔다. 막으려는 것은 사람이
+	// 아니라 스크립트다.
+	@RateLimit(name = "like", limit = 120, windowSeconds = 60, scope = RateLimit.Scope.USER)
 	@PostMapping
 	public ResponseEntity<Void> like(@AuthUser Long userId, @PathVariable Long postId) {
 		postLikeService.like(userId, postId);

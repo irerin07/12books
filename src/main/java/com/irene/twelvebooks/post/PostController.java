@@ -2,6 +2,7 @@ package com.irene.twelvebooks.post;
 
 import com.irene.twelvebooks.auth.AuthUser;
 import com.irene.twelvebooks.common.support.PageSize;
+import com.irene.twelvebooks.common.ratelimit.RateLimit;
 import com.irene.twelvebooks.common.support.CursorPage;
 import com.irene.twelvebooks.post.dto.PostCreateRequest;
 import com.irene.twelvebooks.post.dto.PostResponse;
@@ -32,6 +33,7 @@ public class PostController {
 		this.postService = postService;
 	}
 
+	@RateLimit(name = "post-write", limit = 30, windowSeconds = 60, scope = RateLimit.Scope.USER)
 	@PostMapping("/posts")
 	public ResponseEntity<PostResponse> write(@AuthUser Long userId,
 			@Valid @RequestBody PostCreateRequest request) {
