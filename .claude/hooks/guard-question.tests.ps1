@@ -11,24 +11,43 @@
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 
-# PowerShell 5.1은 네이티브 프로세스로 파이프할 때 $OutputEncoding을 쓰는데 기본값이 ASCII다.
-# 이걸 안 바꾸면 한글 라벨이 '?'로 바뀌어 훅에 도착한다 - 테스트가 훅이 아니라 파이프를
-# 검사하게 되고, "보류 선택지를 종류에서 뺀다" 같은 판정이 이유 없이 빨개진다.
-# (실제 Claude Code는 훅의 stdin에 UTF-8을 그대로 써 주므로 훅 쪽은 손댈 것이 없다.)
-$OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+# 페이로드는 파이프가 아니라 프로세스의 stdin에 UTF-8 바이트로 직접 쓴다.
+#
+# PowerShell 5.1이 네이티브 프로세스로 파이프할 때 쓰는 인코딩은 $OutputEncoding과 콘솔
+# 설정에 따라 기계마다 다르다. 내 기계에서는 통과하고 GitHub 러너에서는 한글 라벨이 통째로
+# 깨져 도착했다 - 그러면 테스트가 훅이 아니라 파이프를 검사하는 셈이 된다. 바이트를 직접
+# 쓰면 기계와 무관하게 같고, 실제 Claude Code가 stdin에 UTF-8을 쓰는 것과도 같아진다.
 
 $hook = Join-Path $PSScriptRoot 'guard-question.ps1'
 $tmpRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("guard-question-tests-" + [Guid]::NewGuid().ToString('N'))
 
-function Invoke-Hook([hashtable]$payload) {
-    $json = $payload | ConvertTo-Json -Depth 10 -Compress
+function Invoke-Raw([string]$text) {
     $env:CLAUDE_GUARD_QUESTION_CACHE = $tmpRoot
-    $out = $json | & powershell -NoProfile -ExecutionPolicy Bypass -File $hook
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = 'powershell'
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$hook`""
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
+
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($text)
+    $proc.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
+    $proc.StandardInput.BaseStream.Flush()
+    $proc.StandardInput.Close()
+    $out = $proc.StandardOutput.ReadToEnd()
+    $proc.WaitForExit()
+    return $out
+}
+
+function Invoke-Hook([hashtable]$payload) {
+    $out = Invoke-Raw ($payload | ConvertTo-Json -Depth 10 -Compress)
     if ([string]::IsNullOrWhiteSpace($out)) { return 'allow' }
     return ($out | ConvertFrom-Json).hookSpecificOutput.permissionDecision
 }
 
-# 라벨만 다른 질문을 만든다. 세션 id를 달리해 케이스끼리 캐시를 공유하지 않게 한다.
 function Question([string]$session, [string[]]$labels) {
     $options = @()
     foreach ($label in $labels) { $options += @{ label = $label; description = '설명' } }
@@ -90,8 +109,7 @@ try {
     }
 
     # 빈 입력에도 죽지 않는다
-    $env:CLAUDE_GUARD_QUESTION_CACHE = $tmpRoot
-    $empty = '' | & powershell -NoProfile -ExecutionPolicy Bypass -File $hook
+    $empty = Invoke-Raw ''
     if ([string]::IsNullOrWhiteSpace($empty)) {
         Write-Host "  PASS  빈 입력은 그냥 통과한다"
     }
