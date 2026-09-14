@@ -477,12 +477,20 @@
 
 **신고와 관리자 처리** · Backend · Policy
 
-- [ ] `V9__reports.sql` — `uk(reporter_id, target_type, target_id)`로 중복 신고 차단
-- [ ] `POST /posts/{id}/reports` · `/comments/{id}/reports` · `/users/{handle}/reports`
-- [ ] `GET /admin/reports?status=PENDING` · `PATCH /admin/reports/{id}`
-- [ ] `users`에 역할 컬럼
-- [ ] **운영자 숨김은 `deleted_at`을 재활용하지 않는다** — 별도 컬럼. 작성자 삭제와 다른
-      사건이고 기각 시 되돌려야 한다
+- [x] `V10__reports.sql` — `uk(reporter_id, target_type, target_id)`로 중복 신고 차단
+      (알림이 V9를 썼다)
+- [x] `POST /posts/{id}/reports` · `/comments/{id}/reports` · `/users/{handle}/reports`.
+      대상이 없으면 404, 자기 것이면 400 — 없는 대상의 신고는 운영자 목록에 열어 볼 수
+      없는 줄을 만든다
+- [x] `GET /admin/reports?status=PENDING` · `PATCH /admin/reports/{id}`. 목록에 **신고당한
+      내용을 함께** 싣는다 — 내린 글은 일반 조회로 열리지 않으므로 id만 주면 판단할 수 없다
+- [x] `users`에 역할 컬럼. **권한은 매 요청 DB에서 본다** — 토큰에 실으면 권한을 뺏어도
+      토큰이 만료될 때까지 관리자로 남는다
+- [x] **운영자 숨김은 `deleted_at`을 재활용하지 않는다** — 별도 컬럼(`V11__admin_hide.sql`).
+      작성자 삭제와 다른 사건이고 기각 시 되돌려야 한다
+- [x] 댓글을 내리면 댓글 수도 함께 줄고, 되돌리면 돌아온다 — 숫자만 남으면 "댓글 1개"를
+      눌렀는데 아무것도 없는 화면이 된다
+- [x] 신고도 요청 제한 대상이다(30/1분, 사람 단위) — 자동화되면 운영자 화면이 막힌다
 
 ## L2 — 공개 직전
 

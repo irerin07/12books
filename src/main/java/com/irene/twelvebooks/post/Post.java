@@ -71,6 +71,16 @@ public class Post extends BaseTimeEntity {
 	@Column(name = "deleted_at")
 	private LocalDateTime deletedAt;
 
+	/**
+	 * 운영자가 내린 시각. {@code null}이면 내려가지 않았다.
+	 *
+	 * <p>{@link #deletedAt}과 <b>따로</b> 둔다 — 작성자 삭제와 운영자 숨김은 다른 사건이고,
+	 * 신고가 기각되면 숨김만 되돌려야 한다. 합쳐 두면 되돌리는 순간 작성자가 지운 글까지
+	 * 함께 살아난다.
+	 */
+	@Column(name = "hidden_at")
+	private LocalDateTime hiddenAt;
+
 	protected Post() {
 	}
 
@@ -108,6 +118,14 @@ public class Post extends BaseTimeEntity {
 
 	public boolean isDeleted() {
 		return deletedAt != null;
+	}
+
+	public boolean isHidden() {
+		return hiddenAt != null;
+	}
+
+	public LocalDateTime getHiddenAt() {
+		return hiddenAt;
 	}
 
 	public LocalDateTime getDeletedAt() {

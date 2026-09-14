@@ -49,6 +49,10 @@ public class Comment extends BaseTimeEntity {
 	@Column(name = "deleted_at")
 	private LocalDateTime deletedAt;
 
+	/** 운영자가 내린 시각. 작성자 삭제와 다른 사건이라 따로 둔다({@code V11__admin_hide.sql}). */
+	@Column(name = "hidden_at")
+	private LocalDateTime hiddenAt;
+
 	protected Comment() {
 	}
 
