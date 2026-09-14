@@ -18,11 +18,12 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -189,25 +190,29 @@ class RateLimitTest extends AbstractIntegrationTest {
 	 * <p>"보고 나서 센다"는 방식에는 본 시점과 세는 시점 사이에 틈이 있다. 그 틈에 수십 개가
 	 * 함께 검사를 통과하면 <b>한도를 넘는 만큼 비밀번호를 더 시험해 볼 수 있다.</b> 고정 창의
 	 * 경계에서 두 배가 지나가는 것과는 다른 문제다 — 이쪽은 동시 요청 수만큼 커진다.
+	 *
+	 * <p>돌아온 응답을 전부 모아서 본다. "429가 아닌 것"만 세면 요청이 예외로 터져도 통과 수가
+	 * 늘지 않아, <b>전부 실패한 상황과 잘 막은 상황을 구별하지 못한다.</b> 그래서 예외가 한 건도
+	 * 없었는지, 401과 429 말고 다른 것이 섞이지 않았는지, 실제로 비밀번호를 시험해 본 횟수가
+	 * 정확히 한도만큼이었는지까지 확인한다.
 	 */
 	@RepeatedTest(3)
 	@DisplayName("한꺼번에 들이닥쳐도 한도를 넘겨 통과하지 않는다")
 	void doesNotOvershootUnderConcurrency() throws Exception {
 		int attempts = 60;
 		CountDownLatch start = new CountDownLatch(1);
-		AtomicInteger passed = new AtomicInteger();
+		List<Integer> statuses = new CopyOnWriteArrayList<>();
+		List<Throwable> failures = new CopyOnWriteArrayList<>();
 		ExecutorService pool = Executors.newFixedThreadPool(attempts);
 		try {
 			for (int i = 0; i < attempts; i++) {
 				pool.submit(() -> {
 					try {
 						start.await();
-						if (login("203.0.113.77").getResponse().getStatus() != 429) {
-							passed.incrementAndGet();
-						}
+						statuses.add(login("203.0.113.77").getResponse().getStatus());
 					}
-					catch (Exception ignored) {
-						// 여기서 실패해도 통과 수에 넣지 않는다 — 그쪽이 보수적이다.
+					catch (Throwable t) {
+						failures.add(t);
 					}
 				});
 			}
@@ -219,8 +224,16 @@ class RateLimitTest extends AbstractIntegrationTest {
 			pool.shutdownNow();
 		}
 
-		// 전부 실패하는 시도다. 한도(20)를 넘겨 비밀번호를 시험해 볼 수 있으면 안 된다.
-		assertThat(passed.get()).isLessThanOrEqualTo(20);
+		// 터진 요청을 조용히 넘기면 "아무것도 통과하지 못했다"가 "잘 막았다"로 읽힌다.
+		assertThat(failures).isEmpty();
+		assertThat(statuses).hasSize(attempts);
+		// 401(자격증명 불일치)과 429(제한) 말고 다른 것이 나오면 그 자체가 문제다.
+		assertThat(statuses).containsOnly(401, 429);
+
+		// 전부 실패하는 시도다. 한도(20)만큼만 비밀번호를 시험해 볼 수 있어야 한다 —
+		// 적게 통과한 것도 정상이 아니다. 막아야 할 것만 막았는지 함께 본다.
+		assertThat(statuses.stream().filter(status -> status == 401).count()).isEqualTo(20);
+		assertThat(statuses.stream().filter(status -> status == 429).count()).isEqualTo(attempts - 20);
 	}
 
 	/**
