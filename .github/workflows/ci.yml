@@ -60,6 +60,12 @@ jobs:
         shell: powershell
         run: .\.claude\hooks\guard-main.tests.ps1
 
+      # 질문 하네스도 같은 이유로 돌린다. 안 돌리면 판정 로직이 조용히 썩고,
+      # 썩은 것을 알아채는 시점은 또 한 번 같은 실수를 한 뒤가 된다.
+      - name: guard-question 훅 테스트
+        shell: powershell
+        run: .\.claude\hooks\guard-question.tests.ps1
+
       # 워크플로 YAML이 깨지면 그 체크는 아예 나타나지 않는다. 머지는 막히지만(fail-safe)
       # 원인이 보이지 않으니, 파싱만이라도 여기서 확인한다.
       - name: 워크플로 YAML 파싱
