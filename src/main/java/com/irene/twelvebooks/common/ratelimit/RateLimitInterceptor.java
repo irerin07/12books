@@ -20,6 +20,15 @@ import java.time.Duration;
 @Component
 public class RateLimitInterceptor implements HandlerInterceptor {
 
+	/**
+	 * 이번 요청이 잡아 둔 자리의 키. {@code preHandle}이 남기고 {@code afterCompletion}이 읽는다.
+	 *
+	 * <p>버킷 이름을 다시 만들어 쓰지 않는 이유가 있다. 키에는 <b>창 번호</b>가 들어 있어,
+	 * 창이 끝나기 직전에 잡은 자리를 늦게 돌려줘도 다음 창의 몫을 깎지 않는다. 덤으로
+	 * 인증 상태가 요청 도중에 바뀌어도 잡은 자리와 돌려주는 자리가 어긋나지 않는다.
+	 */
+	private static final String RESERVED_KEY = RateLimitInterceptor.class.getName() + ".key";
+
 	private final RateLimiter rateLimiter;
 
 	public RateLimitInterceptor(RateLimiter rateLimiter) {
@@ -43,6 +52,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 		if (!decision.allowed()) {
 			throw new RateLimitExceededException(decision.retryAfter());
 		}
+		request.setAttribute(RESERVED_KEY, decision.key());
 		return true;
 	}
 
@@ -52,8 +62,8 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 	 * <p>4xx·5xx는 돌려주지 않는다. 401(자격증명 불일치)이 주 대상이고, 400처럼 형식이 틀린
 	 * 요청도 남겨 둔다 — 자동화된 시도는 보통 그쪽에서도 실수를 낸다.
 	 *
-	 * <p>막혀서 429가 된 요청도 그대로 둔다. 이미 센 것이고, 창의 만료 시각은 처음 셀 때
-	 * 한 번만 정해지므로 두드린다고 차단이 길어지지는 않는다.
+	 * <p>막혀서 429가 된 요청은 애초에 자리를 잡지 않았으므로 돌려줄 것도 없다 — 잡아 둔
+	 * 키가 없으면 아무것도 하지 않는다.
 	 */
 	@Override
 	public void afterCompletion(HttpServletRequest request, HttpServletResponse response,
@@ -62,8 +72,11 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 			return;
 		}
 		RateLimit limit = method.getMethodAnnotation(RateLimit.class);
-		if (limit != null && limit.failuresOnly() && response.getStatus() < 400) {
-			rateLimiter.refund(bucketOf(limit, request));
+		if (limit == null || !limit.failuresOnly() || response.getStatus() >= 400) {
+			return;
+		}
+		if (request.getAttribute(RESERVED_KEY) instanceof String key) {
+			rateLimiter.refund(key);
 		}
 	}
 

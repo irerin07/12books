@@ -12,6 +12,7 @@ import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
@@ -51,6 +52,9 @@ class RateLimitTest extends AbstractIntegrationTest {
 
 	@Autowired
 	JwtProvider jwtProvider;
+
+	@Autowired
+	StringRedisTemplate redis;
 
 	private String bearer;
 	private String otherBearer;
@@ -243,5 +247,29 @@ class RateLimitTest extends AbstractIntegrationTest {
 						.content("""
 								{"email":"me@example.com","password":"틀린비밀번호"}"""))
 				.andExpect(status().isTooManyRequests());
+	}
+
+	/**
+	 * 거절된 요청은 <b>자리를 차지하지 않는다.</b>
+	 *
+	 * <p>막힌 요청까지 세면 두드릴수록 카운터가 부풀고, 그 부푼 값이 예약을 돌려받은 뒤에도
+	 * 남는다. 그러면 인증 실패가 한 건도 없는데 창이 끝날 때까지 정상 로그인이 막힌다 —
+	 * 스무 명이 동시에 로그인하고 있을 때 다른 스무 개가 두드리기만 해도 그렇게 된다.
+	 */
+	@Test
+	@DisplayName("막힌 요청은 한도를 더 깎지 않는다")
+	void rejectedRequestsDoNotConsumeQuota() throws Exception {
+		for (int attempt = 0; attempt < 35; attempt++) {
+			login("203.0.113.31");
+		}
+
+		String counter = redis.keys("ratelimit:login:ip:203.0.113.31*").stream()
+				.findFirst()
+				.map(key -> redis.opsForValue().get(key))
+				.orElse(null);
+
+		// 한도가 20인데 35번 두드렸다. 카운터가 20에서 멈춰야 예약을 돌려받은 사람들이
+		// 제 몫을 되찾는다.
+		assertThat(counter).isEqualTo("20");
 	}
 }
