@@ -3,9 +3,6 @@ package com.irene.twelvebooks.auth;
 import com.irene.twelvebooks.common.config.AsyncConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.mail.MailException;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
@@ -24,21 +21,19 @@ public class PasswordResetMailer {
 
 	private static final Logger log = LoggerFactory.getLogger(PasswordResetMailer.class);
 
-	private final JavaMailSender mailSender;
+	private static final String SUBJECT = "[12books] 비밀번호 재설정";
+
+	private final ResetMailSender mailSender;
 	private final PasswordResetProperties properties;
 
-	public PasswordResetMailer(JavaMailSender mailSender, PasswordResetProperties properties) {
+	public PasswordResetMailer(ResetMailSender mailSender, PasswordResetProperties properties) {
 		this.mailSender = mailSender;
 		this.properties = properties;
 	}
 
 	@Async(AsyncConfig.MAIL_EXECUTOR)
 	public void send(String email, String rawToken) {
-		SimpleMailMessage message = new SimpleMailMessage();
-		message.setFrom(properties.from());
-		message.setTo(email);
-		message.setSubject("[12books] 비밀번호 재설정");
-		message.setText("""
+		String text = """
 				아래 링크에서 새 비밀번호를 정해 주세요.
 
 				%s
@@ -46,12 +41,12 @@ public class PasswordResetMailer {
 				이 링크는 %d분 뒤에 만료되고 한 번만 쓸 수 있습니다.
 				본인이 요청한 것이 아니라면 이 메일을 무시하세요 — 비밀번호는 그대로입니다.
 				"""
-				.formatted(properties.linkFor(rawToken), properties.ttl().toMinutes()));
+				.formatted(properties.linkFor(rawToken), properties.ttl().toMinutes());
 
 		try {
-			mailSender.send(message);
+			mailSender.send(email, SUBJECT, text);
 		}
-		catch (MailException e) {
+		catch (RuntimeException e) {
 			// 여기서 터져도 사용자에게는 이미 204를 보냈다. 다시 요청하면 새 링크가 나가므로
 			// 재시도를 붙이지 않는다 — 붙이면 메일 서버가 흔들릴 때 같은 주소로 여러 통이 간다.
 			// 주소는 남기지 않는다. 로그에 남기는 순간 "누가 비밀번호를 잊었는지"가 함께 남는다.

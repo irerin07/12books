@@ -41,8 +41,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 비밀번호 검증 안에서 로그인을 멈춰 세우고, 그사이에 재설정을 <b>끝까지</b> 돌린 뒤 풀어 준다.
  */
 @TestPropertySource(properties = {
-		"spring.mail.host=localhost",
-		"spring.mail.port=3028",
 		"spring.main.allow-bean-definition-overriding=true"
 })
 @Import(PasswordResetRaceTest.GatedEncoder.class)

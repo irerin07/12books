@@ -123,19 +123,73 @@ done
 
 ---
 
-## 메일 발송자 — 아직 정하지 않았다 (보류)
+## ResendMailClient
 
-비밀번호 재설정 메일을 **누가 배달하는지**는 정하지 않았다. 코드는 `JavaMailSender`로 SMTP에
-넘기기만 하므로, 정해진 뒤 바뀌는 것은 환경변수뿐이다(`MAIL_HOST`·`MAIL_PORT`·`MAIL_USERNAME`
-·`MAIL_PASSWORD`·`MAIL_FROM`).
+비밀번호 재설정 메일을 보낸다. `POST https://api.resend.com/emails`.
 
-**다시 볼 시점** — QA에 배포해 실제 메일이 필요해질 때. 그때 후보(Gmail 앱 비밀번호 / Resend /
-SES)를 고르고 **한 통을 실제로 보낸 뒤** 여기에 실측을 남긴다. 최소한 이 셋은 재본다.
+**실측일:** 2026-09-15
 
-- `from`을 우리가 지정한 값 그대로 보내 주는가, 계정 주소로 바꿔 버리는가
-- 하루·시간당 발송 한도와, 한도를 넘겼을 때의 응답
-- 스팸함으로 갔는지(도메인 인증 없이 보낼 때). 도착하지 않는 메일은 기능이 없는 것과 같다
+**재현:**
 
-**지금 검증되는 것** — 테스트가 GreenMail로 진짜 SMTP 서버를 띄워, 메일이 조립돼 나가고
-본문에 1회용 링크가 실리는 것까지는 발송자와 무관하게 지킨다. 여기 적을 것은 **바깥 세상이
-어떻게 구는가**뿐이다.
+```bash
+KEY=<Resend API 키>
+
+# 1) 기본 발신 주소 — 도메인 인증 없이 되는가
+curl -s -w '
+HTTP %{http_code}
+' -X POST https://api.resend.com/emails   -H "Authorization: Bearer $KEY" -H "Content-Type: application/json"   -d '{"from":"onboarding@resend.dev","to":["delivered@resend.dev"],"subject":"t","text":"t"}'
+
+# 2) 인증 안 된 도메인을 from에 쓰면
+curl -s -w '
+HTTP %{http_code}
+' -X POST https://api.resend.com/emails   -H "Authorization: Bearer $KEY" -H "Content-Type: application/json"   -d '{"from":"no-reply@12books.local","to":["delivered@resend.dev"],"subject":"t","text":"t"}'
+
+# 3) 예약 도메인으로 보내면
+curl -s -w '
+HTTP %{http_code}
+' -X POST https://api.resend.com/emails   -H "Authorization: Bearer $KEY" -H "Content-Type: application/json"   -d '{"from":"onboarding@resend.dev","to":["nobody@example.com"],"subject":"t","text":"t"}'
+
+# 4) 키가 틀리면
+curl -s -w '
+HTTP %{http_code}
+' -X POST https://api.resend.com/emails   -H "Authorization: Bearer re_invalid_key_for_measurement" -H "Content-Type: application/json"   -d '{"from":"onboarding@resend.dev","to":["delivered@resend.dev"],"subject":"t","text":"t"}'
+```
+
+**잰 것**
+
+| 보낸 것 | 결과 |
+|---|---|
+| `from=onboarding@resend.dev` → `delivered@resend.dev` | **200** `{"id":"66ffb53a-…"}` |
+| `from=no-reply@12books.local` | **403** `validation_error` — "The 12books.local domain is not verified." |
+| `to=nobody@example.com` | **422** `validation_error` — 예약 도메인이라 테스트 주소를 쓰라고 거절 |
+| 잘못된 키 | **401** `validation_error` — "API key is invalid" |
+| `from=onboarding@resend.dev` → **실제 Gmail 주소** | **200**. 도착은 했으나 **스팸함**. 보낸 사람은 `onboarding@resend.dev` 그대로 |
+
+**읽어낸 것**
+
+- **도메인 인증 없이도 `onboarding@resend.dev`로는 보낼 수 있다.** 그래서 QA는 도메인 준비
+  없이 시작할 수 있다. 우리가 정한 `MAIL_FROM`을 쓰려면 그 도메인을 먼저 인증해야 한다 —
+  안 하면 403이고, **발송만 실패하고 응답은 204라 조용히 안 나간다.**
+- 실패가 **상태 코드 + `name` + 사람이 읽을 수 있는 `message`**로 온다. SDK는 이것을
+  `ResendException`의 `getStatusCode()`·`getErrorName()`·`getResponseBody()`로 준다 —
+  SMTP였다면 거절 코드 한 줄이었을 자리다.
+- 성공하면 **메시지 id**가 온다. 로그에 남겨 두면 나중에 "그 메일이 어떻게 됐나"를 물을 수 있다.
+- 테스트 주소가 있다(`delivered@` · `bounced@` · `complained@` · `suppressed@resend.dev`).
+  가짜 주소로 보내거나 가짜 SMTP를 세우는 대신 이쪽을 쓴다. **쿼터는 차감된다.**
+- **도메인 인증 없이 보내면 스팸함으로 간다.** 실제 Gmail로 두 번 보내 두 번 다 스팸함이었다
+  (Gmail 안내: "이전에 스팸으로 확인된 메일과 유사합니다"). 앞서 `to=nobody@example.com`이
+  422였던 것은 외부 주소가 막혀서가 아니라 **`example.com`이 예약 도메인**이라서다 —
+  일반 주소로는 나간다.
+- 한글 제목·본문은 **UTF-8로 보내면 그대로** 온다. 별도 charset 지정이 필요 없었다.
+
+> **측정하다 만난 함정.** 첫 발송에서 제목과 본문이 통째로 깨져 왔다(`[12books] ??й?8 ?缳??`).
+> 원인은 API가 아니라 **측정 도구**였다 — Windows 셸에서 `curl -d '한글…'`로 인라인 전달하면
+> cp949로 망가진 바이트가 나간다. 본문을 UTF-8 파일에 써서 `--data-binary @파일`로 보내니
+> 정상이었다. 여기서 재는 사람은 **깨진 결과를 API 탓으로 적기 전에 보낸 바이트부터 확인**할 것.
+
+**아직 안 재본 것**
+
+- **도메인을 인증하면 받은편지함에 들어가는지.** 인증 전에는 스팸함이라는 것까지만 쟀다.
+- 한도(무료 월 3,000 · 일 100)를 넘겼을 때의 응답. 값은 요금제 페이지에서 확인했고
+  (2026-09-15), **초과 시 무엇이 오는지는 안 재봤다.**
+- 재시도·타임아웃 동작. SDK 내부 HTTP 클라이언트의 기본값을 확인하지 않았다.

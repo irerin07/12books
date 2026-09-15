@@ -32,8 +32,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 안의 {@code try}로는 잡히지 않는다 — 부르는 자리에서 막아야 한다.
  */
 @TestPropertySource(properties = {
-		"spring.mail.host=localhost",
-		"spring.mail.port=3027",
 		"spring.main.allow-bean-definition-overriding=true"
 })
 @Import(PasswordResetMailOverflowTest.AlwaysFullExecutor.class)

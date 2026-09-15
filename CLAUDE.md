@@ -286,20 +286,18 @@ REFRESH_COOKIE_SAME_SITE     프런트가 다른 사이트면 None
 FORWARD_HEADERS_STRATEGY     framework  (아래 조건을 확인한 뒤에만)
 JWT_SECRET  KAKAO_REST_API_KEY  BOOK_SIGNATURE_SECRET
 
-MAIL_HOST  MAIL_PORT  MAIL_USERNAME  MAIL_PASSWORD   비밀번호 재설정 메일을 넘길 SMTP 서버
-MAIL_SMTP_AUTH  MAIL_SMTP_STARTTLS                   보통 둘 다 true
-MAIL_FROM                     그 서버가 허용하는 발신 주소
+RESEND_API_KEY                비밀번호 재설정 메일 발송자(Resend)
+MAIL_FROM                     보내는 주소. **인증된 도메인이어야 한다**
 PASSWORD_RESET_LINK_BASE      https://프런트주소/reset-password
 ```
 
-**메일을 안 넣으면 재설정 링크가 나가지 않는다.** 앱은 그래도 뜨고 요청도 204를 돌려준다 —
-발송 실패가 응답을 바꾸면 "이 주소는 계정이 있다"가 드러나기 때문이다. 그래서 **조용히 안 가는
-상태**가 될 수 있고, 로그의 경고가 유일한 신호다. `MAIL_HOST` 없이 배포하면 기본값
-`localhost:25`로 붙으러 갔다가 실패한다.
+**메일 설정을 빠뜨리면 재설정 링크가 조용히 안 나간다.** 앱은 그래도 뜨고 요청도 204를 돌려준다 —
+발송 실패가 응답을 바꾸면 "이 주소는 계정이 있다"가 드러나기 때문이다. 로그의 경고가 유일한 신호다.
 
-> 메일 health 지표는 꺼 뒀다(`management.health.mail.enabled=false`). 켜면 남의 SMTP가 잠깐
-> 흔들릴 때마다 `/actuator/health`가 503이 되어 **배포 플랫폼이 인스턴스를 죽인다** — 메일
-> 때문에 글쓰기가 멈춘다.
+> `MAIL_FROM`은 **Resend에 인증된 도메인**이어야 한다. 아니면 403이고, 그 실패는 위 이유로
+> 사용자에게 보이지 않는다(실측: `external-apis.md`). 도메인을 아직 안 붙였으면
+> `onboarding@resend.dev`를 쓴다 — 인증 없이 보내지지만 **스팸함으로 간다.**
+> QA에서 재설정을 시험할 때는 스팸함을 열어야 링크를 받는다.
 
 **`FORWARD_HEADERS_STRATEGY`는 조건을 확인한 뒤에 켠다.** 요청 제한이 IP로 세는데, 켜지 않으면
 프록시 뒤에서 모든 요청이 한 주소로 보여 전체 사용자가 한 버킷을 나눠 쓴다. 그렇다고 그냥 켜면

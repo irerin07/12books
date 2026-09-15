@@ -1,23 +1,21 @@
 package com.irene.twelvebooks.auth;
 
-import com.icegreen.greenmail.junit5.GreenMailExtension;
-import com.icegreen.greenmail.util.ServerSetupTest;
 import com.irene.twelvebooks.support.AbstractIntegrationTest;
+import com.irene.twelvebooks.support.RecordingMailSender;
 import com.irene.twelvebooks.user.User;
 import com.irene.twelvebooks.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-import jakarta.mail.internet.MimeMessage;
 import jakarta.servlet.http.Cookie;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -31,19 +29,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>없으면 운영자에게 연락하는 수밖에 없다 — 그건 서비스가 아니라 사람의 가용성에 기대는
  * 상태다.
  *
- * <p>테스트가 <b>진짜 SMTP 서버</b>(GreenMail)를 띄운다. 가짜 발송자를 끼워 넣고 "불렸는지"만
- * 보면 정작 중요한 것을 못 본다 — 메일이 실제로 조립돼 나갔는지, 본문에 링크가 제대로 들어갔는지.
- * 덕분에 <b>실제 발송자(Gmail·Resend…)를 아직 정하지 않아도</b> 기능을 끝까지 검증할 수 있다.
+ * <p>검증은 <b>발송자 바로 앞</b>에서 끝난다. SDK가 자기 HTTP 클라이언트를 들고 있어 바깥에서
+ * 갈아끼울 수 없기 때문이다 — 무엇을 보내려 했는지는 보지만 실제 도착은 여기서 알 수 없고,
+ * 그 확인은 {@code external-apis.md}의 실측이 맡는다.
  */
-@TestPropertySource(properties = {
-		"spring.mail.host=localhost",
-		"spring.mail.port=3025",
-		"twelvebooks.auth.password-reset.link-base=https://12books.example/reset"
-})
+@TestPropertySource(properties = "twelvebooks.auth.password-reset.link-base=https://12books.example/reset")
+@Import(RecordingMailSender.Config.class)
 class PasswordResetTest extends AbstractIntegrationTest {
 
-	@RegisterExtension
-	static final GreenMailExtension GREEN_MAIL = new GreenMailExtension(ServerSetupTest.SMTP);
+	@Autowired
+	RecordingMailSender mail;
 
 	@Autowired
 	MockMvc mockMvc;
@@ -76,19 +71,18 @@ class PasswordResetTest extends AbstractIntegrationTest {
 	void sendsResetLink() throws Exception {
 		request("me@example.com");
 
-		assertThat(GREEN_MAIL.waitForIncomingEmail(5000, 1)).isTrue();
-		MimeMessage sent = GREEN_MAIL.getReceivedMessages()[0];
-		assertThat(sent.getAllRecipients()[0].toString()).isEqualTo("me@example.com");
+		RecordingMailSender.Sent sent = mail.next();
+		assertThat(sent).isNotNull();
+		assertThat(sent.to()).isEqualTo("me@example.com");
 		// 링크가 없으면 메일을 받아도 할 수 있는 일이 없다.
-		// 본문은 그대로 읽지 않는다 — 한글이 섞이면 base64로 실려 나가므로 원문과 비교하면
-		// 기능이 멀쩡한데도 빨갛다. getContent()가 전송 인코딩을 풀어 준다.
-		assertThat((String) sent.getContent()).contains("https://12books.example/reset?token=");
+		assertThat(sent.text()).contains("https://12books.example/reset?token=");
 	}
 
 	/** 메일 본문에서 토큰만 꺼낸다. 사용자가 링크를 누르는 것과 같은 경로다. */
 	private String tokenFromMail() throws Exception {
-		assertThat(GREEN_MAIL.waitForIncomingEmail(5000, 1)).isTrue();
-		String body = (String) GREEN_MAIL.getReceivedMessages()[0].getContent();
+		RecordingMailSender.Sent sent = mail.next();
+		assertThat(sent).isNotNull();
+		String body = sent.text();
 		int at = body.indexOf("?token=") + "?token=".length();
 		int end = at;
 		while (end < body.length() && !Character.isWhitespace(body.charAt(end))) {
@@ -166,7 +160,7 @@ class PasswordResetTest extends AbstractIntegrationTest {
 		// "가입되지 않은 이메일입니다"로 답하면 그 한 줄이 계정 열거 통로가 된다.
 		request("nobody@example.com");
 
-		assertThat(GREEN_MAIL.waitForIncomingEmail(1000, 1)).isFalse();
+		assertThat(mail.nothingSoon()).isNull();
 	}
 
 	/**
