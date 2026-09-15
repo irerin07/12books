@@ -1,6 +1,8 @@
 package com.irene.twelvebooks.auth;
 
 import com.irene.twelvebooks.auth.dto.LoginRequest;
+import com.irene.twelvebooks.auth.dto.PasswordResetConfirmRequest;
+import com.irene.twelvebooks.auth.dto.PasswordResetRequest;
 import com.irene.twelvebooks.auth.dto.SignupRequest;
 import com.irene.twelvebooks.common.error.BusinessException;
 import com.irene.twelvebooks.common.error.ErrorCode;
@@ -9,6 +11,7 @@ import com.irene.twelvebooks.user.UserRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 이 서비스에는 메서드 단위 트랜잭션을 걸지 않는다.
@@ -25,13 +28,56 @@ public class AuthService {
 	private final PasswordEncoder passwordEncoder;
 	private final JwtProvider jwtProvider;
 	private final RefreshTokenStore refreshTokenStore;
+	private final PasswordResetTokenStore passwordResetTokenStore;
+	private final PasswordResetMailer passwordResetMailer;
 
 	public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtProvider jwtProvider,
-			RefreshTokenStore refreshTokenStore) {
+			RefreshTokenStore refreshTokenStore, PasswordResetTokenStore passwordResetTokenStore,
+			PasswordResetMailer passwordResetMailer) {
 		this.userRepository = userRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.jwtProvider = jwtProvider;
 		this.refreshTokenStore = refreshTokenStore;
+		this.passwordResetTokenStore = passwordResetTokenStore;
+		this.passwordResetMailer = passwordResetMailer;
+	}
+
+	/**
+	 * 재설정 링크를 보낸다 — <b>계정이 있을 때만.</b> 없으면 조용히 아무것도 하지 않는다.
+	 *
+	 * <p>호출부는 어느 쪽이든 204를 돌려준다. "가입되지 않은 이메일입니다"로 답하면 그 한
+	 * 줄이 <b>계정 열거 통로</b>가 된다 — 이메일 목록을 넣어 보며 누가 이 서비스를 쓰는지
+	 * 알아낼 수 있고, 그건 서비스 성격에 따라 그 자체로 민감한 정보다.
+	 *
+	 * <p>발송도 여기서 기다리지 않는다({@link PasswordResetMailer}). 기다리면 <b>응답 시간의
+	 * 차이만으로</b> 계정 유무가 드러난다 — 있는 주소는 SMTP 왕복만큼 느리다.
+	 */
+	public void requestPasswordReset(PasswordResetRequest request) {
+		userRepository.findByEmail(request.email()).ifPresent(user ->
+				passwordResetMailer.send(user.getEmail(), passwordResetTokenStore.issue(user.getId())));
+	}
+
+	/**
+	 * 토큰을 쓰고 비밀번호를 바꾼다.
+	 *
+	 * <p>바꾼 뒤 <b>그 사람의 세션을 전부 끊는다.</b> 비밀번호를 바꾸는 이유가 보통 탈취이기
+	 * 때문이다 — 훔친 기기의 refresh가 그대로 살아 있으면 바꾼 의미가 없다. 본인의 다른 기기도
+	 * 함께 끊기지만, 다시 로그인하면 된다.
+	 *
+	 * <p>토큰을 먼저 쓰고(=지우고) 비밀번호를 바꾼다. 순서를 뒤집으면 바꾼 뒤에 토큰 소모가
+	 * 실패했을 때 같은 링크가 한 번 더 통한다.
+	 */
+	@Transactional
+	public void confirmPasswordReset(PasswordResetConfirmRequest request) {
+		Long userId = passwordResetTokenStore.consume(request.token())
+				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_RESET_TOKEN));
+		User user = userRepository.findById(userId)
+				// 토큰을 받은 뒤 계정이 사라진 경우. 링크 문제로 답한다 — 여기서 "없는
+				// 사용자"라고 알려 주면 그것도 계정 유무를 흘리는 통로가 된다.
+				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_RESET_TOKEN));
+
+		user.changePassword(passwordEncoder.encode(request.password()));
+		refreshTokenStore.revokeAll(userId);
 	}
 
 	/**

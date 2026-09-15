@@ -87,6 +87,17 @@ public class User extends BaseTimeEntity {
 		}
 	}
 
+	/**
+	 * 비밀번호를 갈아 끼운다. 해시는 바깥에서 만든다 — 엔티티가 인코더를 알면 도메인이
+	 * 보안 구현에 묶인다.
+	 */
+	public void changePassword(String newPasswordHash) {
+		if (newPasswordHash == null || newPasswordHash.isBlank()) {
+			throw new IllegalArgumentException("비밀번호 해시는 비어 있을 수 없습니다");
+		}
+		this.passwordHash = newPasswordHash;
+	}
+
 	public Long getId() {
 		return id;
 	}

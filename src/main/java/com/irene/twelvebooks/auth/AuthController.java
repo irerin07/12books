@@ -1,6 +1,8 @@
 package com.irene.twelvebooks.auth;
 
 import com.irene.twelvebooks.auth.dto.LoginRequest;
+import com.irene.twelvebooks.auth.dto.PasswordResetConfirmRequest;
+import com.irene.twelvebooks.auth.dto.PasswordResetRequest;
 import com.irene.twelvebooks.common.ratelimit.RateLimit;
 import com.irene.twelvebooks.auth.dto.SignupRequest;
 import com.irene.twelvebooks.auth.dto.SignupResponse;
@@ -45,6 +47,32 @@ public class AuthController {
 	@PostMapping("/login")
 	public ResponseEntity<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
 		return tokenResponse(authService.login(request));
+	}
+
+	/**
+	 * 재설정 요청. <b>언제나 204</b>다 — 계정이 있든 없든, 메일이 나갔든 실패했든.
+	 *
+	 * <p>IP로 센다. 이메일 단위로 막으면 그 자체가 계정 열거 통로가 되고("이 주소는 자주
+	 * 요청돼 막혔다"), 남의 주소로 요청을 반복해 그 사람의 재설정을 막을 수도 있다.
+	 */
+	@RateLimit(name = "password-reset", limit = 10, windowSeconds = 600, scope = RateLimit.Scope.CLIENT)
+	@PostMapping("/password-reset")
+	public ResponseEntity<Void> requestPasswordReset(@Valid @RequestBody PasswordResetRequest request) {
+		authService.requestPasswordReset(request);
+		return ResponseEntity.noContent().build();
+	}
+
+	/**
+	 * 토큰으로 비밀번호를 바꾼다. 토큰을 찍어 맞히는 시도를 막으려고 실패를 센다 —
+	 * 성공까지 세면 한 사람이 여러 번 재설정하는 정상 사용이 걸린다.
+	 */
+	@RateLimit(name = "password-reset-confirm", limit = 20, windowSeconds = 600,
+			scope = RateLimit.Scope.CLIENT, failuresOnly = true)
+	@PostMapping("/password-reset/confirm")
+	public ResponseEntity<Void> confirmPasswordReset(
+			@Valid @RequestBody PasswordResetConfirmRequest request) {
+		authService.confirmPasswordReset(request);
+		return ResponseEntity.noContent().build();
 	}
 
 	/** POST 전용이다. GET이면 링크 한 번으로 재발급이 일어난다. */

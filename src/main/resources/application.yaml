@@ -22,10 +22,36 @@ spring:
     properties:
       hibernate:
         default_batch_fetch_size: 100   # N+1 1차 방어선
+  # 메일. 어떤 SMTP 서버에 넘길지가 전부다 — JavaMailSender는 그 서버에 말을 거는 쪽이고,
+  # 실제로 배달하는 것은 여기 적힌 서버다. 발송자를 바꾸는 일은 이 값들을 바꾸는 일이다.
+  #
+  # 타임아웃을 반드시 건다. 기본값은 무한 대기라, 메일 서버가 느려지면 그 지연이 그대로
+  # 우리 스레드에 앉는다.
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:25}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${MAIL_SMTP_AUTH:false}
+      mail.smtp.starttls.enable: ${MAIL_SMTP_STARTTLS:false}
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
   flyway:
     enabled: true
     # baseline-on-migrate는 켜지 않는다. 히스토리가 없는 DB를 baseline으로 찍어버리면
     # 실제로는 적용된 적 없는 V1이 적용된 것으로 취급돼 마이그레이션 누락이 조용히 숨는다.
+
+# 헬스 체크는 "이 인스턴스에 트래픽을 보내도 되는가"에 답한다. 메일 서버는 그 답을 바꾸지
+# 않는다 — 비밀번호 재설정 메일이 안 나가는 것과 앱이 요청을 못 받는 것은 다른 사건이다.
+#
+# 켜 두면 배포 플랫폼이 /actuator/health를 보고 인스턴스를 죽인다. 남의 SMTP 서버가 잠깐
+# 흔들릴 때마다 서비스 전체가 재시작하는 셈이라, 메일 때문에 글쓰기가 멈춘다.
+management:
+  health:
+    mail:
+      enabled: false
 
 twelvebooks:
   # 브라우저에서 이 API를 부를 수 있는 오리진. 쉼표로 구분한다.
@@ -36,6 +62,16 @@ twelvebooks:
     # 프런트가 다른 사이트에 뜨는 배포에서만 None으로 낮춘다. 낮추면 이 쿠키의 CSRF 방어가
     # 사라지므로 그 결정이 배포 설정에 남아야 한다.
     refresh-cookie-same-site: ${REFRESH_COOKIE_SAME_SITE:Strict}
+    password-reset:
+      # 링크를 오래 살려 두면 메일함을 한 번 들여다본 사람이 계정을 가져간다. 짧으면 다시
+      # 요청하면 그만이라, 기울기가 한쪽으로 분명하다.
+      ttl: ${PASSWORD_RESET_TTL:PT30M}
+      # 토큰을 붙일 프런트 주소. 백엔드가 아니라 화면이 받아야 한다 — 사용자는 링크를 눌러
+      # 새 비밀번호를 입력할 곳으로 가야지, JSON을 보면 안 된다.
+      link-base: ${PASSWORD_RESET_LINK_BASE:http://localhost:3000/reset-password}
+      # 보내는 주소. 아무 주소나 쓸 수 없다 — SMTP 서버가 허용한 계정·도메인이어야 하고,
+      # 아니면 거부되거나 스팸으로 분류된다.
+      from: ${MAIL_FROM:no-reply@12books.local}
   book:
     signature-secret: ${BOOK_SIGNATURE_SECRET}
   jwt:

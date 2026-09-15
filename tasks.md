@@ -469,11 +469,18 @@
 
 **비밀번호 재설정** · Backend · Frontend · Infra
 
-- [ ] `POST /auth/password-reset` — **언제나 204**(계정 유무를 알려주지 않는다)
-- [ ] `POST /auth/password-reset/confirm` — 토큰 + 새 비밀번호
-- [ ] 토큰은 Redis에 해시로, TTL 30분, 1회용
-- [ ] 재설정 성공 시 그 사용자의 refresh 세션 전부 무효화
-- [ ] 메일 발송자 = 새 외부 의존 → 실측 후 `external-apis.md`에 기록
+- [x] `POST /auth/password-reset` — **언제나 204**(계정 유무를 알려주지 않는다).
+      발송도 기다리지 않는다 — 기다리면 **응답 시간 차이만으로** 계정 유무가 드러난다
+- [x] `POST /auth/password-reset/confirm` — 토큰 + 새 비밀번호. 실패는 전부 `A005`/401로
+      같게 답한다(없음·만료·이미 씀을 구분하지 않는다)
+- [x] 토큰은 Redis에 해시로, TTL 30분, 1회용. 읽기와 지우기를 **한 스크립트로** — 나눠 부르면
+      같은 링크를 두 번 누른 두 요청이 모두 통과한다
+- [x] 재설정 성공 시 그 사용자의 refresh 세션 전부 무효화
+- [x] 전송은 `JavaMailSender`(SMTP). 테스트는 GreenMail로 **진짜 SMTP 서버**를 띄운다 —
+      발송자를 아직 안 정해도 기능이 끝까지 검증된다
+- [x] 메일 health 지표는 끈다 — 남의 SMTP가 흔들릴 때마다 배포 플랫폼이 인스턴스를 죽인다
+- [ ] **발송자 미정(보류).** 다시 볼 시점 = QA에 배포해 실제 메일이 필요해질 때.
+      그때 한 통 보내 `external-apis.md`에 실측을 남긴다
 
 **신고와 관리자 처리** · Backend · Policy
 

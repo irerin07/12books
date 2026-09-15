@@ -5,15 +5,9 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 
@@ -40,9 +34,6 @@ public class RefreshTokenStore {
 	private static final String USER_INDEX_KEY_PREFIX = "refresh:user:";
 	private static final String USER_ID_FIELD = "userId";
 	private static final String ISSUED_AT_FIELD = "issuedAt";
-
-	/** 128비트로도 충분하지만, 재발급이 잦은 값이라 여유를 둔다. */
-	private static final int TOKEN_BYTES = 32;
 
 	/**
 	 * KEYS[1] 세션 키 · KEYS[2] 역인덱스
@@ -76,10 +67,18 @@ public class RefreshTokenStore {
 			return userId
 			""", String.class);
 
+	/** KEYS[1] 역인덱스. 그 안의 모든 세션 키와 인덱스 자신을 지운다. */
+	private static final RedisScript<Void> REVOKE_ALL_SCRIPT = new DefaultRedisScript<>("""
+			local hashes = redis.call('ZRANGE', KEYS[1], 0, -1)
+			for _, hash in ipairs(hashes) do
+			  redis.call('DEL', 'refresh:' .. hash)
+			end
+			redis.call('DEL', KEYS[1])
+			""", Void.class);
+
 	private final StringRedisTemplate redis;
 	private final Duration refreshTokenTtl;
 	private final Clock clock;
-	private final SecureRandom random = new SecureRandom();
 
 	public RefreshTokenStore(StringRedisTemplate redis, JwtProperties properties, Clock clock) {
 		this.redis = redis;
@@ -140,6 +139,17 @@ public class RefreshTokenStore {
 		return Optional.ofNullable(userId).map(id -> newToken);
 	}
 
+	/**
+	 * 그 사람의 모든 세션을 끊는다. 비밀번호가 바뀌었을 때 부른다 — 바꾸는 이유가 보통
+	 * 탈취이기 때문에, <b>바꾸고도 훔친 기기가 계속 살아 있으면 바꾼 의미가 없다.</b>
+	 *
+	 * <p>역인덱스를 읽어 세션 키를 하나씩 지우는 일을 스크립트 한 번으로 한다. 나눠 보내면
+	 * 그 사이에 재발급이 끼어들어 <b>새로 만들어진 세션만 살아남는</b> 창이 생긴다.
+	 */
+	public void revokeAll(Long userId) {
+		redis.execute(REVOKE_ALL_SCRIPT, List.of(userIndexKey(userId)));
+	}
+
 	public void revoke(String rawToken) {
 		if (rawToken == null || rawToken.isBlank()) {
 			return;
@@ -150,23 +160,12 @@ public class RefreshTokenStore {
 	}
 
 	private String newToken() {
-		byte[] bytes = new byte[TOKEN_BYTES];
-		random.nextBytes(bytes);
-		return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+		return TokenSecrets.newToken();
 	}
 
-	/**
-	 * 원문이 아니라 해시를 저장한다. Redis 덤프가 그대로 세션 탈취가 되지 않게 한다.
-	 * 토큰은 이미 고엔트로피 난수라 솔트·키 스트레칭이 필요 없다.
-	 */
+	/** 원문이 아니라 해시를 저장한다. 왜인지는 {@link TokenSecrets}에 있다. */
 	private String hash(String rawToken) {
-		try {
-			MessageDigest digest = MessageDigest.getInstance("SHA-256");
-			return HexFormat.of().formatHex(digest.digest(rawToken.getBytes(StandardCharsets.UTF_8)));
-		}
-		catch (NoSuchAlgorithmException e) {
-			throw new IllegalStateException("SHA-256을 쓸 수 없습니다", e);
-		}
+		return TokenSecrets.hash(rawToken);
 	}
 
 	private String sessionKey(String hash) {
