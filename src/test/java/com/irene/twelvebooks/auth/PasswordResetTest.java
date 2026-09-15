@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -52,6 +54,12 @@ class PasswordResetTest extends AbstractIntegrationTest {
 
 	@Autowired
 	PasswordEncoder passwordEncoder;
+
+	@Autowired
+	JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	StringRedisTemplate redis;
 
 	@BeforeEach
 	void setUp() {
@@ -163,5 +171,33 @@ class PasswordResetTest extends AbstractIntegrationTest {
 		request("nobody@example.com");
 
 		assertThat(GREEN_MAIL.waitForIncomingEmail(1000, 1)).isFalse();
+	}
+
+	/**
+	 * 자격증명 번호는 <b>비밀번호와 같은 자리</b>에 산다.
+	 *
+	 * <p>다른 곳에 두면 수명이 어긋난다 — 번호가 먼저 사라지면 "한 번도 안 바꾼 상태"로
+	 * 보여, 재설정 뒤에 정상적으로 로그인한 세션이 이유 없이 끊긴다. 재설정은 드물고 그 뒤의
+	 * 로그인은 오래가므로 실제로 잘 일어나는 순서다.
+	 */
+	@Test
+	@DisplayName("재설정한 뒤 로그인한 세션은 계속 재발급된다")
+	void sessionsIssuedAfterResetKeepWorking() throws Exception {
+		request("me@example.com");
+		confirm(tokenFromMail(), "newpassword1");
+
+		Cookie refresh = login("newpassword1").getResponse().getCookie(RefreshCookies.NAME);
+		assertThat(refresh).isNotNull();
+
+		// 번호를 세션과 다른 저장소에 두면 그쪽이 먼저 비는 순간이 온다. 그 상황을 흉내 낸다.
+		redis.delete(redis.keys("credver:*"));
+
+		mockMvc.perform(post("/api/v1/auth/reissue").cookie(refresh))
+				.andExpect(status().isOk());
+
+		// 번호가 사용자 행에 있으면 비밀번호와 함께 갱신되고 따로 만료되지 않는다.
+		assertThat(jdbcTemplate.queryForObject(
+				"select credential_version from users where email = ?", Long.class, "me@example.com"))
+				.isEqualTo(1L);
 	}
 }

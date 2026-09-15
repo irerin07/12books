@@ -91,9 +91,10 @@ public class RefreshTokenStore {
 	/**
 	 * 세션을 만든다.
 	 *
-	 * @param credentialVersion <b>비밀번호를 확인한 시점</b>의 번호. 지금 값을 여기서 다시 읽으면
-	 *                          안 된다 — 검증과 발급 사이에 비밀번호가 바뀌었을 때 그 세션이
-	 *                          새 번호를 달고 살아남는다({@link CredentialVersions})
+	 * @param credentialVersion <b>검증한 해시와 같은 조회에서 온</b> 번호({@code users} 행의
+	 *                          {@code credential_version}). 여기서 따로 읽으면 안 된다 —
+	 *                          검증과 발급 사이에 비밀번호가 바뀌었을 때 그 세션이 새 번호를
+	 *                          달고 살아남는다
 	 */
 	public String issue(Long userId, String credentialVersion) {
 		String rawToken = newToken();

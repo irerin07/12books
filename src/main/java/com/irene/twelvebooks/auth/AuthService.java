@@ -35,18 +35,16 @@ public class AuthService {
 	private final RefreshTokenStore refreshTokenStore;
 	private final PasswordResetTokenStore passwordResetTokenStore;
 	private final PasswordResetMailer passwordResetMailer;
-	private final CredentialVersions credentialVersions;
 
 	public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtProvider jwtProvider,
 			RefreshTokenStore refreshTokenStore, PasswordResetTokenStore passwordResetTokenStore,
-			PasswordResetMailer passwordResetMailer, CredentialVersions credentialVersions) {
+			PasswordResetMailer passwordResetMailer) {
 		this.userRepository = userRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.jwtProvider = jwtProvider;
 		this.refreshTokenStore = refreshTokenStore;
 		this.passwordResetTokenStore = passwordResetTokenStore;
 		this.passwordResetMailer = passwordResetMailer;
-		this.credentialVersions = credentialVersions;
 	}
 
 	/**
@@ -93,9 +91,9 @@ public class AuthService {
 				// 사용자"라고 알려 주면 그것도 계정 유무를 흘리는 통로가 된다.
 				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_RESET_TOKEN));
 
+		// 해시와 자격증명 번호가 한 문장으로 올라간다. 이 커밋 이후에 옛 비밀번호로 만들어지는
+		// 세션은 옛 번호를 달고 있어 첫 재발급에서 걸린다.
 		user.changePassword(passwordEncoder.encode(request.password()));
-		// 번호를 먼저 올린다. 이 순간부터 옛 비밀번호로 만들어지는 세션은 첫 재발급에서 걸린다.
-		credentialVersions.bump(userId);
 		refreshTokenStore.revokeAll(userId);
 	}
 
@@ -127,21 +125,18 @@ public class AuthService {
 	 * 구분하면 로그인 폼이 계정 존재 여부를 알려주는 조회 도구가 된다.
 	 */
 	/**
-	 * <p>자격증명 번호를 <b>비밀번호를 확인하기 전에</b> 읽는다. 발급 직전에 읽으면, 검증과
-	 * 발급 사이에 재설정이 끝났을 때 그 세션이 <b>새 번호를 달고</b> 살아남는다 — 옛 비밀번호로
-	 * 만들어진 세션인데 무효화 대상에도, 번호 검사에도 걸리지 않는다.
+	 * <p>세션에 적는 자격증명 번호는 <b>지금 검증한 그 해시와 같은 조회에서 온 값</b>이다.
+	 * 번호를 따로 읽으면 그 사이에 재설정이 끝났을 때 <b>옛 해시에 새 번호가 붙어</b> 그
+	 * 세션이 검사를 통과한다. 한 행에서 함께 읽으면 그 창이 없다.
 	 */
 	public Tokens login(LoginRequest request) {
 		User user = userRepository.findByEmail(request.email())
+				.filter(candidate -> passwordEncoder.matches(request.password(), candidate.getPasswordHash()))
 				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
-		String credentialVersion = credentialVersions.current(user.getId());
-		if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-			throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
-		}
 
 		return new Tokens(
 				jwtProvider.createAccessToken(user.getId(), user.getHandle()),
-				refreshTokenStore.issue(user.getId(), credentialVersion));
+				refreshTokenStore.issue(user.getId(), String.valueOf(user.getCredentialVersion())));
 	}
 
 	/**
@@ -163,9 +158,9 @@ public class AuthService {
 
 		// 옛 비밀번호로 만들어진 세션을 여기서 걸러 낸다. 무효화 직후에 도착한 발급은
 		// 끊긴 적이 없어 계속 재발급되는데, 그 세션은 그때의 번호를 들고 있다.
-		String issuedWith = refreshTokenStore.findCredentialVersion(refreshToken)
-				.orElse(CredentialVersions.INITIAL);
-		if (!issuedWith.equals(credentialVersions.current(userId))) {
+		// 비교 대상은 방금 읽은 사용자 행의 값이라 비밀번호와 언제나 같은 시점의 것이다.
+		String issuedWith = refreshTokenStore.findCredentialVersion(refreshToken).orElse("0");
+		if (!issuedWith.equals(String.valueOf(user.getCredentialVersion()))) {
 			refreshTokenStore.revoke(refreshToken);
 			throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
 		}
