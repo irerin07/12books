@@ -2,9 +2,11 @@ package com.irene.twelvebooks.user;
 
 import com.irene.twelvebooks.notification.ActorView;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -39,4 +41,18 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
 	@Query("select u from User u where u.activeHandle = :handle")
 	Optional<User> findByHandle(@Param("handle") String handle);
+
+	/**
+	 * 탈퇴 표시를 세운다 — <b>아직 안 세워졌을 때만.</b>
+	 *
+	 * <p>조회한 엔티티를 고치는 방식이면 두 요청이 탈퇴 전 상태를 함께 읽고 둘 다 통과한다.
+	 * 표시는 한 번만 세워지지만 <b>그 뒤에 딸린 일(댓글 수 조정)이 두 번 실행된다</b> —
+	 * 보이는 댓글은 하나인데 숫자는 0이 된다. 조건을 문장 안에 넣으면 행 잠금이 둘을
+	 * 줄 세우고 진 쪽은 0행을 받는다.
+	 *
+	 * @return 바뀐 행 수. <b>1일 때만</b> 뒤따르는 정리를 한다.
+	 */
+	@Modifying
+	@Query("update User u set u.deletedAt = :now where u.id = :userId and u.deletedAt is null")
+	int withdraw(@Param("userId") Long userId, @Param("now") LocalDateTime now);
 }

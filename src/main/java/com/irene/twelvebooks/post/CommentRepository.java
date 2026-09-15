@@ -66,6 +66,32 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 	@Query("update Comment c set c.hiddenAt = null where c.id = :commentId and c.hiddenAt is not null and c.deletedAt is null")
 	int unhide(@Param("commentId") Long commentId);
 
+	/**
+	 * <b>댓글 수에 세어져 있는 댓글만</b> 내린다. 1행이면 내리기 전까지 세어져 있었다는 뜻이라
+	 * 그때만 카운터를 건드린다.
+	 *
+	 * <p>"먼저 물어보고 고치기"로 하지 않는 이유는 {@link #softDeleteIfCounted}와 같다.
+	 * MySQL의 기본 격리 수준에서 <b>잠금 없는 SELECT는 트랜잭션이 시작할 때의 스냅샷</b>을
+	 * 본다. 글 행을 잠근 뒤에 물어도 그 조회 자체는 스냅샷이라, 그사이 작성자가 탈퇴해
+	 * 카운터가 이미 줄었어도 "아직 세어져 있다"고 답한다. UPDATE는 언제나 최신 행을 본다.
+	 */
+	@Modifying
+	@Query("""
+			update Comment c set c.hiddenAt = :now
+			where c.id = :commentId and c.hiddenAt is null and c.deletedAt is null
+			  and exists (select 1 from User u where u.id = c.authorId and u.deletedAt is null)
+			""")
+	int hideIfCounted(@Param("commentId") Long commentId, @Param("now") LocalDateTime now);
+
+	/** 되돌린다 — <b>되돌리면 다시 세어질 댓글만.</b> 작성자가 탈퇴했으면 여전히 안 보인다. */
+	@Modifying
+	@Query("""
+			update Comment c set c.hiddenAt = null
+			where c.id = :commentId and c.hiddenAt is not null and c.deletedAt is null
+			  and exists (select 1 from User u where u.id = c.authorId and u.deletedAt is null)
+			""")
+	int unhideIfCounted(@Param("commentId") Long commentId);
+
 	/** 운영자 목록에 곁들일 댓글. 지운 것도 숨긴 것도 나온다 — 판단하려면 봐야 한다. */
 	@Query("""
 			select new com.irene.twelvebooks.report.ContentView(c.id, c.content)
@@ -98,17 +124,4 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 			""")
 	int softDeleteIfCounted(@Param("commentId") Long commentId, @Param("now") LocalDateTime now);
 
-	/**
-	 * 이 댓글의 작성자가 아직 살아 있는가.
-	 *
-	 * <p>운영자가 댓글을 내리거나 되돌릴 때 <b>댓글 수를 건드릴지</b> 정하는 데 쓴다.
-	 * 탈퇴자의 댓글은 이미 숫자에서 빠져 있으므로, 그것을 또 내리거나 되돌리며 올리면
-	 * 숫자가 실제와 어긋난다.
-	 */
-	@Query("""
-			select count(c) > 0 from Comment c
-			where c.id = :commentId
-			  and exists (select 1 from User u where u.id = c.authorId and u.deletedAt is null)
-			""")
-	boolean hasActiveAuthor(@Param("commentId") Long commentId);
 }

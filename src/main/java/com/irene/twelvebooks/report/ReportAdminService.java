@@ -108,6 +108,7 @@ public class ReportAdminService {
 			// 화면이 된다. 바뀐 행이 1일 때만 내리는 것이 요점이다 — 이미 내려간 것을
 			// 또 내리면 카운터가 실제보다 작아진다.
 			case COMMENT -> onComment(report.getTargetId(),
+					commentId -> commentRepository.hideIfCounted(commentId, LocalDateTime.now(clock)),
 					commentId -> commentRepository.hide(commentId, LocalDateTime.now(clock)),
 					postRepository::decreaseCommentCountByModerator);
 			case USER -> {
@@ -133,8 +134,8 @@ public class ReportAdminService {
 		}
 		switch (report.getTargetType()) {
 			case POST -> postRepository.unhide(report.getTargetId());
-			case COMMENT -> onComment(report.getTargetId(), commentRepository::unhide,
-					postRepository::increaseCommentCountByModerator);
+			case COMMENT -> onComment(report.getTargetId(), commentRepository::unhideIfCounted,
+					commentRepository::unhide, postRepository::increaseCommentCountByModerator);
 			case USER -> {
 			}
 		}
@@ -149,19 +150,23 @@ public class ReportAdminService {
 	 * <p>숨겨지거나 지워진 글도 잠글 수 있어야 한다. 보이는 글만 잠그면 숨긴 글 아래의 댓글을
 	 * 처리할 때 <b>잠금 없이</b> 카운터를 만지게 되고, 그게 정확히 부딪히는 경우다.
 	 */
-	private void onComment(Long commentId, java.util.function.ToIntFunction<Long> change,
+	private void onComment(Long commentId, java.util.function.ToIntFunction<Long> countedChange,
+			java.util.function.ToIntFunction<Long> plainChange,
 			java.util.function.Consumer<Long> adjustCount) {
 		Long postId = commentRepository.findPostId(commentId).orElse(null);
 		if (postId == null) {
 			return;
 		}
 		postRepository.findAnyByIdForUpdate(postId);
-		// 작성자가 탈퇴했으면 그 댓글은 이미 숫자에서 빠져 있다. 또 내리거나 되돌리며
-		// 올리면 숫자가 실제와 어긋난다 — 되돌려도 여전히 보이지 않는다.
-		boolean counted = commentRepository.hasActiveAuthor(commentId);
-		if (change.applyAsInt(commentId) == 1 && counted) {
+
+		// 카운터에 세어져 있는 댓글이면 한 문장이 바꾸고 1행을 돌려준다. 그때만 숫자를 만진다.
+		if (countedChange.applyAsInt(commentId) == 1) {
 			adjustCount.accept(postId);
+			return;
 		}
+		// 여기까지 왔으면 작성자가 탈퇴했거나 이미 그 상태다. 운영자의 결정은 반영하되
+		// 숫자는 건드리지 않는다 — 탈퇴로 이미 빠졌고, 되돌려도 여전히 보이지 않는다.
+		plainChange.applyAsInt(commentId);
 	}
 
 	private String contentOf(Report report, Map<Long, String> posts, Map<Long, String> comments) {

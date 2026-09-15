@@ -65,10 +65,15 @@ public class UserService {
 			throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
 		}
 
-		// 댓글 수를 먼저 내린다. 표시를 세운 뒤에 세면 그 댓글들이 이미 조회에서 빠져
-		// 0건으로 보인다 — 숫자가 그대로 남는다.
+		// 표시를 세우는 것 자체를 조건부 UPDATE로 한다. 두 요청이 탈퇴 전 상태를 함께 읽어도
+		// 1행을 받는 쪽은 하나뿐이고, 뒤따르는 정리도 그쪽만 한다 — 아니면 댓글 수가
+		// 두 번 깎여 보이는 댓글보다 작아진다.
+		if (userRepository.withdraw(userId, LocalDateTime.now(clock)) == 0) {
+			// 그사이 다른 요청이 끝냈다. 결과는 같으므로 성공으로 답한다.
+			return;
+		}
+		// 세는 조건이 작성자 생존을 보지 않으므로 표시를 세운 뒤에 세어도 같은 수가 나온다.
 		postRepository.decreaseCommentCountsOf(userId);
-		user.withdraw(LocalDateTime.now(clock));
 		refreshTokenStore.revokeAll(userId);
 	}
 }
