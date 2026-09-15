@@ -34,13 +34,14 @@ public class RefreshTokenStore {
 	private static final String USER_INDEX_KEY_PREFIX = "refresh:user:";
 	private static final String USER_ID_FIELD = "userId";
 	private static final String ISSUED_AT_FIELD = "issuedAt";
+	private static final String CREDENTIAL_VERSION_FIELD = "credVer";
 
 	/**
 	 * KEYS[1] 세션 키 · KEYS[2] 역인덱스
-	 * ARGV: 1 해시, 2 userId, 3 발급시각, 4 TTL(ms), 5 만료 score, 6 현재 score
+	 * ARGV: 1 해시, 2 userId, 3 발급시각, 4 TTL(ms), 5 만료 score, 6 현재 score, 7 자격증명 번호
 	 */
 	private static final RedisScript<Void> ISSUE_SCRIPT = new DefaultRedisScript<>("""
-			redis.call('HSET', KEYS[1], 'userId', ARGV[2], 'issuedAt', ARGV[3])
+			redis.call('HSET', KEYS[1], 'userId', ARGV[2], 'issuedAt', ARGV[3], 'credVer', ARGV[7])
 			redis.call('PEXPIRE', KEYS[1], ARGV[4])
 			redis.call('ZADD', KEYS[2], ARGV[5], ARGV[1])
 			redis.call('PEXPIRE', KEYS[2], ARGV[4])
@@ -55,11 +56,12 @@ public class RefreshTokenStore {
 	private static final RedisScript<String> ROTATE_SCRIPT = new DefaultRedisScript<>("""
 			local userId = redis.call('HGET', KEYS[1], 'userId')
 			if not userId then return nil end
+			local credVer = redis.call('HGET', KEYS[1], 'credVer') or '0'
 			redis.call('DEL', KEYS[1])
 			local index = 'refresh:user:' .. userId
 			redis.call('ZREM', index, ARGV[1])
 			local newKey = 'refresh:' .. ARGV[2]
-			redis.call('HSET', newKey, 'userId', userId, 'issuedAt', ARGV[3])
+			redis.call('HSET', newKey, 'userId', userId, 'issuedAt', ARGV[3], 'credVer', credVer)
 			redis.call('PEXPIRE', newKey, ARGV[4])
 			redis.call('ZADD', index, ARGV[5], ARGV[2])
 			redis.call('PEXPIRE', index, ARGV[4])
@@ -86,7 +88,14 @@ public class RefreshTokenStore {
 		this.clock = clock;
 	}
 
-	public String issue(Long userId) {
+	/**
+	 * 세션을 만든다.
+	 *
+	 * @param credentialVersion <b>비밀번호를 확인한 시점</b>의 번호. 지금 값을 여기서 다시 읽으면
+	 *                          안 된다 — 검증과 발급 사이에 비밀번호가 바뀌었을 때 그 세션이
+	 *                          새 번호를 달고 살아남는다({@link CredentialVersions})
+	 */
+	public String issue(Long userId, String credentialVersion) {
 		String rawToken = newToken();
 		String hash = hash(rawToken);
 		Instant now = clock.instant();
@@ -96,9 +105,18 @@ public class RefreshTokenStore {
 				hash, String.valueOf(userId), now.toString(),
 				String.valueOf(refreshTokenTtl.toMillis()),
 				String.valueOf(now.plus(refreshTokenTtl).toEpochMilli()),
-				String.valueOf(now.toEpochMilli()));
+				String.valueOf(now.toEpochMilli()), credentialVersion);
 
 		return rawToken;
+	}
+
+	/** 세션이 어느 비밀번호로 만들어졌는지. 세션이 없으면 빈 값이다. */
+	public Optional<String> findCredentialVersion(String rawToken) {
+		if (rawToken == null || rawToken.isBlank()) {
+			return Optional.empty();
+		}
+		Object version = redis.opsForHash().get(sessionKey(hash(rawToken)), CREDENTIAL_VERSION_FIELD);
+		return Optional.ofNullable(version).map(Object::toString);
 	}
 
 	public Optional<Long> findUserId(String rawToken) {

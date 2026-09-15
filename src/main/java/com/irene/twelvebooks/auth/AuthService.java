@@ -8,6 +8,9 @@ import com.irene.twelvebooks.common.error.BusinessException;
 import com.irene.twelvebooks.common.error.ErrorCode;
 import com.irene.twelvebooks.user.User;
 import com.irene.twelvebooks.user.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -24,22 +27,26 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AuthService {
 
+	private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+
 	private final UserRepository userRepository;
 	private final PasswordEncoder passwordEncoder;
 	private final JwtProvider jwtProvider;
 	private final RefreshTokenStore refreshTokenStore;
 	private final PasswordResetTokenStore passwordResetTokenStore;
 	private final PasswordResetMailer passwordResetMailer;
+	private final CredentialVersions credentialVersions;
 
 	public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtProvider jwtProvider,
 			RefreshTokenStore refreshTokenStore, PasswordResetTokenStore passwordResetTokenStore,
-			PasswordResetMailer passwordResetMailer) {
+			PasswordResetMailer passwordResetMailer, CredentialVersions credentialVersions) {
 		this.userRepository = userRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.jwtProvider = jwtProvider;
 		this.refreshTokenStore = refreshTokenStore;
 		this.passwordResetTokenStore = passwordResetTokenStore;
 		this.passwordResetMailer = passwordResetMailer;
+		this.credentialVersions = credentialVersions;
 	}
 
 	/**
@@ -53,8 +60,18 @@ public class AuthService {
 	 * 차이만으로</b> 계정 유무가 드러난다 — 있는 주소는 SMTP 왕복만큼 느리다.
 	 */
 	public void requestPasswordReset(PasswordResetRequest request) {
-		userRepository.findByEmail(request.email()).ifPresent(user ->
-				passwordResetMailer.send(user.getEmail(), passwordResetTokenStore.issue(user.getId())));
+		userRepository.findByEmail(request.email()).ifPresent(user -> {
+			String token = passwordResetTokenStore.issue(user.getId());
+			try {
+				passwordResetMailer.send(user.getEmail(), token);
+			}
+			catch (TaskRejectedException e) {
+				// 대기열이 가득 차면 거절은 @Async 메서드 <b>안</b>이 아니라 여기서 난다.
+				// 그대로 두면 500이 나가고, 없는 주소는 204라서 응답 코드만으로 계정 유무가
+				// 드러난다 — 언제나 204라는 계약이 바로 그 통로가 된다.
+				log.warn("비밀번호 재설정 메일을 대기열에 넣지 못했습니다");
+			}
+		});
 	}
 
 	/**
@@ -77,6 +94,8 @@ public class AuthService {
 				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_RESET_TOKEN));
 
 		user.changePassword(passwordEncoder.encode(request.password()));
+		// 번호를 먼저 올린다. 이 순간부터 옛 비밀번호로 만들어지는 세션은 첫 재발급에서 걸린다.
+		credentialVersions.bump(userId);
 		refreshTokenStore.revokeAll(userId);
 	}
 
@@ -107,14 +126,22 @@ public class AuthService {
 	 * 이메일이 없는 경우와 비밀번호가 틀린 경우를 <em>구분하지 않는다.</em>
 	 * 구분하면 로그인 폼이 계정 존재 여부를 알려주는 조회 도구가 된다.
 	 */
+	/**
+	 * <p>자격증명 번호를 <b>비밀번호를 확인하기 전에</b> 읽는다. 발급 직전에 읽으면, 검증과
+	 * 발급 사이에 재설정이 끝났을 때 그 세션이 <b>새 번호를 달고</b> 살아남는다 — 옛 비밀번호로
+	 * 만들어진 세션인데 무효화 대상에도, 번호 검사에도 걸리지 않는다.
+	 */
 	public Tokens login(LoginRequest request) {
 		User user = userRepository.findByEmail(request.email())
-				.filter(candidate -> passwordEncoder.matches(request.password(), candidate.getPasswordHash()))
 				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
+		String credentialVersion = credentialVersions.current(user.getId());
+		if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+			throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
+		}
 
 		return new Tokens(
 				jwtProvider.createAccessToken(user.getId(), user.getHandle()),
-				refreshTokenStore.issue(user.getId()));
+				refreshTokenStore.issue(user.getId(), credentialVersion));
 	}
 
 	/**
@@ -133,6 +160,15 @@ public class AuthService {
 				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
 		User user = userRepository.findById(userId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
+
+		// 옛 비밀번호로 만들어진 세션을 여기서 걸러 낸다. 무효화 직후에 도착한 발급은
+		// 끊긴 적이 없어 계속 재발급되는데, 그 세션은 그때의 번호를 들고 있다.
+		String issuedWith = refreshTokenStore.findCredentialVersion(refreshToken)
+				.orElse(CredentialVersions.INITIAL);
+		if (!issuedWith.equals(credentialVersions.current(userId))) {
+			refreshTokenStore.revoke(refreshToken);
+			throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
+		}
 
 		String rotated = refreshTokenStore.rotate(refreshToken)
 				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
