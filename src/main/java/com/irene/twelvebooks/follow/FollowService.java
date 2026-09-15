@@ -96,12 +96,12 @@ public class FollowService {
 
 	@Transactional(readOnly = true)
 	public long followerCount(Long userId) {
-		return followRepository.countByFolloweeId(userId);
+		return followRepository.countFollowers(userId);
 	}
 
 	@Transactional(readOnly = true)
 	public long followingCount(Long userId) {
-		return followRepository.countByFollowerId(userId);
+		return followRepository.countFollowings(userId);
 	}
 
 	@Transactional(readOnly = true)

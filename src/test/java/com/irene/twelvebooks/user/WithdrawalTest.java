@@ -212,4 +212,36 @@ class WithdrawalTest extends AbstractIntegrationTest {
 								{"content": "%s"}""".formatted(content)))
 				.andExpect(status().isCreated());
 	}
+
+	/**
+	 * 탈퇴자는 관계 목록에서도 빠진다.
+	 *
+	 * <p>프로필 단건만 막으면 남의 팔로워 목록에 이름·handle·사진이 그대로 남는다. 같은
+	 * handle로 새 계정이 가입하면 <b>목록에는 옛 사람이 보이는데 링크는 새 사람으로 간다</b> —
+	 * 엉뚱한 사람을 팔로우하게 된다.
+	 *
+	 * <p>거르는 자리는 <b>쿼리</b>다. 받아 온 뒤에 빼면 스무 개를 청구했는데 열여덟 개가 오는
+	 * 페이지가 된다.
+	 */
+	@Test
+	@DisplayName("탈퇴자는 팔로워·팔로잉 목록과 그 수에서 빠진다")
+	void disappearsFromRelations() throws Exception {
+		mockMvc.perform(post("/api/v1/users/{handle}/follow", "other").header("Authorization", bearer))
+				.andExpect(status().isNoContent());
+		mockMvc.perform(post("/api/v1/users/{handle}/follow", "irene").header("Authorization", otherBearer))
+				.andExpect(status().isNoContent());
+
+		withdraw("123456789");
+
+		mockMvc.perform(get("/api/v1/users/{handle}/followers", "other")
+						.header("Authorization", otherBearer))
+				.andExpect(jsonPath("$.items.length()").value(0));
+		mockMvc.perform(get("/api/v1/users/{handle}/followings", "other")
+						.header("Authorization", otherBearer))
+				.andExpect(jsonPath("$.items.length()").value(0));
+		// 목록에서 뺐는데 숫자가 그대로면 "팔로워 1명"을 눌렀을 때 빈 화면이 된다.
+		mockMvc.perform(get("/api/v1/users/{handle}", "other").header("Authorization", otherBearer))
+				.andExpect(jsonPath("$.followerCount").value(0))
+				.andExpect(jsonPath("$.followingCount").value(0));
+	}
 }
