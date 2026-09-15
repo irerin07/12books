@@ -8,6 +8,8 @@ public enum ErrorCode {
 	UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "A001", "인증이 필요합니다."),
 	INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "A002", "이메일 또는 비밀번호가 올바르지 않습니다."),
 	INVALID_REFRESH_TOKEN(HttpStatus.UNAUTHORIZED, "A003", "다시 로그인해 주세요."),
+	INVALID_RESET_TOKEN(HttpStatus.UNAUTHORIZED, "A005",
+			"링크가 만료되었거나 이미 사용되었습니다. 다시 요청해 주세요."),
 	EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "U001", "이미 사용 중인 이메일입니다."),
 	HANDLE_ALREADY_EXISTS(HttpStatus.CONFLICT, "U002", "이미 사용 중인 handle입니다."),
 	USER_NOT_FOUND(HttpStatus.NOT_FOUND, "U003", "사용자를 찾을 수 없습니다."),

@@ -9,9 +9,24 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.DynamicUpdate;
 
+/**
+ * {@code @DynamicUpdate}인 이유가 있다.
+ *
+ * <p>기본 동작은 <b>엔티티 전체</b>를 UPDATE하는 것이라, 프로필 수정이 사용자를 읽은 뒤
+ * 비밀번호가 재설정되면 뒤늦게 나가는 UPDATE가 <b>옛 해시를 다시 저장한다.</b> 재설정이
+ * 조용히 무효가 되고, 재설정하는 이유가 보통 탈취라는 것을 생각하면 가장 곤란한 자리다.
+ *
+ * <p>바뀐 컬럼만 실으면 프로필 수정은 이름·소개·사진만, 비밀번호 변경은 해시만 건드린다.
+ * 같은 문제를 {@code role}에서는 {@code updatable = false}로 막았지만 비밀번호는 응용이
+ * 바꿔야 하므로 그 방법을 쓸 수 없다.
+ *
+ * <p>대신 UPDATE 문이 매번 달라져 캐시되지 않는다. 사용자 행 갱신은 드물어 감수할 만하다.
+ */
 @Entity
 @Table(name = "users")
+@DynamicUpdate
 public class User extends BaseTimeEntity {
 
 	@Id
@@ -51,6 +66,7 @@ public class User extends BaseTimeEntity {
 	@Column(nullable = false, length = 20, updatable = false)
 	private UserRole role;
 
+
 	protected User() {
 	}
 
@@ -85,6 +101,17 @@ public class User extends BaseTimeEntity {
 		if (avatarUrl != null) {
 			this.avatarUrl = avatarUrl;
 		}
+	}
+
+	/**
+	 * 비밀번호를 갈아 끼운다. 해시는 바깥에서 만든다 — 엔티티가 인코더를 알면 도메인이
+	 * 보안 구현에 묶인다.
+	 */
+	public void changePassword(String newPasswordHash) {
+		if (newPasswordHash == null || newPasswordHash.isBlank()) {
+			throw new IllegalArgumentException("비밀번호 해시는 비어 있을 수 없습니다");
+		}
+		this.passwordHash = newPasswordHash;
 	}
 
 	public Long getId() {

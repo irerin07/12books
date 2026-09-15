@@ -25,6 +25,8 @@ public class AsyncConfig {
 
 	public static final String NOTIFICATION_EXECUTOR = "notificationExecutor";
 
+	public static final String MAIL_EXECUTOR = "mailExecutor";
+
 	/**
 	 * 알림 전용 실행기.
 	 *
@@ -62,6 +64,34 @@ public class AsyncConfig {
 				.description("알림을 처리 중인 스레드 수")
 				.register(meterRegistry);
 
+		return executor;
+	}
+
+	/**
+	 * 메일 전용 실행기.
+	 *
+	 * <p>알림과 나눈 이유는 <b>느려지는 방식이 다르기 때문이다.</b> 알림은 DB가 느려질 때
+	 * 밀리고 메일은 남의 SMTP 서버가 느려질 때 밀린다. 한 풀을 같이 쓰면 메일 서버 하나가
+	 * 느려졌을 뿐인데 알림이 통째로 멈춘다.
+	 *
+	 * <p>작게 잡는다. 비밀번호 재설정은 드문 행동이고, 여기 쌓일 정도면 이미 메일 서버가
+	 * 죽은 것이다. 넘치면 버린다 — 사용자는 다시 요청하면 새 링크를 받는다.
+	 *
+	 * <p><b>거절은 제출하는 쪽에서 난다.</b> {@code AbortPolicy}가 던지는 예외는 {@code @Async}
+	 * 메서드 안이 아니라 그것을 부른 요청 스레드로 올라오므로, 메서드 안의 {@code try}로는
+	 * 잡히지 않는다. 부르는 자리가 {@code TaskRejectedException}을 받아 삼켜야 한다 —
+	 * 안 그러면 응답이 500으로 바뀌어 "언제나 204"가 깨진다({@code AuthService}).
+	 */
+	@Bean(MAIL_EXECUTOR)
+	public Executor mailExecutor() {
+		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+		executor.setThreadNamePrefix("mail-");
+		executor.setCorePoolSize(1);
+		executor.setMaxPoolSize(2);
+		executor.setQueueCapacity(100);
+		executor.setWaitForTasksToCompleteOnShutdown(true);
+		executor.setAwaitTerminationSeconds(10);
+		executor.initialize();
 		return executor;
 	}
 }
