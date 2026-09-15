@@ -19,11 +19,20 @@ public interface UserRepository extends JpaRepository<User, Long> {
 	@Query("""
 			select new com.irene.twelvebooks.notification.ActorView(
 				u.id, u.handle, u.displayName, u.avatarUrl)
-			from User u where u.id in :ids
+			from User u where u.id in :ids and u.deletedAt is null
 			""")
 	List<ActorView> findActorViews(@Param("ids") List<Long> ids);
 
-	Optional<User> findByEmail(String email);
+	/**
+	 * 살아 있는 계정만 찾는다. 탈퇴한 행은 남아 있지만 <b>없는 것과 같이</b> 답한다.
+	 *
+	 * <p>조건을 쿼리에 두는 이유는 부르는 곳이 많아서다 — 로그인·가입 중복 확인·비밀번호
+	 * 재설정이 전부 이 메서드를 지난다. 호출부마다 확인하게 하면 한 곳을 빠뜨리는 날이 오고,
+	 * 그 한 곳이 "탈퇴했는데 로그인된다"가 된다.
+	 */
+	@Query("select u from User u where u.email = :email and u.deletedAt is null")
+	Optional<User> findByEmail(@Param("email") String email);
 
-	Optional<User> findByHandle(String handle);
+	@Query("select u from User u where u.handle = :handle and u.deletedAt is null")
+	Optional<User> findByHandle(@Param("handle") String handle);
 }

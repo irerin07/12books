@@ -4,7 +4,10 @@ import com.irene.twelvebooks.auth.AuthUser;
 import com.irene.twelvebooks.follow.FollowService;
 import com.irene.twelvebooks.user.dto.ProfileResponse;
 import com.irene.twelvebooks.user.dto.UpdateProfileRequest;
+import com.irene.twelvebooks.user.dto.WithdrawRequest;
 import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -37,6 +40,18 @@ public class UserController {
 	@PatchMapping("/me")
 	public ProfileResponse updateMe(@AuthUser Long userId, @Valid @RequestBody UpdateProfileRequest request) {
 		return withRelation(userService.updateProfile(userId, request), userId);
+	}
+
+	/**
+	 * 탈퇴. <b>행은 지우지 않는다</b> — 계정에 표시를 하고 그 사람과 관련된 것이 조회에서 빠진다.
+	 *
+	 * <p>{@code DELETE}에 본문을 싣는다. 비밀번호를 다시 받아야 하는데 질의 문자열에 실으면
+	 * 접근 로그와 브라우저 기록에 그대로 남는다.
+	 */
+	@DeleteMapping("/me")
+	public ResponseEntity<Void> withdraw(@AuthUser Long userId, @Valid @RequestBody WithdrawRequest request) {
+		userService.withdraw(userId, request);
+		return ResponseEntity.noContent().build();
 	}
 
 	/**

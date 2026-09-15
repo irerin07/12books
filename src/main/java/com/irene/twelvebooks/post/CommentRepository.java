@@ -25,6 +25,7 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 			where c.postId = :postId
 			  and c.deletedAt is null
 			  and c.hiddenAt is null
+			  and exists (select 1 from User u where u.id = c.authorId and u.deletedAt is null)
 			  and (:cursor is null or c.id < :cursor)
 			order by c.id desc
 			""")
@@ -32,7 +33,7 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 			Pageable pageable);
 
 	/** 살아 있는 댓글 하나. 지운 댓글은 없는 것과 같이 답한다. */
-	@Query("select c from Comment c where c.id = :commentId and c.deletedAt is null and c.hiddenAt is null")
+	@Query("select c from Comment c where c.id = :commentId and c.deletedAt is null and c.hiddenAt is null and exists (select 1 from User u where u.id = c.authorId and u.deletedAt is null)")
 	Optional<Comment> findLive(@Param("commentId") Long commentId);
 
 	/**

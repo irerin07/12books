@@ -27,6 +27,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			where p.bookId = :bookId
 			  and p.deletedAt is null
 			  and p.hiddenAt is null
+			  and exists (select 1 from User u where u.id = p.authorId and u.deletedAt is null)
 			  and (:cursor is null or p.id < :cursor)
 			order by p.id desc
 			""")
@@ -43,6 +44,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			where p.authorId = :authorId
 			  and p.deletedAt is null
 			  and p.hiddenAt is null
+			  and exists (select 1 from User u where u.id = p.authorId and u.deletedAt is null)
 			  and (:cursor is null or p.id < :cursor)
 			order by p.id desc
 			""")
@@ -63,6 +65,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			where p.authorId not in :excludedIds
 			  and p.deletedAt is null
 			  and p.hiddenAt is null
+			  and exists (select 1 from User u where u.id = p.authorId and u.deletedAt is null)
 			  and (:cursor is null or p.id < :cursor)
 			order by p.id desc
 			""")
@@ -83,6 +86,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			where p.authorId in :authorIds
 			  and p.deletedAt is null
 			  and p.hiddenAt is null
+			  and exists (select 1 from User u where u.id = p.authorId and u.deletedAt is null)
 			  and (:cursor is null or p.id < :cursor)
 			order by p.id desc
 			""")
@@ -98,6 +102,10 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	 * 있어서 카운터 UPDATE를 먼저 둘 수 없고, 그래서 잠금만 따로 먼저 잡는다.
 	 *
 	 * <p>글이 없으면 빈 값이다. 잠글 것이 없으니 뒤이은 삭제도 0행이고, 취소는 어차피 멱등이다.
+	 *
+	 * <p>작성자가 탈퇴했는지는 <b>여기서 보지 않는다.</b> {@code FOR UPDATE}는 서브쿼리가 읽은
+	 * 행까지 잠그므로, 조건을 하나 더 달면 좋아요 취소가 {@code users} 행을 잠그게 된다 —
+	 * 잠금 순서가 늘어나면 교착이 늘어난다. 보이지 않게 하는 일은 조회 쿼리가 맡는다.
 	 */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select p from Post p where p.id = :postId and p.deletedAt is null and p.hiddenAt is null")
@@ -153,7 +161,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	 * <p>{@code findById}를 그대로 쓰지 않는 이유이기도 하다. 상속받은 그 메서드는 지운 글도
 	 * 돌려주므로, 사용자에게 보이는 경로에서는 반드시 이쪽을 쓴다.
 	 */
-	@Query("select p from Post p where p.id = :postId and p.deletedAt is null and p.hiddenAt is null")
+	@Query("select p from Post p where p.id = :postId and p.deletedAt is null and p.hiddenAt is null and exists (select 1 from User u where u.id = p.authorId and u.deletedAt is null)")
 	Optional<Post> findLive(@Param("postId") Long postId);
 
 	/**
@@ -162,7 +170,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	 * <p>상속받은 {@code findAllById}를 쓰면 <b>지운 글까지 딸려 온다.</b> 알림 목록에 그것을
 	 * 그대로 실으면 지운 본문이 다시 보이고, 삭제가 삭제가 아니게 된다.
 	 */
-	@Query("select p from Post p where p.id in :postIds and p.deletedAt is null and p.hiddenAt is null")
+	@Query("select p from Post p where p.id in :postIds and p.deletedAt is null and p.hiddenAt is null and exists (select 1 from User u where u.id = p.authorId and u.deletedAt is null)")
 	List<Post> findAllLive(@Param("postIds") List<Long> postIds);
 
 	/**
@@ -178,7 +186,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			""")
 	List<PostView> findLivePostViews(@Param("postIds") List<Long> postIds);
 
-	@Query("select count(p) > 0 from Post p where p.id = :postId and p.deletedAt is null and p.hiddenAt is null")
+	@Query("select count(p) > 0 from Post p where p.id = :postId and p.deletedAt is null and p.hiddenAt is null and exists (select 1 from User u where u.id = p.authorId and u.deletedAt is null)")
 	boolean existsLive(@Param("postId") Long postId);
 
 	/**

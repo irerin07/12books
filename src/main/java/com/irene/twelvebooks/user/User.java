@@ -11,6 +11,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.DynamicUpdate;
 
+import java.time.LocalDateTime;
+
 /**
  * {@code @DynamicUpdate}인 이유가 있다.
  *
@@ -50,6 +52,18 @@ public class User extends BaseTimeEntity {
 
 	@Column(name = "avatar_url", length = 500)
 	private String avatarUrl;
+
+	/**
+	 * 탈퇴한 시각. {@code null}이면 쓰고 있는 계정이다.
+	 *
+	 * <p>계획서는 하드 삭제를 권고했지만 그렇게 하지 않는다. 지운 뒤에 오는 질문에 답할 수
+	 * 없고 되돌릴 방법도 없다 — 이 프로젝트의 규약을 탈퇴에서도 지킨다({@code V13}).
+	 *
+	 * <p>행이 남으므로 이메일과 handle의 유일성은 <b>살아 있는 계정에만</b> 걸린다.
+	 * 그래야 같은 주소로 다시 가입할 수 있다.
+	 */
+	@Column(name = "deleted_at")
+	private LocalDateTime deletedAt;
 
 	/**
 	 * 권한. 토큰이 아니라 <b>이 행</b>이 진실이다.
@@ -112,6 +126,24 @@ public class User extends BaseTimeEntity {
 			throw new IllegalArgumentException("비밀번호 해시는 비어 있을 수 없습니다");
 		}
 		this.passwordHash = newPasswordHash;
+	}
+
+	/**
+	 * 탈퇴한다. 비밀번호 확인은 부르는 쪽이 한다 — 엔티티가 인코더를 알면 도메인이 보안
+	 * 구현에 묶인다({@link #changePassword}와 같은 이유).
+	 */
+	public void withdraw(LocalDateTime now) {
+		if (deletedAt == null) {
+			deletedAt = now;
+		}
+	}
+
+	public boolean isWithdrawn() {
+		return deletedAt != null;
+	}
+
+	public LocalDateTime getDeletedAt() {
+		return deletedAt;
 	}
 
 	public Long getId() {
