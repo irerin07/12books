@@ -244,4 +244,33 @@ class WithdrawalTest extends AbstractIntegrationTest {
 				.andExpect(jsonPath("$.followerCount").value(0))
 				.andExpect(jsonPath("$.followingCount").value(0));
 	}
+
+	/**
+	 * 탈퇴 뒤에 남아 있는 access 토큰으로 쓰는 경우.
+	 *
+	 * <p>access의 남은 수명을 허용하는 것과 <b>보이지 않는 글의 숫자만 늘어나는 것</b>은 다른
+	 * 문제다. 쓰기는 성공하고 카운터는 오르는데 목록에서는 빠지므로, "댓글 1개"를 눌렀을 때
+	 * 아무것도 없는 화면이 된다.
+	 */
+	@Test
+	@DisplayName("탈퇴한 뒤에는 남은 토큰으로도 쓸 수 없다")
+	void refusesWritesAfterWithdrawal() throws Exception {
+		Long othersPost = writePost(otherBearer, "남이 쓴 글이다.");
+		withdraw("123456789");
+
+		mockMvc.perform(post("/api/v1/posts/{id}/comments", othersPost).header("Authorization", bearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"content": "탈퇴하고도 쓴다"}"""))
+				.andExpect(status().isUnauthorized());
+		mockMvc.perform(post("/api/v1/posts").header("Authorization", bearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"bookId": %d, "content": "탈퇴하고도 쓴다"}""".formatted(bookId)))
+				.andExpect(status().isUnauthorized());
+
+		// 거절됐으니 숫자도 그대로여야 한다.
+		mockMvc.perform(get("/api/v1/posts/{id}", othersPost).header("Authorization", otherBearer))
+				.andExpect(jsonPath("$.commentCount").value(0));
+	}
 }

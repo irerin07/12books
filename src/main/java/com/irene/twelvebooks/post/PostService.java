@@ -64,7 +64,9 @@ public class PostService {
 		Book book = bookRepository.findById(request.bookId())
 				.orElseThrow(() -> new BusinessException(ErrorCode.BOOK_NOT_FOUND));
 		User author = userRepository.findById(authorId)
-				.orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+				// 댓글과 같은 이유. 탈퇴 뒤에 쓰면 아무에게도 보이지 않는 글만 쌓인다.
+				.filter(candidate -> !candidate.isWithdrawn())
+				.orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
 
 		// 빈 값이면 붙일 기록이 없다는 뜻이다(그 사이 서재에서 빠졌다). 글을 막을 이유가 아니고,
 		// 연결 없는 글은 삭제 이후의 정상 상태와 같다.

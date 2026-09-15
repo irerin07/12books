@@ -62,7 +62,11 @@ public class CommentService {
 			throw new BusinessException(ErrorCode.POST_NOT_FOUND);
 		}
 		User author = userRepository.findById(authorId)
-				.orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+				// 탈퇴한 사람은 쓸 수 없다. access 토큰의 남은 수명을 허용하는 것과,
+				// **보이지 않는 댓글의 숫자만 늘어나는 것**은 다른 문제다 — 목록에서는 빠지는데
+				// 카운터만 올라 "댓글 1개"를 눌렀을 때 빈 화면이 된다.
+				.filter(candidate -> !candidate.isWithdrawn())
+				.orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
 
 		Comment comment;
 		try {
