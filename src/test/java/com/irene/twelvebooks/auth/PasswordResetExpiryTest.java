@@ -1,13 +1,10 @@
 package com.irene.twelvebooks.auth;
 
-import com.icegreen.greenmail.junit5.GreenMailExtension;
-import com.icegreen.greenmail.util.ServerSetupTest;
 import com.irene.twelvebooks.support.AbstractIntegrationTest;
 import com.irene.twelvebooks.user.User;
 import com.irene.twelvebooks.user.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -31,15 +28,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 한다는 사실 자체를 확인해야 하기 때문이고, 그 대신 수명을 1초로 줄여 둔다.
  */
 @TestPropertySource(properties = {
-		"spring.mail.host=localhost",
-		"spring.mail.port=3026",
 		"twelvebooks.auth.password-reset.ttl=PT1S"
 })
 class PasswordResetExpiryTest extends AbstractIntegrationTest {
 
-	@RegisterExtension
-	static final GreenMailExtension GREEN_MAIL =
-			new GreenMailExtension(ServerSetupTest.SMTP.port(3026));
 
 	@Autowired
 	MockMvc mockMvc;
