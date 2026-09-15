@@ -91,8 +91,8 @@ public class AuthService {
 				// 사용자"라고 알려 주면 그것도 계정 유무를 흘리는 통로가 된다.
 				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_RESET_TOKEN));
 
-		// 해시와 자격증명 번호가 한 문장으로 올라간다. 이 커밋 이후에 옛 비밀번호로 만들어지는
-		// 세션은 옛 번호를 달고 있어 첫 재발급에서 걸린다.
+		// 해시가 바뀌면 지문도 함께 바뀐다 — 지문이 해시에서 파생되기 때문이다. 이 커밋
+		// 이후에 옛 비밀번호로 만들어지는 세션은 옛 지문을 달고 있어 첫 재발급에서 걸린다.
 		user.changePassword(passwordEncoder.encode(request.password()));
 		refreshTokenStore.revokeAll(userId);
 	}
@@ -123,11 +123,10 @@ public class AuthService {
 	/**
 	 * 이메일이 없는 경우와 비밀번호가 틀린 경우를 <em>구분하지 않는다.</em>
 	 * 구분하면 로그인 폼이 계정 존재 여부를 알려주는 조회 도구가 된다.
-	 */
-	/**
-	 * <p>세션에 적는 자격증명 번호는 <b>지금 검증한 그 해시와 같은 조회에서 온 값</b>이다.
-	 * 번호를 따로 읽으면 그 사이에 재설정이 끝났을 때 <b>옛 해시에 새 번호가 붙어</b> 그
-	 * 세션이 검사를 통과한다. 한 행에서 함께 읽으면 그 창이 없다.
+	 *
+	 * <p>세션에는 <b>방금 검증한 그 해시의 지문</b>을 적는다. 사용자를 다시 읽어 만들면 검증과
+	 * 발급 사이에 재설정이 끝났을 때 그 세션이 새 지문을 달고 살아남는다 — 옛 비밀번호로
+	 * 만들어졌는데 검사를 통과한다.
 	 */
 	public Tokens login(LoginRequest request) {
 		User user = userRepository.findByEmail(request.email())
@@ -136,7 +135,7 @@ public class AuthService {
 
 		return new Tokens(
 				jwtProvider.createAccessToken(user.getId(), user.getHandle()),
-				refreshTokenStore.issue(user.getId(), String.valueOf(user.getCredentialVersion())));
+				refreshTokenStore.issue(user.getId(), TokenSecrets.fingerprintOf(user.getPasswordHash())));
 	}
 
 	/**
@@ -156,11 +155,14 @@ public class AuthService {
 		User user = userRepository.findById(userId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
 
-		// 옛 비밀번호로 만들어진 세션을 여기서 걸러 낸다. 무효화 직후에 도착한 발급은
-		// 끊긴 적이 없어 계속 재발급되는데, 그 세션은 그때의 번호를 들고 있다.
-		// 비교 대상은 방금 읽은 사용자 행의 값이라 비밀번호와 언제나 같은 시점의 것이다.
-		String issuedWith = refreshTokenStore.findCredentialVersion(refreshToken).orElse("0");
-		if (!issuedWith.equals(String.valueOf(user.getCredentialVersion()))) {
+		// 옛 비밀번호로 만들어진 세션을 여기서 걸러 낸다. 무효화 직후에 도착한 발급은 끊긴
+		// 적이 없어 계속 재발급되는데, 그 세션은 그때의 지문을 들고 있다.
+		//
+		// 지문이 없는 세션도 거절한다. 그것은 이 기능이 배포되기 전에 만들어진 세션인데,
+		// 통과시키면 구버전 인스턴스가 무효화 뒤에 뒤늦게 발급한 세션이 그대로 살아남는
+		// 배포 겹침 창이 열린다. 대가는 배포 시점의 전원 재로그인이고, 정해 둔 정책이다.
+		String issuedWith = refreshTokenStore.findCredentialFingerprint(refreshToken).orElse(null);
+		if (!TokenSecrets.fingerprintOf(user.getPasswordHash()).equals(issuedWith)) {
 			refreshTokenStore.revoke(refreshToken);
 			throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
 		}

@@ -12,7 +12,6 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -54,9 +53,6 @@ class PasswordResetTest extends AbstractIntegrationTest {
 
 	@Autowired
 	PasswordEncoder passwordEncoder;
-
-	@Autowired
-	JdbcTemplate jdbcTemplate;
 
 	@Autowired
 	StringRedisTemplate redis;
@@ -174,11 +170,33 @@ class PasswordResetTest extends AbstractIntegrationTest {
 	}
 
 	/**
-	 * 자격증명 번호는 <b>비밀번호와 같은 자리</b>에 산다.
+	 * 지문이 없는 세션은 거절한다.
 	 *
-	 * <p>다른 곳에 두면 수명이 어긋난다 — 번호가 먼저 사라지면 "한 번도 안 바꾼 상태"로
-	 * 보여, 재설정 뒤에 정상적으로 로그인한 세션이 이유 없이 끊긴다. 재설정은 드물고 그 뒤의
-	 * 로그인은 오래가므로 실제로 잘 일어나는 순서다.
+	 * <p>이 기능이 배포되기 전에 만들어진 세션이다. 통과시키면 <b>배포 겹침 창</b>이 열린다 —
+	 * 아직 살아 있는 구버전 인스턴스가 무효화가 끝난 뒤에 지문 없는 세션을 발급하면, 새 코드가
+	 * 그것을 그대로 받아 준다. 대가는 배포 시점의 전원 재로그인이고, 그렇게 하기로 정했다.
+	 */
+	@Test
+	@DisplayName("지문이 없는 옛 세션은 재발급되지 않는다")
+	void sessionsWithoutFingerprintAreRejected() throws Exception {
+		Cookie refresh = login("123456789").getResponse().getCookie(RefreshCookies.NAME);
+		assertThat(refresh).isNotNull();
+
+		// 배포 전에 만들어진 세션을 흉내 낸다 — 지문 필드만 없다.
+		redis.keys("refresh:*").stream()
+				.filter(key -> !key.startsWith("refresh:user:"))
+				.forEach(key -> redis.opsForHash().delete(key, "cred"));
+
+		mockMvc.perform(post("/api/v1/auth/reissue").cookie(refresh))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("A003"));
+	}
+
+	/**
+	 * 재설정 뒤에 정상적으로 로그인한 세션은 계속 살아야 한다.
+	 *
+	 * <p>지문을 비밀번호와 다른 자리에 두면 수명이 어긋나 이 세션이 이유 없이 끊긴다. 해시에서
+	 * 파생하면 그럴 자리가 없다 — 비교 대상이 그 행의 현재 해시뿐이다.
 	 */
 	@Test
 	@DisplayName("재설정한 뒤 로그인한 세션은 계속 재발급된다")
@@ -189,15 +207,7 @@ class PasswordResetTest extends AbstractIntegrationTest {
 		Cookie refresh = login("newpassword1").getResponse().getCookie(RefreshCookies.NAME);
 		assertThat(refresh).isNotNull();
 
-		// 번호를 세션과 다른 저장소에 두면 그쪽이 먼저 비는 순간이 온다. 그 상황을 흉내 낸다.
-		redis.delete(redis.keys("credver:*"));
-
 		mockMvc.perform(post("/api/v1/auth/reissue").cookie(refresh))
 				.andExpect(status().isOk());
-
-		// 번호가 사용자 행에 있으면 비밀번호와 함께 갱신되고 따로 만료되지 않는다.
-		assertThat(jdbcTemplate.queryForObject(
-				"select credential_version from users where email = ?", Long.class, "me@example.com"))
-				.isEqualTo(1L);
 	}
 }

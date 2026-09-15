@@ -47,7 +47,7 @@ class RefreshTokenStoreTest extends AbstractIntegrationTest {
 	@Test
 	@DisplayName("발급한 refresh 토큰으로 사용자를 찾는다")
 	void issuesAndResolvesToken() {
-		String token = store.issue(42L, "0");
+		String token = store.issue(42L, "지문");
 
 		assertThat(store.findUserId(token)).contains(42L);
 	}
@@ -55,7 +55,7 @@ class RefreshTokenStoreTest extends AbstractIntegrationTest {
 	@Test
 	@DisplayName("Redis에는 원문이 아니라 해시가 저장된다")
 	void storesHashNotRawToken() {
-		String token = store.issue(42L, "0");
+		String token = store.issue(42L, "지문");
 
 		assertThat(redis.hasKey("refresh:" + token)).isFalse();
 		assertThat(sessionKeys()).hasSize(1).allSatisfy(key -> assertThat(key).doesNotContain(token));
@@ -64,7 +64,7 @@ class RefreshTokenStoreTest extends AbstractIntegrationTest {
 	@Test
 	@DisplayName("세션은 refresh TTL만큼 살아 있다")
 	void sessionExpiresWithRefreshTtl() {
-		store.issue(42L, "0");
+		store.issue(42L, "지문");
 
 		String key = sessionKeys().iterator().next();
 
@@ -75,8 +75,8 @@ class RefreshTokenStoreTest extends AbstractIntegrationTest {
 	@Test
 	@DisplayName("같은 사용자가 여러 기기에서 로그인해도 세션이 함께 살아 있다")
 	void keepsSessionPerDevice() {
-		String phone = store.issue(42L, "0");
-		String laptop = store.issue(42L, "0");
+		String phone = store.issue(42L, "지문");
+		String laptop = store.issue(42L, "지문");
 
 		assertThat(phone).isNotEqualTo(laptop);
 		assertThat(store.findUserId(phone)).contains(42L);
@@ -86,7 +86,7 @@ class RefreshTokenStoreTest extends AbstractIntegrationTest {
 	@Test
 	@DisplayName("rotation 하면 새 토큰만 유효하고 옛 토큰은 죽는다")
 	void rotationInvalidatesPreviousToken() {
-		String old = store.issue(42L, "0");
+		String old = store.issue(42L, "지문");
 
 		String rotated = store.rotate(old).orElseThrow();
 
@@ -98,7 +98,7 @@ class RefreshTokenStoreTest extends AbstractIntegrationTest {
 	@Test
 	@DisplayName("이미 쓴 토큰으로 다시 rotation 할 수 없다")
 	void cannotRotateConsumedToken() {
-		String old = store.issue(42L, "0");
+		String old = store.issue(42L, "지문");
 		store.rotate(old);
 
 		assertThat(store.rotate(old)).isEmpty();
@@ -107,8 +107,8 @@ class RefreshTokenStoreTest extends AbstractIntegrationTest {
 	@Test
 	@DisplayName("로그아웃은 그 세션만 지우고 다른 기기는 건드리지 않는다")
 	void revokeRemovesOnlyThatSession() {
-		String phone = store.issue(42L, "0");
-		String laptop = store.issue(42L, "0");
+		String phone = store.issue(42L, "지문");
+		String laptop = store.issue(42L, "지문");
 
 		store.revoke(phone);
 
@@ -127,8 +127,8 @@ class RefreshTokenStoreTest extends AbstractIntegrationTest {
 	@Test
 	@DisplayName("역인덱스가 사용자의 세션 해시를 모아둔다 (전체 로그아웃 대비)")
 	void maintainsPerUserIndex() {
-		store.issue(42L, "0");
-		String laptop = store.issue(42L, "0");
+		store.issue(42L, "지문");
+		String laptop = store.issue(42L, "지문");
 
 		assertThat(redis.opsForZSet().size("refresh:user:42")).isEqualTo(2);
 
@@ -140,7 +140,7 @@ class RefreshTokenStoreTest extends AbstractIntegrationTest {
 	@Test
 	@DisplayName("교체된 세션은 같은 사용자의 것이다")
 	void rotationKeepsOwner() {
-		String token = store.issue(42L, "0");
+		String token = store.issue(42L, "지문");
 
 		String rotated = store.rotate(token).orElseThrow();
 
@@ -150,7 +150,7 @@ class RefreshTokenStoreTest extends AbstractIntegrationTest {
 	@Test
 	@DisplayName("같은 토큰으로 동시에 재발급하면 하나만 성공한다")
 	void rotationIsAtomicUnderConcurrency() throws Exception {
-		String token = store.issue(42L, "0");
+		String token = store.issue(42L, "지문");
 		int threads = 16;
 
 		ExecutorService pool = Executors.newFixedThreadPool(threads);
@@ -180,12 +180,12 @@ class RefreshTokenStoreTest extends AbstractIntegrationTest {
 		// 이미 만료된 시점에 발급된 것처럼 보이는 세션을 심는다
 		RefreshTokenStore past = new RefreshTokenStore(redis, jwtProperties,
 				Clock.fixed(Instant.now().minus(Duration.ofDays(30)), ZoneOffset.UTC));
-		past.issue(42L, "0");
-		past.issue(42L, "0");
+		past.issue(42L, "지문");
+		past.issue(42L, "지문");
 
 		assertThat(redis.opsForZSet().size("refresh:user:42")).isEqualTo(2);
 
-		store.issue(42L, "0");
+		store.issue(42L, "지문");
 
 		// 새 세션 하나만 남는다 — 만료된 두 개는 정리된다
 		assertThat(redis.opsForZSet().size("refresh:user:42")).isEqualTo(1);

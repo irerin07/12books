@@ -34,14 +34,14 @@ public class RefreshTokenStore {
 	private static final String USER_INDEX_KEY_PREFIX = "refresh:user:";
 	private static final String USER_ID_FIELD = "userId";
 	private static final String ISSUED_AT_FIELD = "issuedAt";
-	private static final String CREDENTIAL_VERSION_FIELD = "credVer";
+	private static final String CREDENTIAL_FIELD = "cred";
 
 	/**
 	 * KEYS[1] 세션 키 · KEYS[2] 역인덱스
-	 * ARGV: 1 해시, 2 userId, 3 발급시각, 4 TTL(ms), 5 만료 score, 6 현재 score, 7 자격증명 번호
+	 * ARGV: 1 해시, 2 userId, 3 발급시각, 4 TTL(ms), 5 만료 score, 6 현재 score, 7 자격증명 지문
 	 */
 	private static final RedisScript<Void> ISSUE_SCRIPT = new DefaultRedisScript<>("""
-			redis.call('HSET', KEYS[1], 'userId', ARGV[2], 'issuedAt', ARGV[3], 'credVer', ARGV[7])
+			redis.call('HSET', KEYS[1], 'userId', ARGV[2], 'issuedAt', ARGV[3], 'cred', ARGV[7])
 			redis.call('PEXPIRE', KEYS[1], ARGV[4])
 			redis.call('ZADD', KEYS[2], ARGV[5], ARGV[1])
 			redis.call('PEXPIRE', KEYS[2], ARGV[4])
@@ -56,12 +56,12 @@ public class RefreshTokenStore {
 	private static final RedisScript<String> ROTATE_SCRIPT = new DefaultRedisScript<>("""
 			local userId = redis.call('HGET', KEYS[1], 'userId')
 			if not userId then return nil end
-			local credVer = redis.call('HGET', KEYS[1], 'credVer') or '0'
+			local cred = redis.call('HGET', KEYS[1], 'cred')
 			redis.call('DEL', KEYS[1])
 			local index = 'refresh:user:' .. userId
 			redis.call('ZREM', index, ARGV[1])
 			local newKey = 'refresh:' .. ARGV[2]
-			redis.call('HSET', newKey, 'userId', userId, 'issuedAt', ARGV[3], 'credVer', credVer)
+			redis.call('HSET', newKey, 'userId', userId, 'issuedAt', ARGV[3], 'cred', cred)
 			redis.call('PEXPIRE', newKey, ARGV[4])
 			redis.call('ZADD', index, ARGV[5], ARGV[2])
 			redis.call('PEXPIRE', index, ARGV[4])
@@ -91,12 +91,12 @@ public class RefreshTokenStore {
 	/**
 	 * 세션을 만든다.
 	 *
-	 * @param credentialVersion <b>검증한 해시와 같은 조회에서 온</b> 번호({@code users} 행의
-	 *                          {@code credential_version}). 여기서 따로 읽으면 안 된다 —
-	 *                          검증과 발급 사이에 비밀번호가 바뀌었을 때 그 세션이 새 번호를
-	 *                          달고 살아남는다
+	 * @param credentialFingerprint <b>방금 검증한 그 해시</b>에서 뽑은 지문
+	 *                              ({@link TokenSecrets#fingerprintOf}). 여기서 사용자를 다시
+	 *                              읽어 만들면 안 된다 — 검증과 발급 사이에 비밀번호가 바뀌었을 때
+	 *                              그 세션이 새 지문을 달고 살아남는다
 	 */
-	public String issue(Long userId, String credentialVersion) {
+	public String issue(Long userId, String credentialFingerprint) {
 		String rawToken = newToken();
 		String hash = hash(rawToken);
 		Instant now = clock.instant();
@@ -106,18 +106,24 @@ public class RefreshTokenStore {
 				hash, String.valueOf(userId), now.toString(),
 				String.valueOf(refreshTokenTtl.toMillis()),
 				String.valueOf(now.plus(refreshTokenTtl).toEpochMilli()),
-				String.valueOf(now.toEpochMilli()), credentialVersion);
+				String.valueOf(now.toEpochMilli()), credentialFingerprint);
 
 		return rawToken;
 	}
 
-	/** 세션이 어느 비밀번호로 만들어졌는지. 세션이 없으면 빈 값이다. */
-	public Optional<String> findCredentialVersion(String rawToken) {
+	/**
+	 * 세션이 <b>어느 비밀번호로</b> 만들어졌는지. 세션이 없거나 지문이 적혀 있지 않으면 빈 값이다.
+	 *
+	 * <p>지문이 없는 세션은 이 기능이 배포되기 전에 만들어진 것이다. 호출부는 그것을
+	 * <b>거절한다</b> — 통과시키면, 구버전 인스턴스가 무효화 뒤에 뒤늦게 발급한 세션이
+	 * 그대로 살아남는 배포 겹침 창이 열린다.
+	 */
+	public Optional<String> findCredentialFingerprint(String rawToken) {
 		if (rawToken == null || rawToken.isBlank()) {
 			return Optional.empty();
 		}
-		Object version = redis.opsForHash().get(sessionKey(hash(rawToken)), CREDENTIAL_VERSION_FIELD);
-		return Optional.ofNullable(version).map(Object::toString);
+		Object fingerprint = redis.opsForHash().get(sessionKey(hash(rawToken)), CREDENTIAL_FIELD);
+		return Optional.ofNullable(fingerprint).map(Object::toString);
 	}
 
 	public Optional<Long> findUserId(String rawToken) {

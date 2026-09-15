@@ -34,6 +34,25 @@ final class TokenSecrets {
 		return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
 	}
 
+	/**
+	 * 지금 자격증명의 <b>지문.</b> 세션이 어느 비밀번호로 만들어졌는지를 가리킨다.
+	 *
+	 * <p>따로 버전 컬럼을 두지 않는 이유가 있다. 해시와 번호를 나눠 두면 (1) 둘을 따로 읽게
+	 * 되어 그 사이에 재설정이 끝나면 <b>옛 해시에 새 번호가 붙고</b>, (2) 번호를 올리는 시점과
+	 * 동시 변경을 따로 관리해야 한다. 지문은 <b>그 행의 현재 해시에 대한 순수 함수</b>라
+	 * 둘 다 생기지 않는다 — 검증한 해시에서 뽑으면 언제나 짝이 맞는다.
+	 *
+	 * <p>BCrypt는 바꿀 때마다 새 솔트를 뽑으므로 같은 비밀번호로 되돌려도 지문이 달라진다.
+	 * 자르지 않고 전체를 쓴다 — 길이를 정하는 결정 자체를 만들지 않는다.
+	 *
+	 * <p>저장되는 것은 해시가 아니라 단방향 요약이다. <b>원문 자격증명을 추가로 노출하지 않는
+	 * 비교용 값</b>이라고 보는 것이 정확하다(되짚으려면 솔트를 포함한 BCrypt 해시 전체를
+	 * 맞혀야 한다).
+	 */
+	static String fingerprintOf(String passwordHash) {
+		return hash(passwordHash);
+	}
+
 	static String hash(String rawToken) {
 		try {
 			MessageDigest digest = MessageDigest.getInstance("SHA-256");

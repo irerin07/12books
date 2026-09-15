@@ -66,15 +66,6 @@ public class User extends BaseTimeEntity {
 	@Column(nullable = false, length = 20, updatable = false)
 	private UserRole role;
 
-	/**
-	 * 비밀번호가 몇 번 바뀌었는가. 세션이 <b>어느 비밀번호로</b> 만들어졌는지를 가리는 표식이다.
-	 *
-	 * <p>해시와 <b>같은 행</b>에 있는 것이 핵심이다. 따로 두면 (1) 해시와 번호를 따로 읽게 되어
-	 * 그 사이에 재설정이 끝나면 옛 해시에 새 번호가 붙고, (2) 수명이 달라 번호가 먼저 사라지면
-	 * 멀쩡한 세션이 끊긴다. 자세한 것은 {@code V12__credential_version.sql}에 있다.
-	 */
-	@Column(name = "credential_version", nullable = false)
-	private long credentialVersion;
 
 	protected User() {
 	}
@@ -121,9 +112,6 @@ public class User extends BaseTimeEntity {
 			throw new IllegalArgumentException("비밀번호 해시는 비어 있을 수 없습니다");
 		}
 		this.passwordHash = newPasswordHash;
-		// 해시와 <b>한 문장으로</b> 올라간다. 따로 갱신하면 그 사이에 발급된 세션이
-		// 옛 해시에 새 번호를 달고 살아남는다.
-		this.credentialVersion++;
 	}
 
 	public Long getId() {
@@ -152,10 +140,6 @@ public class User extends BaseTimeEntity {
 
 	public String getAvatarUrl() {
 		return avatarUrl;
-	}
-
-	public long getCredentialVersion() {
-		return credentialVersion;
 	}
 
 	public UserRole getRole() {
