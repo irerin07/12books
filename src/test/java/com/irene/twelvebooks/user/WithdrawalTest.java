@@ -172,4 +172,44 @@ class WithdrawalTest extends AbstractIntegrationTest {
 		mockMvc.perform(get("/api/v1/users/{handle}", "irene").header("Authorization", otherBearer))
 				.andExpect(status().isOk());
 	}
+
+	/**
+	 * 탈퇴자의 댓글은 목록에서 빠진다. <b>숫자도 함께 빠져야 한다.</b>
+	 *
+	 * <p>조회 조건만 더하면 "댓글 1개"를 눌렀는데 아무것도 없는 화면이 된다. 운영자 숨김에서
+	 * 이미 한 번 겪은 것과 같은 자리다.
+	 */
+	@Test
+	@DisplayName("탈퇴하면 그 사람이 단 댓글만큼 댓글 수도 줄어든다")
+	void adjustsCommentCount() throws Exception {
+		Long othersPost = writePost(otherBearer, "남이 쓴 글이다.");
+		comment(bearer, othersPost, "탈퇴할 사람의 댓글");
+		comment(otherBearer, othersPost, "남는 댓글");
+
+		withdraw("123456789");
+
+		mockMvc.perform(get("/api/v1/posts/{id}/comments", othersPost)
+						.header("Authorization", otherBearer))
+				.andExpect(jsonPath("$.items.length()").value(1));
+		mockMvc.perform(get("/api/v1/posts/{id}", othersPost).header("Authorization", otherBearer))
+				.andExpect(jsonPath("$.commentCount").value(1));
+	}
+
+	private Long writePost(String who, String content) throws Exception {
+		String body = mockMvc.perform(post("/api/v1/posts").header("Authorization", who)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"bookId": %d, "content": "%s"}""".formatted(bookId, content)))
+				.andExpect(status().isCreated())
+				.andReturn().getResponse().getContentAsString();
+		return ((Number) JsonPath.read(body, "$.id")).longValue();
+	}
+
+	private void comment(String who, Long postId, String content) throws Exception {
+		mockMvc.perform(post("/api/v1/posts/{id}/comments", postId).header("Authorization", who)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"content": "%s"}""".formatted(content)))
+				.andExpect(status().isCreated());
+	}
 }

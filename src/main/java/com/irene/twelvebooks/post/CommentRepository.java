@@ -91,6 +91,24 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 	 * @return 지운 행 수. 0이면 이미 지워졌거나 <b>이미 내려간</b> 댓글이다.
 	 */
 	@Modifying
-	@Query("update Comment c set c.deletedAt = :now where c.id = :commentId and c.deletedAt is null and c.hiddenAt is null")
+	@Query("""
+			update Comment c set c.deletedAt = :now
+			where c.id = :commentId and c.deletedAt is null and c.hiddenAt is null
+			  and exists (select 1 from User u where u.id = c.authorId and u.deletedAt is null)
+			""")
 	int softDeleteIfCounted(@Param("commentId") Long commentId, @Param("now") LocalDateTime now);
+
+	/**
+	 * 이 댓글의 작성자가 아직 살아 있는가.
+	 *
+	 * <p>운영자가 댓글을 내리거나 되돌릴 때 <b>댓글 수를 건드릴지</b> 정하는 데 쓴다.
+	 * 탈퇴자의 댓글은 이미 숫자에서 빠져 있으므로, 그것을 또 내리거나 되돌리며 올리면
+	 * 숫자가 실제와 어긋난다.
+	 */
+	@Query("""
+			select count(c) > 0 from Comment c
+			where c.id = :commentId
+			  and exists (select 1 from User u where u.id = c.authorId and u.deletedAt is null)
+			""")
+	boolean hasActiveAuthor(@Param("commentId") Long commentId);
 }

@@ -153,6 +153,11 @@ public class AuthService {
 		Long userId = refreshTokenStore.findUserId(refreshToken)
 				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
 		User user = userRepository.findById(userId)
+				// 탈퇴한 계정의 세션을 여기서 끊는다. 탈퇴와 겹쳐 들어온 로그인은 무효화가
+				// 끝난 뒤에 세션을 만들어 그 그물에 걸리지 않고, 탈퇴는 비밀번호를 바꾸지
+				// 않으므로 아래 지문 검사도 통과한다 — access가 잠깐 남는 것과 달리
+				// refresh가 이어지는 한 끝나지 않는다.
+				.filter(candidate -> !candidate.isWithdrawn())
 				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
 
 		// 옛 비밀번호로 만들어진 세션을 여기서 걸러 낸다. 무효화 직후에 도착한 발급은 끊긴

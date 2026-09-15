@@ -3,6 +3,7 @@ package com.irene.twelvebooks.user;
 import com.irene.twelvebooks.common.error.BusinessException;
 import com.irene.twelvebooks.common.error.ErrorCode;
 import com.irene.twelvebooks.auth.RefreshTokenStore;
+import com.irene.twelvebooks.post.PostRepository;
 import com.irene.twelvebooks.user.dto.UpdateProfileRequest;
 import com.irene.twelvebooks.user.dto.WithdrawRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -18,13 +19,15 @@ public class UserService {
 	private final UserRepository userRepository;
 	private final PasswordEncoder passwordEncoder;
 	private final RefreshTokenStore refreshTokenStore;
+	private final PostRepository postRepository;
 	private final Clock clock;
 
 	public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,
-			RefreshTokenStore refreshTokenStore, Clock clock) {
+			RefreshTokenStore refreshTokenStore, PostRepository postRepository, Clock clock) {
 		this.userRepository = userRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.refreshTokenStore = refreshTokenStore;
+		this.postRepository = postRepository;
 		this.clock = clock;
 	}
 
@@ -62,6 +65,9 @@ public class UserService {
 			throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
 		}
 
+		// 댓글 수를 먼저 내린다. 표시를 세운 뒤에 세면 그 댓글들이 이미 조회에서 빠져
+		// 0건으로 보인다 — 숫자가 그대로 남는다.
+		postRepository.decreaseCommentCountsOf(userId);
 		user.withdraw(LocalDateTime.now(clock));
 		refreshTokenStore.revokeAll(userId);
 	}

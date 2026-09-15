@@ -66,6 +66,20 @@ public class User extends BaseTimeEntity {
 	private LocalDateTime deletedAt;
 
 	/**
+	 * 살아 있을 때만 값이 있는 이메일·handle. DB가 만든다({@code V13}).
+	 *
+	 * <p>유일성을 <b>살아 있는 계정에만</b> 걸기 위한 컬럼인데, 조회도 이쪽을 쓴다.
+	 * {@code email = ? and deleted_at is null}로 찾으면 그 조건을 받쳐 줄 인덱스가 없어
+	 * 보관 중인 탈퇴 계정이 쌓일수록 느려진다 — 로그인·가입 중복 확인·비밀번호 재설정이
+	 * 전부 그 조회를 지난다.
+	 */
+	@Column(name = "active_email", insertable = false, updatable = false)
+	private String activeEmail;
+
+	@Column(name = "active_handle", insertable = false, updatable = false)
+	private String activeHandle;
+
+	/**
 	 * 권한. 토큰이 아니라 <b>이 행</b>이 진실이다.
 	 *
 	 * <p>역할을 토큰에 실으면 권한을 뺏어도 그 사람의 토큰이 만료될 때까지 관리자로 남는다.

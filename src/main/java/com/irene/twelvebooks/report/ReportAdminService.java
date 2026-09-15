@@ -156,7 +156,10 @@ public class ReportAdminService {
 			return;
 		}
 		postRepository.findAnyByIdForUpdate(postId);
-		if (change.applyAsInt(commentId) == 1) {
+		// 작성자가 탈퇴했으면 그 댓글은 이미 숫자에서 빠져 있다. 또 내리거나 되돌리며
+		// 올리면 숫자가 실제와 어긋난다 — 되돌려도 여전히 보이지 않는다.
+		boolean counted = commentRepository.hasActiveAuthor(commentId);
+		if (change.applyAsInt(commentId) == 1 && counted) {
 			adjustCount.accept(postId);
 		}
 	}

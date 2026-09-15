@@ -256,4 +256,25 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	@Modifying
 	@Query("update Post p set p.commentCount = p.commentCount + 1 where p.id = :postId")
 	void increaseCommentCountByModerator(@Param("postId") Long postId);
+
+	/**
+	 * 한 사람이 탈퇴해 <b>보이지 않게 되는 댓글</b>만큼 글마다 댓글 수를 내린다.
+	 *
+	 * <p>조회 조건만 더하면 목록에서는 빠지는데 숫자는 그대로다 — "댓글 1개"를 눌렀는데
+	 * 아무것도 없는 화면이 된다. 운영자 숨김에서 이미 한 번 겪은 자리다.
+	 *
+	 * <p>세는 대상은 <b>지금 세어져 있는 댓글</b>뿐이다(지워지지도 내려가지도 않은 것).
+	 * 이미 빠진 것을 또 빼면 숫자가 실제보다 작아진다.
+	 */
+	@Modifying
+	@Query("""
+			update Post p set p.commentCount = p.commentCount -
+				(select count(c) from Comment c
+				 where c.postId = p.id and c.authorId = :authorId
+				   and c.deletedAt is null and c.hiddenAt is null)
+			where exists (select 1 from Comment c2
+				 where c2.postId = p.id and c2.authorId = :authorId
+				   and c2.deletedAt is null and c2.hiddenAt is null)
+			""")
+	int decreaseCommentCountsOf(@Param("authorId") Long authorId);
 }
