@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -265,7 +266,11 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	 *
 	 * <p>세는 대상은 <b>지금 세어져 있는 댓글</b>뿐이다(지워지지도 내려가지도 않은 것).
 	 * 이미 빠진 것을 또 빼면 숫자가 실제보다 작아진다.
+	 *
+	 * <p><b>탈퇴 표시와 다른 트랜잭션에서 돈다.</b> 함께 묶으면 {@code users}를 쥔 채
+	 * {@code posts}를 기다리게 되고, 댓글 작성은 반대 순서로 잡아 교착이 난다.
 	 */
+	@Transactional
 	@Modifying
 	@Query("""
 			update Post p set p.commentCount = p.commentCount -

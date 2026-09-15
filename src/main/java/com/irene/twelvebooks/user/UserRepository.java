@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -50,8 +51,14 @@ public interface UserRepository extends JpaRepository<User, Long> {
 	 * 보이는 댓글은 하나인데 숫자는 0이 된다. 조건을 문장 안에 넣으면 행 잠금이 둘을
 	 * 줄 세우고 진 쪽은 0행을 받는다.
 	 *
+	 * <p><b>자기 트랜잭션에서 끝난다.</b> 뒤따르는 정리(댓글 수 조정)와 한 트랜잭션으로 묶으면
+	 * {@code users}를 쥔 채 {@code posts}를 기다리게 되는데, 댓글 작성은 반대 순서로 잡는다
+	 * ({@code posts} 카운터 → INSERT의 외래 키가 잡는 {@code users} 공유 잠금). 순서가
+	 * 엇갈리면 교착이고, MySQL이 한쪽을 죽여 500이 나간다.
+	 *
 	 * @return 바뀐 행 수. <b>1일 때만</b> 뒤따르는 정리를 한다.
 	 */
+	@Transactional
 	@Modifying
 	@Query("update User u set u.deletedAt = :now where u.id = :userId and u.deletedAt is null")
 	int withdraw(@Param("userId") Long userId, @Param("now") LocalDateTime now);
