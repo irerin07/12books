@@ -296,7 +296,8 @@ PASSWORD_RESET_LINK_BASE      https://프런트주소/reset-password
 
 > `MAIL_FROM`은 **Resend에 인증된 도메인**이어야 한다. 아니면 403이고, 그 실패는 위 이유로
 > 사용자에게 보이지 않는다(실측: `external-apis.md`). 도메인을 아직 안 붙였으면
-> `onboarding@resend.dev`를 쓴다 — 인증 없이 보내진다.
+> `onboarding@resend.dev`를 쓴다 — 인증 없이 보내지지만 **스팸함으로 간다.**
+> QA에서 재설정을 시험할 때는 스팸함을 열어야 링크를 받는다.
 
 **`FORWARD_HEADERS_STRATEGY`는 조건을 확인한 뒤에 켠다.** 요청 제한이 IP로 세는데, 켜지 않으면
 프록시 뒤에서 모든 요청이 한 주소로 보여 전체 사용자가 한 버킷을 나눠 쓴다. 그렇다고 그냥 켜면
