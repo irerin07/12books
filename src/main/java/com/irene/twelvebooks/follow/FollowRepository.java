@@ -27,20 +27,26 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
 	 *
 	 * <p>정렬과 커서가 관계의 id라 다른 목록과 같은 모양이고, {@code (followee_id, id desc)}
 	 * 인덱스가 그 순서를 그대로 준다.
+	 *
+	 * <p><b>탈퇴한 사람은 쿼리에서 뺀다.</b> 받아 온 뒤에 거르면 스무 개를 청구했는데 열여덟
+	 * 개가 오는 페이지가 되고, 같은 handle로 새 계정이 가입하면 목록에는 옛 사람이 보이는데
+	 * 링크는 새 사람으로 가서 엉뚱한 사람을 팔로우하게 된다.
 	 */
 	@Query("""
 			select f from Follow f
 			where f.followeeId = :followeeId
+			  and exists (select 1 from User u where u.id = f.followerId and u.deletedAt is null)
 			  and (:cursor is null or f.id < :cursor)
 			order by f.id desc
 			""")
 	List<Follow> findFollowerPage(@Param("followeeId") Long followeeId,
 			@Param("cursor") Long cursor, Pageable pageable);
 
-	/** 내가 팔로우하는 사람 한 페이지. 역시 최근에 팔로우한 순서다. */
+	/** 내가 팔로우하는 사람 한 페이지. 역시 최근에 팔로우한 순서이고, 탈퇴한 사람은 빠진다. */
 	@Query("""
 			select f from Follow f
 			where f.followerId = :followerId
+			  and exists (select 1 from User u where u.id = f.followeeId and u.deletedAt is null)
 			  and (:cursor is null or f.id < :cursor)
 			order by f.id desc
 			""")
@@ -50,10 +56,22 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
 	/**
 	 * 팔로워·팔로잉 수. 반정규화 카운터를 두지 않고 세는 것으로 시작한다 —
 	 * 카운터는 갱신 유실과 불일치를 안고 오므로 실제로 느려진 뒤에 도입한다.
+	 *
+	 * <p>목록과 <b>같은 기준</b>으로 센다. 목록에서만 빼면 "팔로워 1명"을 눌렀는데 빈 화면이 된다.
 	 */
-	long countByFolloweeId(Long followeeId);
+	@Query("""
+			select count(f) from Follow f
+			where f.followeeId = :followeeId
+			  and exists (select 1 from User u where u.id = f.followerId and u.deletedAt is null)
+			""")
+	long countFollowers(@Param("followeeId") Long followeeId);
 
-	long countByFollowerId(Long followerId);
+	@Query("""
+			select count(f) from Follow f
+			where f.followerId = :followerId
+			  and exists (select 1 from User u where u.id = f.followeeId and u.deletedAt is null)
+			""")
+	long countFollowings(@Param("followerId") Long followerId);
 
 	/**
 	 * 내가 이 사람을 팔로우 중인지. 프로필이 팔로우 버튼을 <b>처음 그릴 때</b> 필요하다.

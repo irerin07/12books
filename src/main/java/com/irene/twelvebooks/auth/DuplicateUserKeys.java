@@ -11,8 +11,11 @@ import java.util.Locale;
  */
 public final class DuplicateUserKeys {
 
-	private static final String EMAIL_CONSTRAINT = "uk_users_email";
-	private static final String HANDLE_CONSTRAINT = "uk_users_handle";
+	// 스키마를 따라간다. 탈퇴가 들어오면서 유일성이 살아 있는 계정에만 걸리도록 생성 컬럼으로
+	// 옮겼고(V13) 이름도 함께 바뀌었다. 여기를 안 맞추면 handle 경합이 "이메일 중복"으로
+	// 안내돼 사용자가 고칠 수 없는 말을 듣는다.
+	private static final String EMAIL_CONSTRAINT = "uk_users_active_email";
+	private static final String HANDLE_CONSTRAINT = "uk_users_active_handle";
 
 	private DuplicateUserKeys() {
 	}
