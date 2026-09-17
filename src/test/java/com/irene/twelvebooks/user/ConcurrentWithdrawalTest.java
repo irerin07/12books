@@ -29,19 +29,13 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 
-/**
- * 탈퇴 요청이 두 번 겹치는 경우. (기기 둘에서 동시에 누르거나, 응답이 안 와서 다시 누르거나.)
- *
- * <p>두 요청이 탈퇴 전 상태를 함께 읽으면 <b>댓글 수를 두 번 깎는다.</b> 댓글 행 자체는
- * 바뀌지 않으므로 두 번째도 같은 댓글을 세기 때문이다 — 실제로 보이는 댓글은 하나인데
- * 숫자는 0이 된다.
- *
- * <p>순서를 시간이 아니라 <b>관문</b>으로 만든다. 비밀번호 검증 안에서 두 요청이 서로를
- * 기다리게 해, 둘 다 탈퇴 전 상태를 들고 통과하도록 강제한다.
- */
+/** 비밀번호 확인을 관문으로 삼아 두 탈퇴 요청이 겹쳐도 공개 댓글 집계가 정확한지 확인한다. */
 @TestPropertySource(properties = "spring.main.allow-bean-definition-overriding=true")
 @Import(ConcurrentWithdrawalTest.PairedEncoder.class)
 class ConcurrentWithdrawalTest extends AbstractIntegrationTest {
+
+	@Autowired
+	com.irene.twelvebooks.post.PostReadRepository postReadRepository;
 
 	/** 두 요청이 다 도착할 때까지 서로를 기다리는 인코더. */
 	static class Paired implements PasswordEncoder {
@@ -109,14 +103,12 @@ class ConcurrentWithdrawalTest extends AbstractIntegrationTest {
 				Post.write(other.getId(), bookId, null, "남이 쓴 글이다.", null, null, false)).getId();
 		commentRepository.save(Comment.write(postId, me.getId(), "탈퇴할 사람의 댓글"));
 		commentRepository.save(Comment.write(postId, other.getId(), "남는 댓글"));
-		postRepository.findById(postId).orElseThrow();
-		jdbcUpdateCommentCount(postId);
 
 		List<CompletableFuture<Integer>> requests = List.of(withdraw(bearer), withdraw(bearer));
 		requests.forEach(CompletableFuture::join);
 
-		// 보이는 댓글은 하나(남의 것)다. 두 번 깎이면 0이 된다.
-		assertThat(postRepository.findById(postId).orElseThrow().getCommentCount()).isEqualTo(1);
+		// 보이는 댓글은 하나(남의 것)다.
+		assertThat(postReadRepository.findDetail(null, postId).orElseThrow().commentCount()).isEqualTo(1);
 		// 한쪽만 성공하든 둘 다 204든 상관없다 — 결과가 같으면 된다.
 		assertThat(requests.stream().map(CompletableFuture::join).filter(status -> status == 204).count())
 				.isPositive();
@@ -137,11 +129,4 @@ class ConcurrentWithdrawalTest extends AbstractIntegrationTest {
 		});
 	}
 
-	@Autowired
-	org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
-
-	/** 댓글을 리포지토리로 직접 넣었으므로 카운터를 실제 개수에 맞춰 둔다. */
-	private void jdbcUpdateCommentCount(Long postId) {
-		jdbcTemplate.update("update posts set comment_count = 2 where id = ?", postId);
-	}
 }

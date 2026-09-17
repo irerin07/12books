@@ -29,23 +29,11 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * 작성자의 삭제와 운영자의 숨김이 같은 댓글에 동시에 닿는 경우.
- *
- * <p>둘 다 <b>댓글을 안 보이게 하고 댓글 수를 하나 줄이는</b> 일을 한다. 그래서 두 가지가 걸린다.
- *
- * <ul>
- *   <li><b>잠금 순서</b> — 한쪽이 글→댓글, 다른 쪽이 댓글→글이면 서로 상대의 잠금을 기다려
- *       MySQL이 한쪽을 죽인다. 사용자는 500을 받는다.</li>
- *   <li><b>이중 차감</b> — 삭제가 "보이는 댓글"을 읽은 뒤 숨김이 먼저 끝나면, 삭제는 그것을
- *       모른 채 한 번 더 줄인다. 댓글 하나가 사라졌는데 숫자는 둘이 줄어든다.</li>
- * </ul>
- *
- * <p>그래서 이 테스트는 <b>누가 어떤 예외로 죽었는지</b>와 <b>남은 댓글 수가 정확히 둘인지</b>를
- * 함께 본다. 앞만 보면 숫자가 어긋난 채로 통과하고, 뒤만 보면 교착으로 죽은 요청을 놓친다.
- * 예외는 종류까지 본다 — 뭉뚱그려 넘기면 교착도 권한 실패도 함께 묻힌다.
- */
+/** 동일 댓글에 삭제와 숨김이 겹쳐도 요청과 공개 집계가 정상인지 확인한다. */
 class ModerationConcurrentTest extends AbstractIntegrationTest {
+
+	@Autowired
+	com.irene.twelvebooks.post.PostReadRepository postReadRepository;
 
 	private static final int ROUNDS = 10;
 
@@ -94,8 +82,7 @@ class ModerationConcurrentTest extends AbstractIntegrationTest {
 		for (int round = 0; round < ROUNDS; round++) {
 			Long postId = postRepository.save(
 					Post.write(authorId, bookId, null, "이름 짓기 장.", null, null, false)).getId();
-			// 세 개를 달아 두면 하나가 사라진 뒤의 정답이 2다. 하나만 두면 카운터의
-			// "0 아래로 내려가지 않는다" 방어에 가려 이중 차감이 보이지 않는다.
+			// 대상 외의 댓글 두 개는 계속 보여야 한다.
 			Long target = writeComments(postId);
 
 			reportService.reportComment(authorId, target,
@@ -124,7 +111,7 @@ class ModerationConcurrentTest extends AbstractIntegrationTest {
 			// 셋 중 하나가 사라졌으니 답은 2다. "조회 결과와 같다"만 보면 둘 다 함께
 			// 틀렸을 때 통과한다.
 			assertThat(visible).as("%d번째 라운드의 보이는 댓글", round).isEqualTo(2);
-			assertThat(postRepository.findById(postId).orElseThrow().getCommentCount())
+			assertThat(postReadRepository.findDetail(null, postId).orElseThrow().commentCount())
 					.as("%d번째 라운드의 댓글 수", round)
 					.isEqualTo(2);
 		}
@@ -139,7 +126,6 @@ class ModerationConcurrentTest extends AbstractIntegrationTest {
 				target = comment.getId();
 			}
 		}
-		jdbcTemplate.update("update posts set comment_count = 3 where id = ?", postId);
 		return target;
 	}
 

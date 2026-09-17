@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 /**
  * 알림 한 건.
  *
- * <p>행위자는 <b>항상</b> 붙는다. 없으면 목록을 그리는 쪽이 줄마다 다시 요청한다.
+ * <p>탈퇴한 행위자는 actor를 생략한다. 알림 자체는 남기며 탈퇴한 프로필은 노출하지 않는다.
  *
  * <p>{@code post}는 팔로우 알림에서 빠진다. 딸린 글이 없는데 빈 객체를 실으면 화면이
  * "글이 있는데 내용이 없다"와 구분할 수 없다.
@@ -28,7 +28,7 @@ public record NotificationResponse(Long id, NotificationType type, UserSummaryRe
 
 	public static NotificationResponse of(Notification notification, ActorView actor, PostBrief post) {
 		return new NotificationResponse(notification.getId(), notification.getType(),
-				new UserSummaryResponse(actor.handle(), actor.displayName(), actor.avatarUrl()),
+				actor == null ? null : new UserSummaryResponse(actor.handle(), actor.displayName(), actor.avatarUrl()),
 				post, notification.isRead(), notification.getCreatedAt());
 	}
 }

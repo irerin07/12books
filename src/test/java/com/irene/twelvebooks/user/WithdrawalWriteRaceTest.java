@@ -115,7 +115,7 @@ class WithdrawalWriteRaceTest extends AbstractIntegrationTest {
 		Long postId = postRepository.save(
 				Post.write(other.getId(), bookId, null, "남이 쓴 글이다.", null, null, false)).getId();
 		commentRepository.save(Comment.write(postId, other.getId(), "남는 댓글"));
-		jdbcTemplate.update("update posts set comment_count = 1 where id = ?", postId);
+
 
 		// 1. 탈퇴가 비밀번호 검증에서 멈춘다.
 		CompletableFuture<Integer> withdrawal = CompletableFuture.supplyAsync(() -> {

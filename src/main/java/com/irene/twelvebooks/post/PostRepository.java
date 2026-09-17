@@ -2,13 +2,11 @@ package com.irene.twelvebooks.post;
 
 import jakarta.persistence.LockModeType;
 import com.irene.twelvebooks.notification.PostView;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -17,85 +15,7 @@ import java.util.Optional;
 public interface PostRepository extends JpaRepository<Post, Long> {
 
 	/**
-	 * 그 책의 감상평 한 페이지. {@code (book_id, id desc)} 인덱스를 그대로 탄다.
-	 *
-	 * <p>커서가 곧 id다 — PK가 auto-increment라 {@code id desc}가 최신순이고, 같은 시각에
-	 * 여러 글이 들어와도 순서가 흔들리지 않는다. {@code size + 1}건을 가져와 다음 페이지
-	 * 존재를 판정한다.
-	 */
-	@Query("""
-			select p from Post p
-			where p.bookId = :bookId
-			  and p.deletedAt is null
-			  and p.hiddenAt is null
-			  and exists (select 1 from User u where u.id = p.authorId and u.deletedAt is null)
-			  and (:cursor is null or p.id < :cursor)
-			order by p.id desc
-			""")
-	List<Post> findBookPage(@Param("bookId") Long bookId, @Param("cursor") Long cursor, Pageable pageable);
-
-	/**
-	 * 한 사람이 쓴 감상평 한 페이지. {@code (author_id, id desc)} 인덱스를 그대로 탄다.
-	 *
-	 * <p>프로필의 글 목록이자 "내 글만 보기"다. 둘은 같은 질문이라 경로를 나누지 않는다 —
-	 * 내 handle로 부르면 내 글이다.
-	 */
-	@Query("""
-			select p from Post p
-			where p.authorId = :authorId
-			  and p.deletedAt is null
-			  and p.hiddenAt is null
-			  and exists (select 1 from User u where u.id = p.authorId and u.deletedAt is null)
-			  and (:cursor is null or p.id < :cursor)
-			order by p.id desc
-			""")
-	List<Post> findAuthorPage(@Param("authorId") Long authorId, @Param("cursor") Long cursor,
-			Pageable pageable);
-
-	/**
-	 * 홈 한 페이지. <b>내 글과 내가 팔로우하는 사람의 글을 뺀</b> 최신순이다.
-	 *
-	 * <p>팔로잉을 빼기 때문에 홈과 팔로잉 목록이 <b>서로 겹치지 않는다</b> — 화면이 둘을 이어
-	 * 붙여도 같은 글이 두 번 나오지 않고, 섞는 비율은 화면이 정한다.
-	 *
-	 * <p>{@code excludedIds}에는 항상 본인이 들어가므로 빈 컬렉션이 될 수 없다. 빈 목록을
-	 * {@code in ()}으로 넘기면 DB마다 다르게 구는데, 그 경우가 아예 생기지 않는다.
-	 */
-	@Query("""
-			select p from Post p
-			where p.authorId not in :excludedIds
-			  and p.deletedAt is null
-			  and p.hiddenAt is null
-			  and exists (select 1 from User u where u.id = p.authorId and u.deletedAt is null)
-			  and (:cursor is null or p.id < :cursor)
-			order by p.id desc
-			""")
-	List<Post> findHomePage(@Param("excludedIds") List<Long> excludedIds,
-			@Param("cursor") Long cursor, Pageable pageable);
-
-	/**
-	 * 팔로잉 타임라인 한 페이지. 팔로잉 ID 목록을 그대로 {@code IN}에 넣는
-	 * <b>fan-out on read</b>이고, {@code (author_id, id desc)} 인덱스가 이것을 커버한다.
-	 *
-	 * <p>쓰기 시점에 팔로워마다 복사해 두는 팬아웃 쓰기나 Redis 타임라인은 넣지 않는다 —
-	 * 실제 지연이 관측되기 전에 도입하면 무효화 규칙만 늘어난다.
-	 *
-	 * <p>{@code authorIds}에 본인은 들어가지 않는다. 내 글은 {@code findAuthorPage}로 본다.
-	 */
-	@Query("""
-			select p from Post p
-			where p.authorId in :authorIds
-			  and p.deletedAt is null
-			  and p.hiddenAt is null
-			  and exists (select 1 from User u where u.id = p.authorId and u.deletedAt is null)
-			  and (:cursor is null or p.id < :cursor)
-			order by p.id desc
-			""")
-	List<Post> findTimelinePage(@Param("authorIds") List<Long> authorIds,
-			@Param("cursor") Long cursor, Pageable pageable);
-
-	/**
-	 * 글 행을 <b>먼저 배타로 잡는다.</b> 반응(좋아요·댓글)은 모두 {@code posts}를 먼저 잠근 뒤
+	 * 글 행을 <b>먼저 배타로 잡는다.</b> 좋아요는 {@code posts}를 먼저 잠근 뒤
 	 * 자식 행을 만진다 — 순서가 엇갈리면 한쪽이 자식 행 잠금을 쥔 채 부모를 기다리고 다른
 	 * 쪽이 그 반대가 되어 교착에 빠진다.
 	 *
@@ -139,22 +59,6 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	@Modifying
 	@Query("update Post p set p.likeCount = p.likeCount - 1 where p.id = :postId and p.likeCount > 0 and p.deletedAt is null and p.hiddenAt is null")
 	void decreaseLikeCount(@Param("postId") Long postId);
-
-	/**
-	 * 댓글 수를 원자적으로 올린다. 좋아요와 같은 이유로 <b>댓글 행을 넣기 전에</b> 부른다 —
-	 * {@code comments} insert가 외래 키 때문에 부모인 {@code posts} 행에 잡는 공유 잠금이,
-	 * 뒤따르는 이 UPDATE의 배타 잠금과 물려 동시 요청을 교착에 빠뜨린다.
-	 *
-	 * @return 바뀐 행 수. 0이면 그런 글이 없다는 뜻이라 존재 확인을 겸한다.
-	 */
-	@Modifying
-	@Query("update Post p set p.commentCount = p.commentCount + 1 where p.id = :postId and p.deletedAt is null and p.hiddenAt is null")
-	int increaseCommentCount(@Param("postId") Long postId);
-
-	/** 댓글 수를 원자적으로 내린다. 삭제도 부모를 먼저 잠근 뒤 자식 행을 지운다. */
-	@Modifying
-	@Query("update Post p set p.commentCount = p.commentCount - 1 where p.id = :postId and p.commentCount > 0 and p.deletedAt is null and p.hiddenAt is null")
-	void decreaseCommentCount(@Param("postId") Long postId);
 
 	/**
 	 * 살아 있는 글 하나. 지운 글은 없는 것과 같이 답한다 — 지운 뒤에도 읽히면 삭제가 아니다.
@@ -232,54 +136,4 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 			""")
 	List<com.irene.twelvebooks.report.ContentView> findAnyPostViews(@Param("postIds") List<Long> postIds);
 
-	/**
-	 * 글 행을 잠근다 — <b>숨겨졌든 지워졌든.</b>
-	 *
-	 * <p>운영자 처리가 이것을 쓴다. {@link #findByIdForUpdate}는 사용자에게 보이는 글만
-	 * 잠그는데, 숨긴 글 아래의 댓글을 처리할 때는 그 글을 잠글 수 없어 <b>잠금 없이</b>
-	 * 카운터를 만지게 된다. 그러면 작성자의 삭제와 부딪힌다.
-	 */
-	@Lock(LockModeType.PESSIMISTIC_WRITE)
-	@Query("select p from Post p where p.id = :postId")
-	Optional<Post> findAnyByIdForUpdate(@Param("postId") Long postId);
-
-	/**
-	 * 운영자 처리가 쓰는 댓글 수 조정. <b>부모 글이 보이지 않아도 반영된다.</b>
-	 *
-	 * <p>사용자 경로의 조건(살아 있고 안 숨겨진 글)을 그대로 쓰면, 글을 숨긴 상태에서 그 아래
-	 * 댓글을 내렸을 때 숫자가 줄지 않는다. 나중에 글을 되돌리면 보이는 댓글은 하나인데 숫자는
-	 * 둘이다 — 되돌릴 수 있게 만든 장치가 되돌릴 때 어긋난다.
-	 */
-	@Modifying
-	@Query("update Post p set p.commentCount = p.commentCount - 1 where p.id = :postId and p.commentCount > 0")
-	void decreaseCommentCountByModerator(@Param("postId") Long postId);
-
-	@Modifying
-	@Query("update Post p set p.commentCount = p.commentCount + 1 where p.id = :postId")
-	void increaseCommentCountByModerator(@Param("postId") Long postId);
-
-	/**
-	 * 한 사람이 탈퇴해 <b>보이지 않게 되는 댓글</b>만큼 글마다 댓글 수를 내린다.
-	 *
-	 * <p>조회 조건만 더하면 목록에서는 빠지는데 숫자는 그대로다 — "댓글 1개"를 눌렀는데
-	 * 아무것도 없는 화면이 된다. 운영자 숨김에서 이미 한 번 겪은 자리다.
-	 *
-	 * <p>세는 대상은 <b>지금 세어져 있는 댓글</b>뿐이다(지워지지도 내려가지도 않은 것).
-	 * 이미 빠진 것을 또 빼면 숫자가 실제보다 작아진다.
-	 *
-	 * <p><b>탈퇴 표시와 다른 트랜잭션에서 돈다.</b> 함께 묶으면 {@code users}를 쥔 채
-	 * {@code posts}를 기다리게 되고, 댓글 작성은 반대 순서로 잡아 교착이 난다.
-	 */
-	@Transactional
-	@Modifying
-	@Query("""
-			update Post p set p.commentCount = p.commentCount -
-				(select count(c) from Comment c
-				 where c.postId = p.id and c.authorId = :authorId
-				   and c.deletedAt is null and c.hiddenAt is null)
-			where exists (select 1 from Comment c2
-				 where c2.postId = p.id and c2.authorId = :authorId
-				   and c2.deletedAt is null and c2.hiddenAt is null)
-			""")
-	int decreaseCommentCountsOf(@Param("authorId") Long authorId);
 }
