@@ -24,24 +24,4 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
 	List<Report> findPage(@Param("status") ReportStatus status, @Param("cursor") Long cursor,
 			Pageable pageable);
 
-	/**
-	 * 이 대상에 <b>다른</b> 인정된 신고가 남아 있는가.
-	 *
-	 * <p>기각은 그 신고에 대한 판단이지 대상 전체를 열라는 뜻이 아니다. 욕설로 내린 글을
-	 * "스포일러는 아니다"라는 판단 하나로 다시 공개하면, 인정된 신고가 그대로 남아 있는데도
-	 * 글이 돌아온다.
-	 *
-	 * <p>자기 자신은 뺀다. 지금 처리 중인 신고는 아직 옛 상태를 들고 있어, 빼지 않으면
-	 * <b>자기가 자기를 막아</b> 마지막 하나를 기각해도 열리지 않는다.
-	 */
-	@Query("""
-			select count(r) > 0 from Report r
-			where r.targetType = :targetType
-			  and r.targetId = :targetId
-			  and r.status = :status
-			  and r.id <> :exceptId
-			""")
-	boolean existsOtherWithStatus(@Param("targetType") ReportTarget targetType,
-			@Param("targetId") Long targetId, @Param("status") ReportStatus status,
-			@Param("exceptId") Long exceptId);
 }
