@@ -34,14 +34,14 @@ public record PostResponse(
 		Integer toPage,
 		boolean spoiler,
 		int likeCount,
-		int commentCount,
+		long commentCount,
 		boolean likedByMe,
 		LocalDateTime createdAt) {
 
-	public static PostResponse of(Post post, User author, Book book, boolean likedByMe) {
+	public static PostResponse of(Post post, User author, Book book, boolean likedByMe, long commentCount) {
 		return new PostResponse(post.getId(), UserSummaryResponse.from(author), BookResponse.from(book),
 				post.getReadingId(), post.getContent(), post.getFromPage(), post.getToPage(),
-				post.isSpoiler(), post.getLikeCount(), post.getCommentCount(), likedByMe,
+				post.isSpoiler(), post.getLikeCount(), commentCount, likedByMe,
 				post.getCreatedAt());
 	}
 }

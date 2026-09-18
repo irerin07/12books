@@ -5,25 +5,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.util.List;
-
 public interface PostLikeRepository extends JpaRepository<PostLike, Long> {
-
-	/**
-	 * 주어진 글들 중 <b>보는 사람이 좋아요를 누른</b> 글의 id.
-	 *
-	 * <p>목록 한 쪽을 그리려면 스무 글 각각에 대해 이 관계를 알아야 하는데, 글마다 물으면
-	 * 쿼리가 목록 크기만큼 늘어난다. 페이지의 id를 모아 한 번에 묻고 Set으로 맞춘다 —
-	 * 한 페이지가 20건이든 50건이든 이 조회는 한 번이다. 팔로워 목록의
-	 * {@code findFollowedAmong}과 같은 모양이다.
-	 *
-	 * <p>{@code uk(post_id, user_id)}가 이것을 통째로 커버한다.
-	 */
-	@Query("""
-			select l.postId from PostLike l
-			where l.userId = :viewerId and l.postId in :postIds
-			""")
-	List<Long> findLikedAmong(@Param("viewerId") Long viewerId, @Param("postIds") List<Long> postIds);
 
 	/**
 	 * 좋아요 취소. <b>한 문장</b>으로 지운다.

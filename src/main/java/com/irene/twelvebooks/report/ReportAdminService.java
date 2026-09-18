@@ -104,12 +104,7 @@ public class ReportAdminService {
 	private void hide(Report report) {
 		switch (report.getTargetType()) {
 			case POST -> postRepository.hide(report.getTargetId(), LocalDateTime.now(clock));
-			// 댓글 수도 함께 내린다. 숫자만 남으면 "댓글 1개"를 눌렀는데 아무것도 없는
-			// 화면이 된다. 바뀐 행이 1일 때만 내리는 것이 요점이다 — 이미 내려간 것을
-			// 또 내리면 카운터가 실제보다 작아진다.
-			case COMMENT -> onComment(report.getTargetId(),
-					commentId -> commentRepository.hide(commentId, LocalDateTime.now(clock)),
-					postRepository::decreaseCommentCountByModerator);
+			case COMMENT -> commentRepository.hide(report.getTargetId(), LocalDateTime.now(clock));
 			case USER -> {
 				// 계정을 멈추는 일은 아직 없다. 판단만 남는다.
 			}
@@ -133,31 +128,9 @@ public class ReportAdminService {
 		}
 		switch (report.getTargetType()) {
 			case POST -> postRepository.unhide(report.getTargetId());
-			case COMMENT -> onComment(report.getTargetId(), commentRepository::unhide,
-					postRepository::increaseCommentCountByModerator);
+			case COMMENT -> commentRepository.unhide(report.getTargetId());
 			case USER -> {
 			}
-		}
-	}
-
-	/**
-	 * 댓글을 내리거나 되돌리고 댓글 수를 맞춘다.
-	 *
-	 * <p><b>글 행을 먼저 잠근다.</b> 작성자의 삭제도 글을 먼저 잠그므로 순서가 같아진다 —
-	 * 한쪽이 댓글부터 잡으면 서로 상대의 잠금을 기다려 MySQL이 한쪽을 죽인다.
-	 *
-	 * <p>숨겨지거나 지워진 글도 잠글 수 있어야 한다. 보이는 글만 잠그면 숨긴 글 아래의 댓글을
-	 * 처리할 때 <b>잠금 없이</b> 카운터를 만지게 되고, 그게 정확히 부딪히는 경우다.
-	 */
-	private void onComment(Long commentId, java.util.function.ToIntFunction<Long> change,
-			java.util.function.Consumer<Long> adjustCount) {
-		Long postId = commentRepository.findPostId(commentId).orElse(null);
-		if (postId == null) {
-			return;
-		}
-		postRepository.findAnyByIdForUpdate(postId);
-		if (change.applyAsInt(commentId) == 1) {
-			adjustCount.accept(postId);
 		}
 	}
 

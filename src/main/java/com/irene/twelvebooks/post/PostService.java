@@ -19,10 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Service
@@ -34,17 +30,17 @@ public class PostService {
 	private final BookRepository bookRepository;
 	private final UserRepository userRepository;
 	private final ReadingLinker readingLinker;
-	private final PostLikeService postLikeService;
+	private final PostReadRepository postReadRepository;
 	private final Clock clock;
 
 	public PostService(PostRepository postRepository, BookRepository bookRepository,
 			UserRepository userRepository, ReadingLinker readingLinker,
-			PostLikeService postLikeService, Clock clock) {
+			PostReadRepository postReadRepository, Clock clock) {
 		this.postRepository = postRepository;
 		this.bookRepository = bookRepository;
 		this.userRepository = userRepository;
 		this.readingLinker = readingLinker;
-		this.postLikeService = postLikeService;
+		this.postReadRepository = postReadRepository;
 		this.clock = clock;
 	}
 
@@ -63,8 +59,11 @@ public class PostService {
 	public PostResponse write(Long authorId, PostCreateRequest request) {
 		Book book = bookRepository.findById(request.bookId())
 				.orElseThrow(() -> new BusinessException(ErrorCode.BOOK_NOT_FOUND));
+
 		User author = userRepository.findById(authorId)
-				.orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+				// 댓글과 같은 이유. 탈퇴 뒤에 쓰면 아무에게도 보이지 않는 글만 쌓인다.
+				.filter(candidate -> !candidate.isWithdrawn())
+				.orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
 
 		// 빈 값이면 붙일 기록이 없다는 뜻이다(그 사이 서재에서 빠졌다). 글을 막을 이유가 아니고,
 		// 연결 없는 글은 삭제 이후의 정상 상태와 같다.
@@ -79,22 +78,18 @@ public class PostService {
 			// DTO 검증이 이미 같은 규칙을 보지만, 엔티티도 스스로를 지킨다. 여기 걸렸다면
 			// 클라이언트 입력 문제이므로 500이 아니라 400이다. 사유는 로그에만 남긴다.
 			log.debug("감상평이 불변식에 걸렸습니다: authorId={}", authorId, e);
+
 			throw new BusinessException(ErrorCode.INVALID_INPUT);
 		}
+
 		// 방금 만든 글이라 좋아요가 있을 수 없다. 확인하러 가는 것은 답을 아는 질문이다.
-		return PostResponse.of(postRepository.save(post), author, book, false);
+		return PostResponse.of(postRepository.save(post), author, book, false, 0);
 	}
 
 	@Transactional(readOnly = true)
 	public PostResponse read(Long viewerId, Long postId) {
-		Post post = postRepository.findLive(postId)
+		return postReadRepository.findDetail(viewerId, postId).map(PostReadRow::toResponse)
 				.orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
-		User author = userRepository.findById(post.getAuthorId())
-				.orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-		Book book = bookRepository.findById(post.getBookId())
-				.orElseThrow(() -> new BusinessException(ErrorCode.BOOK_NOT_FOUND));
-		return PostResponse.of(post, author, book,
-				!postLikeService.likedAmong(viewerId, List.of(postId)).isEmpty());
 	}
 
 	/**
@@ -120,8 +115,8 @@ public class PostService {
 			// 빈 목록으로 답하면 "글이 아직 없는 책"과 "없는 책"이 구분되지 않는다.
 			throw new BusinessException(ErrorCode.BOOK_NOT_FOUND);
 		}
-		return assemble(viewerId,
-				postRepository.findBookPage(bookId, cursor, PageRequest.ofSize(size + 1)), size);
+		return assemble(
+				postReadRepository.findBookPage(viewerId, bookId, cursor, PageRequest.ofSize(size + 1)), size);
 	}
 
 	/**
@@ -136,8 +131,8 @@ public class PostService {
 				// 빈 목록으로 답하면 "아직 안 쓴 사람"과 "없는 사람"이 구분되지 않는다.
 				.orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND))
 				.getId();
-		return assemble(viewerId,
-				postRepository.findAuthorPage(authorId, cursor, PageRequest.ofSize(size + 1)), size);
+		return assemble(
+				postReadRepository.findAuthorPage(viewerId, authorId, cursor, PageRequest.ofSize(size + 1)), size);
 	}
 
 	/**
@@ -150,8 +145,8 @@ public class PostService {
 	@Transactional(readOnly = true)
 	public CursorPage<PostResponse> home(Long viewerId, List<Long> followeeIds, Long cursor, int size) {
 		List<Long> excluded = Stream.concat(Stream.of(viewerId), followeeIds.stream()).distinct().toList();
-		return assemble(viewerId,
-				postRepository.findHomePage(excluded, cursor, PageRequest.ofSize(size + 1)), size);
+		return assemble(
+				postReadRepository.findHomePage(viewerId, excluded, cursor, PageRequest.ofSize(size + 1)), size);
 	}
 
 	@Transactional(readOnly = true)
@@ -159,35 +154,14 @@ public class PostService {
 		if (followeeIds.isEmpty()) {
 			return new CursorPage<>(List.of(), null, false);
 		}
-		return assemble(viewerId,
-				postRepository.findTimelinePage(followeeIds, cursor, PageRequest.ofSize(size + 1)), size);
+		return assemble(
+				postReadRepository.findTimelinePage(viewerId, followeeIds, cursor, PageRequest.ofSize(size + 1)), size);
 	}
 
-	/**
-	 * 페이지의 글들을 응답으로 바꾼다.
-	 *
-	 * <p>작성자와 책, 그리고 <b>내가 누른 좋아요</b>는 페이지 전체를 모아 한 번씩 조회한다.
-	 * 글마다 따로 읽으면 페이지 크기만큼 쿼리가 늘어나고, 그 비용은 피드에서 그대로 커진다.
-	 * 이 방식은 한 페이지가 20건이든 50건이든 쿼리 수가 같다.
-	 */
-	private CursorPage<PostResponse> assemble(Long viewerId, List<Post> rows, int size) {
-		CursorPage<Post> page = CursorPage.of(rows, size, Post::getId);
-
-		Map<Long, User> authors = userRepository.findAllById(
-						page.items().stream().map(Post::getAuthorId).distinct().toList()).stream()
-				.collect(Collectors.toMap(User::getId, Function.identity()));
-		Map<Long, Book> books = bookRepository.findAllById(
-						page.items().stream().map(Post::getBookId).distinct().toList()).stream()
-				.collect(Collectors.toMap(Book::getId, Function.identity()));
-
-		Set<Long> liked = postLikeService.likedAmong(viewerId,
-				page.items().stream().map(Post::getId).toList());
-
-		return new CursorPage<>(
-				page.items().stream()
-						.map(post -> PostResponse.of(post, authors.get(post.getAuthorId()),
-								books.get(post.getBookId()), liked.contains(post.getId())))
-						.toList(),
+	/** 표시 필드와 댓글 집계를 함께 읽은 결과를 응답으로 바꾼다. */
+	private CursorPage<PostResponse> assemble(List<PostReadRow> rows, int size) {
+		CursorPage<PostReadRow> page = CursorPage.of(rows, size, PostReadRow::id);
+		return new CursorPage<>(page.items().stream().map(PostReadRow::toResponse).toList(),
 				page.nextCursor(), page.hasNext());
 	}
 }

@@ -41,28 +41,15 @@ public class CommentService {
 		this.events = events;
 	}
 
-	/**
-	 * 댓글을 단다.
-	 *
-	 * <p><b>카운터를 먼저 올리고 댓글 행을 넣는다.</b> 좋아요와 같은 이유다 —
-	 * {@code comments} insert는 외래 키 때문에 부모인 {@code posts} 행에 공유 잠금을 잡는데,
-	 * 이어지는 카운터 UPDATE가 같은 행에 배타 잠금을 요구한다. 같은 글에 여럿이 동시에 달면
-	 * 서로 공유 잠금을 쥔 채 상대의 배타 잠금을 기다린다. 글 행을 먼저 배타로 잡으면
-	 * 승격이 없어진다.
-	 *
-	 * <p>존재 확인도 그 UPDATE가 겸한다. 앞에 {@code exists}를 두면 쿼리가 하나 늘고,
-	 * 그 사이에 글이 지워지면 결국 외래 키에서 터진다.
-	 *
-	 * <p>입력이 규칙에 어긋나 예외로 끝나도 카운터는 함께 되돌아간다. 한 트랜잭션이라
-	 * 댓글 없이 숫자만 오르는 상태가 생기지 않는다.
-	 */
+	/** 댓글을 저장한다. 댓글 수는 조회 시 계산하므로 부모 글을 갱신하지 않는다. */
 	@Transactional
 	public CommentResponse write(Long authorId, Long postId, CommentCreateRequest request) {
-		if (postRepository.increaseCommentCount(postId) == 0) {
-			throw new BusinessException(ErrorCode.POST_NOT_FOUND);
-		}
+		Long postAuthorId = postRepository.findLiveAuthorId(postId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
 		User author = userRepository.findById(authorId)
-				.orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+				// 남은 access 토큰으로 탈퇴 후 새 댓글을 작성할 수는 없다.
+				.filter(candidate -> !candidate.isWithdrawn())
+				.orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
 
 		Comment comment;
 		try {
@@ -77,26 +64,11 @@ public class CommentService {
 
 		CommentResponse response = CommentResponse.of(commentRepository.save(comment), author);
 		// 좋아요와 같은 이유로 커밋 뒤에 알린다.
-		postRepository.findById(postId).ifPresent(post ->
-				events.publishEvent(new ReactionEvents.PostCommented(postId, post.getAuthorId(), authorId)));
+		events.publishEvent(new ReactionEvents.PostCommented(postId, postAuthorId, authorId));
 		return response;
 	}
 
-	/**
-	 * 댓글 삭제 권한은 <b>댓글 작성자 또는 글 작성자</b>다. 내 글 아래에 무엇이 남는지는
-	 * 글쓴이도 정할 수 있어야 하는데, 신고·차단이 MVP 밖이라 지금은 이것이 유일한 수단이다.
-	 *
-	 * <p>남의 댓글에 404가 아니라 403을 주는 것은 감상평과 같은 이유다 — 공개된 글에 달린
-	 * 공개된 댓글이라 존재 자체가 비밀이 아니다.
-	 *
-	 * <p>권한을 확인한 뒤 <b>글 행을 먼저 잠근다.</b> 반응이 모두 그렇게 하고, 여기서는
-	 * 지우기와 카운터 감소를 한 덩어리로 묶는 일도 겸한다.
-	 *
-	 * <p>그다음 <b>한 문장으로</b> 지우고 지운 행 수를 본다. 댓글 작성자와 글 작성자가 동시에
-	 * 누르면 둘 다 권한 확인을 통과하는데, 조회한 엔티티를 지우는 방식이면 뒤엣것이 0행을
-	 * 만나 500이 된다. 지우려던 댓글이 사라졌다는 결말은 두 요청 모두가 원한 것이므로 둘 다
-	 * 성공으로 끝내고, 카운터는 실제로 지운 쪽에서만 내린다.
-	 */
+	/** 댓글 작성자 또는 게시글 작성자만 삭제할 수 있다. */
 	@Transactional
 	public void remove(Long userId, Long commentId) {
 		Comment comment = commentRepository.findLive(commentId)
@@ -104,22 +76,10 @@ public class CommentService {
 		if (!comment.writtenBy(userId) && !postAuthorIs(comment.getPostId(), userId)) {
 			throw new BusinessException(ErrorCode.FORBIDDEN);
 		}
-		// 글이 지워졌으면 그 댓글에도 닿을 길이 없다. 여기서 멈추지 않으면 댓글만 지워지고
-		// 카운터는 그대로 남는다 — 카운터를 내리는 UPDATE가 살아 있는 글에만 걸리기 때문이다.
-		// 보존해 둔 글의 숫자가 실제와 어긋나면 남긴 의미가 없다.
-		postRepository.findByIdForUpdate(comment.getPostId())
-				.orElseThrow(() -> new BusinessException(ErrorCode.COMMENT_NOT_FOUND));
-		// 세어져 있는 댓글만 지우는 문장을 먼저 던진다. 앞의 findLive는 잠금 밖에서 읽은
-		// 값이라, 그사이 운영자가 이 댓글을 내렸으면 카운터는 이미 한 번 줄어 있다.
-		// "먼저 물어보고 지우기"로는 그 틈을 못 막는다 — 잠금 없는 조회는 옛 스냅샷을 본다.
-		LocalDateTime now = LocalDateTime.now(clock);
-		if (commentRepository.softDeleteIfCounted(commentId, now) == 1) {
-			postRepository.decreaseCommentCount(comment.getPostId());
-			return;
+		if (!postRepository.existsLive(comment.getPostId())) {
+			throw new BusinessException(ErrorCode.COMMENT_NOT_FOUND);
 		}
-		// 여기까지 왔으면 이미 지워졌거나 운영자가 내린 댓글이다. 지우기는 해 두되 숫자는
-		// 건드리지 않는다 — 내릴 때 이미 줄었다.
-		commentRepository.softDelete(commentId, now);
+		commentRepository.softDelete(commentId, LocalDateTime.now(clock));
 	}
 
 	/**

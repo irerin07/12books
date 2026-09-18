@@ -186,7 +186,8 @@ List<Post> findPage(@Param("cursor") Long cursor, Pageable pageable);
 맨 배열로 내려주면 다음 페이지가 있는지, 결과가 빈 것이 끝이어서인지 알 수 없다.
 
 ### 반정규화 카운터
-`posts.like_count` / `comment_count`는 읽기 성능을 위한 반정규화다.
+`posts.like_count`만 반정규화 컬럼으로 유지한다. 댓글 수는 저장하지 않고 게시글 조회 projection에서
+삭제·숨김되지 않았으며 작성자가 탈퇴하지 않은 댓글을 집계한다. 댓글 처리에는 게시글 카운터 보정이나 명시적 부모 행 잠금이 없다.
 **엔티티 필드를 읽고-더하고-쓰지 않는다** (동시 요청에 유실됨). 반드시 원자적 UPDATE:
 
 ```java
@@ -435,7 +436,7 @@ Phase 2에서 서명으로 막은 오염 경로가 그대로 되살아난다. �
 **산출물**
 - `V4__posts.sql`
 - `post/domain/Post` — authorId, bookId, readingId, content, fromPage, toPage, spoiler,
-  likeCount, commentCount (카운터는 0으로 시작, Phase 6에서 쓰임)
+  likeCount (저장 카운터), commentCount (응답에서만 제공하는 공개 댓글 집계)
 - `PostController`: `POST /posts`, `GET /posts/{id}`, `DELETE /posts/{id}`
 - `GET /books/{id}/posts?cursor=`
 - `GET /feed/explore?cursor=` — 전체 최신순 *(Phase 5에서 `/feed` 홈으로 흡수)*

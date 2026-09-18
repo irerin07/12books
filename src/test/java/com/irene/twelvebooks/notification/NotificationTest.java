@@ -97,6 +97,22 @@ class NotificationTest extends AbstractIntegrationTest {
 	}
 
 	@Test
+	@DisplayName("행위자가 탈퇴해도 알림은 유지하고 행위자 정보만 생략한다")
+	void keepsNotificationWithoutWithdrawnActor() throws Exception {
+		Long recipient = userRepository.findByHandle("irene").orElseThrow().getId();
+		Long actor = userRepository.findByHandle("other").orElseThrow().getId();
+		notificationService.notify(recipient, actor, NotificationType.POST_LIKED,
+				NotificationTarget.POST, postId);
+		userRepository.withdraw(actor, java.time.LocalDateTime.now());
+
+		mockMvc.perform(get("/api/v1/notifications").header("Authorization", authorBearer))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.items.length()").value(1))
+				.andExpect(jsonPath("$.items[0].actor").doesNotHaveJsonPath())
+				.andExpect(jsonPath("$.items[0].post.id").value(postId));
+	}
+
+	@Test
 	@DisplayName("남이 좋아요를 누르면 알림이 오고, 행위자와 글이 함께 실린다")
 	void notifiesOnLike() throws Exception {
 		mockMvc.perform(post("/api/v1/posts/" + postId + "/likes").header("Authorization", otherBearer))

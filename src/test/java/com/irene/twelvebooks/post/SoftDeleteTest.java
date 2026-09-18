@@ -181,7 +181,7 @@ class SoftDeleteTest extends AbstractIntegrationTest {
 
 		assertThat(rows("comments", "id = " + commentId + " and deleted_at is null")).isEqualTo(1);
 		assertThat(rows("post_likes", "post_id = " + postId)).isEqualTo(1);
-		assertThat(rows("posts", "id = " + postId + " and like_count = 1 and comment_count = 1"))
+		assertThat(rows("posts", "id = " + postId + " and like_count = 1"))
 				.isEqualTo(1);
 	}
 }

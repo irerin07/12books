@@ -8,9 +8,6 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.Set;
-
 @Service
 public class PostLikeService {
 
@@ -91,13 +88,4 @@ public class PostLikeService {
 		}
 	}
 
-	/**
-	 * 주어진 글들 중 보는 사람이 좋아요를 누른 글. 목록 한 쪽을 그릴 때 쓴다 —
-	 * 글마다 묻지 않고 <b>그 페이지에 실린 id만</b> 한 번에 묻는다.
-	 */
-	@Transactional(readOnly = true)
-	public Set<Long> likedAmong(Long viewerId, List<Long> postIds) {
-		return postIds.isEmpty() ? Set.of()
-				: Set.copyOf(postLikeRepository.findLikedAmong(viewerId, postIds));
-	}
 }

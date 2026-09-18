@@ -25,6 +25,7 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 			where c.postId = :postId
 			  and c.deletedAt is null
 			  and c.hiddenAt is null
+			  and exists (select 1 from User u where u.id = c.authorId and u.deletedAt is null)
 			  and (:cursor is null or c.id < :cursor)
 			order by c.id desc
 			""")
@@ -32,31 +33,15 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 			Pageable pageable);
 
 	/** 살아 있는 댓글 하나. 지운 댓글은 없는 것과 같이 답한다. */
-	@Query("select c from Comment c where c.id = :commentId and c.deletedAt is null and c.hiddenAt is null")
+	@Query("select c from Comment c where c.id = :commentId and c.deletedAt is null and c.hiddenAt is null and exists (select 1 from User u where u.id = c.authorId and u.deletedAt is null)")
 	Optional<Comment> findLive(@Param("commentId") Long commentId);
 
-	/**
-	 * 댓글을 지운다 — 행이 아니라 플래그를 세운다. <b>한 문장</b>으로 한다.
-	 *
-	 * <p>조회한 엔티티를 고쳐 지우면, 댓글 작성자와 글 작성자가 동시에 눌렀을 때 둘 다 같은
-	 * 행을 읽고 차례로 쓰게 되어 카운터가 두 번 내려간다. 한 문장에 {@code deletedAt is null}을
-	 * 달면 먼저 온 쪽만 1행을 받는다.
-	 *
-	 * @return 지운 행 수. <b>1일 때만</b> 카운터를 내린다. 0이면 그사이 다른 요청이 지웠다는
-	 *         뜻이고, 그쪽이 이미 카운터를 내렸다.
-	 */
+	/** 이미 삭제됐다면 아무것도 바꾸지 않는다. */
 	@Modifying
 	@Query("update Comment c set c.deletedAt = :now where c.id = :commentId and c.deletedAt is null")
 	int softDelete(@Param("commentId") Long commentId, @Param("now") LocalDateTime now);
 
-	/**
-	 * 운영자가 댓글을 내리거나 다시 올린다.
-	 *
-	 * <p>지운 댓글은 대상이 아니다({@code deletedAt is null}). 이미 안 보이는 것을 또 내릴
-	 * 이유가 없고, 무엇보다 <b>댓글 수가 두 번 줄어든다</b> — 삭제가 이미 한 번 내렸다.
-	 *
-	 * @return 바뀐 행 수. <b>1일 때만</b> 댓글 수를 조정한다.
-	 */
+	/** 작성자가 삭제하지 않은 댓글의 운영자 숨김 상태를 바꾼다. */
 	@Modifying
 	@Query("update Comment c set c.hiddenAt = :now where c.id = :commentId and c.hiddenAt is null and c.deletedAt is null")
 	int hide(@Param("commentId") Long commentId, @Param("now") LocalDateTime now);
@@ -73,23 +58,4 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 	List<com.irene.twelvebooks.report.ContentView> findAnyCommentViews(
 			@Param("commentIds") List<Long> commentIds);
 
-	/** 숨김이 댓글 수를 조정할 때 어느 글의 것인지 알아야 한다. */
-	@Query("select c.postId from Comment c where c.id = :commentId")
-	java.util.Optional<Long> findPostId(@Param("commentId") Long commentId);
-
-	/**
-	 * <b>댓글 수에 세어져 있는 댓글만</b> 지운다. 1행이면 그 요청이 지웠고, 지우기 전까지
-	 * 세어져 있었다는 뜻이라 그때만 카운터를 내린다.
-	 *
-	 * <p>"먼저 물어보고 지우기"로 하지 않는 이유가 있다. MySQL의 기본 격리 수준에서 <b>잠금
-	 * 없는 SELECT는 트랜잭션이 시작할 때의 스냅샷</b>을 본다. 그사이 운영자가 이 댓글을 내려
-	 * 카운터를 이미 줄였어도 조회는 "아직 세어져 있다"고 답하고, 그 답을 믿으면 한 댓글에
-	 * 숫자가 둘 줄어든다. UPDATE는 언제나 최신 행을 보므로 <b>조건을 문장 안에 넣어야</b>
-	 * 이 틈이 사라진다.
-	 *
-	 * @return 지운 행 수. 0이면 이미 지워졌거나 <b>이미 내려간</b> 댓글이다.
-	 */
-	@Modifying
-	@Query("update Comment c set c.deletedAt = :now where c.id = :commentId and c.deletedAt is null and c.hiddenAt is null")
-	int softDeleteIfCounted(@Param("commentId") Long commentId, @Param("now") LocalDateTime now);
 }

@@ -19,7 +19,7 @@ import java.time.LocalDateTime;
  * <p>{@code bookId}는 reading을 타고 가면 알 수 있는데도 직접 갖는다. 책별 목록이 가장 잦은
  * 조회라 조인 없이 인덱스 하나로 끝나야 한다.
  *
- * <p>카운터는 여기서 올리지 않는다. 읽고-더하고-쓰면 동시 요청에 유실되므로 Phase 6이
+ * <p>좋아요 카운터는 여기서 올리지 않는다. 읽고-더하고-쓰면 동시 요청에 유실되므로 Phase 6이
  * 원자적 UPDATE로 갱신한다.
  */
 @Entity
@@ -56,9 +56,6 @@ public class Post extends BaseTimeEntity {
 
 	@Column(name = "like_count", nullable = false)
 	private int likeCount;
-
-	@Column(name = "comment_count", nullable = false)
-	private int commentCount;
 
 	/**
 	 * 지운 시각. {@code null}이면 살아 있다.
@@ -102,7 +99,6 @@ public class Post extends BaseTimeEntity {
 		post.toPage = toPage;
 		post.spoiler = spoiler;
 		post.likeCount = 0;
-		post.commentCount = 0;
 		return post;
 	}
 
@@ -166,9 +162,5 @@ public class Post extends BaseTimeEntity {
 
 	public int getLikeCount() {
 		return likeCount;
-	}
-
-	public int getCommentCount() {
-		return commentCount;
 	}
 }
