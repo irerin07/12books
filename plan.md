@@ -369,7 +369,7 @@ refresh 쿠키로 reissue해 새 access와 **새 refresh 쿠키**를 받음 → 
   서비스가 필드를 직접 세팅하면 규칙이 흩어진다.
   - → `READING`: `startedAt`이 비어 있으면 지금으로 채운다
   - → `FINISHED`: `finishedAt` 기록, `pageCount`를 알면 `currentPage`를 거기에 맞춘다
-  - `FINISHED` → 다른 상태: `finishedAt`을 비운다 (이것을 재독 시작으로 볼지는 미정 — spec.md §4.3)
+  - `FINISHED` → 다른 상태: `finishedAt`을 비운다
 - `currentPage`는 **감소도 허용**한다(되돌아가 읽기). 0 이상, `pageCount`가 있으면 그 이하.
 - 연간 목표 미설정 시 조회 계층에서 **기본 12권**으로 간주한다. 가입 시 행을 미리 만들지 않는다.
 - 수정·삭제는 소유자 검증 필수 (`reading.userId != authUserId` → 403).
