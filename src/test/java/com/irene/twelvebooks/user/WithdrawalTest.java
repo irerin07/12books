@@ -20,6 +20,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -272,5 +273,33 @@ class WithdrawalTest extends AbstractIntegrationTest {
 		// 거절됐으니 숫자도 그대로여야 한다.
 		mockMvc.perform(get("/api/v1/posts/{id}", othersPost).header("Authorization", otherBearer))
 				.andExpect(jsonPath("$.commentCount").value(0));
+	}
+
+	/**
+	 * 프로필 수정도 쓰기다.
+	 *
+	 * <p>글·댓글은 막으면서 프로필만 열어 두면, 탈퇴한 행의 이름·소개·사진을 남은 access
+	 * 토큰으로 계속 바꿀 수 있다. 지금은 그 프로필이 남에게 보이지 않지만, <b>보이지 않는 것과
+	 * 바꿀 수 있는 것은 다른 문제다</b> — 보관 기간이 끝나 파기하거나 되살리는 작업이 생기면
+	 * 그때 꺼내는 값이 탈퇴 시점의 값이 아니게 된다.
+	 *
+	 * <p>거절은 글·댓글과 같은 401이다. 404로 답하면 "계정이 없다"가 되어 탈퇴한 본인이
+	 * 자기 계정의 상태를 오해한다.
+	 */
+	@Test
+	@DisplayName("탈퇴한 뒤에는 남은 토큰으로 프로필을 고칠 수 없다")
+	void refusesProfileUpdateAfterWithdrawal() throws Exception {
+		withdraw("123456789");
+
+		mockMvc.perform(patch("/api/v1/me").header("Authorization", bearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"displayName": "탈퇴하고도 고친다"}"""))
+				.andExpect(status().isUnauthorized());
+
+		// 거절됐으니 남은 행의 값도 그대로여야 한다.
+		assertThat(jdbcTemplate.queryForObject(
+				"select display_name from users where handle = 'irene'", String.class))
+				.isEqualTo("아이린");
 	}
 }

@@ -34,10 +34,17 @@ public class UserService {
 				.orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 	}
 
+	/**
+	 * 프로필을 고친다.
+	 *
+	 * <p>탈퇴한 계정은 거절한다 — 글·댓글과 같은 이유다. access의 남은 수명은 허용하지만,
+	 * 그 토큰으로 <b>탈퇴한 행을 계속 고칠 수 있는 것</b>은 다른 문제다.
+	 */
 	@Transactional
 	public User updateProfile(Long userId, UpdateProfileRequest request) {
 		User user = userRepository.findById(userId)
-				.orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+				.filter(candidate -> !candidate.isWithdrawn())
+				.orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
 		user.updateProfile(request.displayName(), request.bio(), request.avatarUrl());
 		return user;
 	}
