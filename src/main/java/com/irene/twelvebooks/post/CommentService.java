@@ -44,9 +44,8 @@ public class CommentService {
 	/** 댓글을 저장한다. 댓글 수는 조회 시 계산하므로 부모 글을 갱신하지 않는다. */
 	@Transactional
 	public CommentResponse write(Long authorId, Long postId, CommentCreateRequest request) {
-		if (!postRepository.existsLive(postId)) {
-			throw new BusinessException(ErrorCode.POST_NOT_FOUND);
-		}
+		Long postAuthorId = postRepository.findLiveAuthorId(postId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.POST_NOT_FOUND));
 		User author = userRepository.findById(authorId)
 				// 남은 access 토큰으로 탈퇴 후 새 댓글을 작성할 수는 없다.
 				.filter(candidate -> !candidate.isWithdrawn())
@@ -65,8 +64,7 @@ public class CommentService {
 
 		CommentResponse response = CommentResponse.of(commentRepository.save(comment), author);
 		// 좋아요와 같은 이유로 커밋 뒤에 알린다.
-		postRepository.findById(postId).ifPresent(post ->
-				events.publishEvent(new ReactionEvents.PostCommented(postId, post.getAuthorId(), authorId)));
+		events.publishEvent(new ReactionEvents.PostCommented(postId, postAuthorId, authorId));
 		return response;
 	}
 

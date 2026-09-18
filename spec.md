@@ -169,7 +169,7 @@
 | `books` | id, isbn13(uk), source_key(uk), title, authors, publisher, thumbnail_url, page_count, published_at | 카카오 응답 캐시 |
 | `readings` | id, user_id, book_id, status, current_page, started_at, finished_at, rating | uk(user_id, book_id) |
 | `reading_goals` | id, user_id, year, target_count | uk(user_id, year), 기본 12 |
-| `posts` | id, author_id, book_id, reading_id, content, from_page, to_page, spoiler, like_count, comment_count, created_at | book_id 비정규화 |
+| `posts` | id, author_id, book_id, reading_id, content, from_page, to_page, spoiler, like_count, created_at | book_id 비정규화 |
 | `post_likes` | id, post_id, user_id, created_at | uk(post_id, user_id) |
 | `comments` | id, post_id, author_id, content, created_at | 1단계(대댓글 없음) |
 | `follows` | id, follower_id, followee_id, created_at | uk(follower_id, followee_id) |
@@ -179,7 +179,8 @@
 **인덱스**: `posts(author_id, id DESC)`, `posts(book_id, id DESC)`, `comments(post_id, id)`,
 `readings(user_id, status)`, `follows(followee_id)`, `post_hashtags(hashtag_id, post_id DESC)`.
 
-**카운터 정합성**: `like_count`/`comment_count`는 반정규화 컬럼.
+**카운터 정합성**: `like_count`만 반정규화 컬럼이다. `commentCount`는 게시글 조회 시
+삭제·숨김되지 않았고 작성자가 탈퇴하지 않은 댓글을 집계한 응답 필드이며 저장 컬럼이 아니다.
 `UPDATE posts SET like_count = like_count + 1 WHERE id = ?` 원자적 UPDATE로 갱신하고,
 좋아요 중복은 `post_likes`의 유니크 제약(`DataIntegrityViolationException` → 409)으로 방어한다.
 
@@ -292,7 +293,7 @@ com.irene.twelvebooks
 | **M1** | `User` 엔티티, `SecurityConfig`(stateless + BCrypt), `JwtProvider`, `JwtAuthenticationFilter`, `@AuthUser` 리졸버, signup/login/reissue/logout, 프로필 조회·수정 |
 | **M2** | `KakaoBookClient`, 책 검색·업서트, `Reading` CRUD + 진도 갱신, `ReadingGoal` |
 | **M3** | `Post` 작성/조회/삭제, 해시태그 파싱·업서트·연결, 책별 감상평, 태그별 조회 |
-| **M4** | `Follow`, 좋아요, 댓글(카운터 원자적 갱신), 팔로잉 피드 / 탐색 피드 커서 페이징 |
+| **M4** | `Follow`, 좋아요, 댓글(조회 시 공개 댓글 집계), 팔로잉 피드 / 탐색 피드 커서 페이징 |
 | **M5** | 서재 그리드 API, 연간 달성률 집계, springdoc 문서 노출, actuator 공개 경로 정리 |
 
 ---

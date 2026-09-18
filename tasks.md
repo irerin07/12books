@@ -227,7 +227,7 @@
 - [x] `V4__posts.sql` — 인덱스 `posts(author_id, id DESC)`, `posts(book_id, id DESC)`를
       **이 마이그레이션에서** 만든다
 - [x] `post/Post` — authorId, bookId, readingId, content, fromPage, toPage,
-      spoiler, likeCount, commentCount (카운터는 0으로 시작, Phase 6에서 쓰임)
+      spoiler, likeCount (저장 카운터), commentCount (응답에서만 제공하는 공개 댓글 집계)
 - [x] **`Reading` 자동 생성** — 작성 시 (user, book)이 없으면 `READING`으로 만들어 연결.
       "책 담기를 잊어도 글은 써진다"는 제품 원칙의 코드상 구현 지점
 - [x] 검증: 본문 1~1000자, `fromPage ≤ toPage`(둘 다 있을 때만) — 커스텀 `@AssertTrue`
@@ -285,15 +285,16 @@
 - [x] `post/PostLike`, `post/Comment` (**대댓글 없음. `parent_id`를 만들지 않는다**)
 - [x] `POST|DELETE /posts/{id}/likes`
 - [x] `GET|POST /posts/{id}/comments`, `DELETE /comments/{id}`
-- [x] 카운터는 **반드시 원자적 UPDATE**. 읽고-더하고-쓰지 않는다
+- [x] 좋아요 카운터는 **반드시 원자적 UPDATE**. 읽고-더하고-쓰지 않는다
 - [x] 중복 좋아요: insert 시도 → `DataIntegrityViolationException` → 409
       ("먼저 조회해서 있으면 스킵"은 경쟁 조건에서 샌다)
 - [x] 좋아요 취소는 **delete 반환 행 수가 1일 때만** 카운터 감소
-- [x] **반응은 언제나 `posts` 행을 먼저 잠근다** — 좋아요·댓글 등록은 카운터 UPDATE를 자식
+- [x] **좋아요는 `posts` 행을 먼저 잠근다** — 좋아요 등록은 카운터 UPDATE를 자식
       insert보다 앞세우고(자식 insert가 FK 때문에 부모에 잡는 공유 잠금이 뒤따르는 UPDATE의
       배타 잠금과 물린다), 좋아요 취소는 지운 행 수를 봐야 하므로 `findByIdForUpdate`로
       잠금만 먼저 잡는다. 순서가 엇갈리면 같은 사람의 연속 클릭이 교착이 된다
-- [x] `likedByMe` — 페이지의 postId 집합으로 **한 번에 조회**해 Set으로 매핑 (N+1 금지)
+- [x] `likedByMe` — 게시글 조회 projection의 EXISTS로 함께 조회 (별도 좋아요 조회 없음)
+- [x] 댓글 수는 공개 댓글을 조회 시 집계한다. 댓글 쓰기·삭제·신고·탈퇴에서 카운터 보정이나 명시적 게시글 잠금을 하지 않는다.
 - [x] 댓글 삭제 권한: 댓글 작성자 **또는** 글 작성자
 
 **완료 기준**

@@ -14,6 +14,10 @@ import java.util.Optional;
 
 public interface PostRepository extends JpaRepository<Post, Long> {
 
+	/** 공개 게시글의 존재 확인과 댓글 알림 수신자 조회를 함께 수행한다. */
+	@Query("select p.authorId from Post p where p.id = :postId and p.deletedAt is null and p.hiddenAt is null and exists (select 1 from User u where u.id = p.authorId and u.deletedAt is null)")
+	Optional<Long> findLiveAuthorId(@Param("postId") Long postId);
+
 	/**
 	 * 글 행을 <b>먼저 배타로 잡는다.</b> 좋아요는 {@code posts}를 먼저 잠근 뒤
 	 * 자식 행을 만진다 — 순서가 엇갈리면 한쪽이 자식 행 잠금을 쥔 채 부모를 기다리고 다른
