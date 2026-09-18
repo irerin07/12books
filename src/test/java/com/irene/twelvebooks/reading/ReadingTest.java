@@ -184,6 +184,35 @@ class ReadingTest {
 	}
 
 	@Test
+	@DisplayName("완독으로 바꾸면서 총 쪽수도 줄이면 최종 조합으로 판단한다")
+	void finishingWhileShrinkingPageCountJudgesTheFinalCombination() {
+		Reading reading = want();
+		reading.apply(ReadingStatus.READING, 300, 100, FIRST);
+
+		// 300쪽인 줄 알았는데 200쪽짜리였고, 다 읽었다. 진도는 보내지 않는다 —
+		// 완독이면 끝쪽이라는 규칙이 정해 주기 때문이다.
+		reading.apply(ReadingStatus.FINISHED, 200, null, LATER);
+
+		// 최종 규칙으로 정리되는 요청이다. 중간에 옛 총 쪽수(300)로 진도를 밀어 놓고
+		// 새 총 쪽수(200)와 비교하면, 멀쩡한 요청이 300 > 200으로 거부된다.
+		assertThat(reading.getStatus()).isEqualTo(ReadingStatus.FINISHED);
+		assertThat(reading.getPageCount()).isEqualTo(200);
+		assertThat(reading.getCurrentPage()).isEqualTo(200);
+	}
+
+	@Test
+	@DisplayName("그래도 명시적으로 총 쪽수를 넘는 진도는 거부한다")
+	void stillRejectsProgressBeyondTheFinalPageCount() {
+		Reading reading = want();
+		reading.apply(ReadingStatus.READING, 300, 100, FIRST);
+
+		// 최종 조합 자체가 어긋난다. 위 완화가 여기까지 번지면 안 된다 —
+		// 보내지 않은 값을 규칙으로 채우는 것과, 보낸 값을 무시하는 것은 다르다.
+		assertThatThrownBy(() -> reading.apply(ReadingStatus.FINISHED, 200, 250, LATER))
+				.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
 	@DisplayName("진도는 되돌아갈 수 있다")
 	void progressCanGoBackwards() {
 		Reading reading = want();

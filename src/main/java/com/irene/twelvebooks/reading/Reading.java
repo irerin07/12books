@@ -128,15 +128,25 @@ public class Reading extends BaseTimeEntity {
 	/**
 	 * 상태·총 쪽수·진도를 한 번에 반영한다. null은 "안 보냈다"는 뜻이라 기존 값을 유지한다.
 	 *
-	 * <p><b>상태를 먼저 확정한 뒤</b> 그 상태를 기준으로 진도를 판단한다. 순서가 반대면
-	 * 완독한 책에 {@code {status: READING, currentPage: 10}}을 보낼 때 아직 완독 상태라
-	 * 진도가 끝으로 되돌아가고, 그다음 상태만 바뀌어 "읽는 중인데 마지막 쪽"이 된다.
+	 * <p><b>최종 후보 값을 먼저 정하고, 검증하고, 한 번에 반영한다.</b> 상태 전이가 진도를
+	 * 정리하므로(완독이면 끝쪽), 상태를 먼저 바꾼 뒤 진도를 검증하면 <b>옛 총 쪽수로 밀어
+	 * 놓은 중간값</b>이 새 총 쪽수와 비교된다 — 300쪽인 줄 알았던 책이 200쪽이었고 다 읽었다는
+	 * 요청이 "300 > 200"으로 거부된다. 최종 규칙으로는 200/200으로 정리되는 요청이다.
+	 *
+	 * <p>그렇다고 <b>보낸 값을 무시하지는 않는다.</b> 최종 조합 자체가 어긋나면(200쪽짜리의
+	 * 250쪽) 그대로 거부다. 보내지 않은 값을 규칙으로 채우는 것과 보낸 값을 덮는 것은 다르다.
+	 *
+	 * <p>상태를 진도보다 먼저 확정하는 것은 그대로다. 순서가 반대면 완독한 책에
+	 * {@code {status: READING, currentPage: 10}}을 보낼 때 아직 완독 상태라 진도가 끝으로
+	 * 되돌아가고, 그다음 상태만 바뀌어 "읽는 중인데 마지막 쪽"이 된다.
 	 */
 	public void apply(ReadingStatus next, Integer newPageCount, Integer newCurrentPage, LocalDateTime now) {
+		// 상태 전이 전에 읽어 둔다. 전이가 진도를 끝으로 밀면 "안 보냈다"의 뜻이 달라진다.
+		int keptCurrentPage = currentPage;
 		if (next != null) {
 			changeStatus(next, now);
 		}
-		applyProgress(newPageCount, newCurrentPage);
+		applyProgress(newPageCount, newCurrentPage == null ? keptCurrentPage : newCurrentPage);
 	}
 
 	/**
