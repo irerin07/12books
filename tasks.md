@@ -21,12 +21,23 @@
 | 2 | 카카오 책 검색 · 등록 | `V2__books` | 책 찾기 | **완료** ([#9](https://github.com/irerin07/12books/pull/9)) |
 | 3 | 서재 · 독서 기록 · 목표 | `V3__readings` | **개인 독서 기록 앱** | **완료** ([#14](https://github.com/irerin07/12books/pull/14)) |
 | 4 | 감상평 · 책별 목록 · 탐색 피드 | `V4__posts` | **공개된 독서 기록** | **완료** ([#16](https://github.com/irerin07/12books/pull/16)) |
-| 5 | 팔로우 · 타임라인 | `V5__follows` | **SNS** | |
-| 6 | 좋아요 · 댓글 | `V6__reactions` | 소셜 루프 완성 | |
+| 5 | 팔로우 · 타임라인 | `V5__follows` | **SNS** | **완료** ([#18](https://github.com/irerin07/12books/pull/18)) |
+| 6 | 좋아요 · 댓글 | `V6__reactions` | 소셜 루프 완성 | **완료** ([#31](https://github.com/irerin07/12books/pull/31)) |
 | 6.5 | 책 상세 보강 (카카오 발췌 · 국중도 쪽수) | `V6_1__book_details` | 책 페이지가 채워짐 | |
 | 7 | 해시태그 탐색 · 사람 검색 | `V7__hashtags` | 주제·이름 기반 발견 | |
 | 8 | 프로필 · 서재 통계 | — | **지적 허영 완성** | |
 | 9 | 문서화 · 성능 · 보안 마감 | — | 출시 가능 | |
+| 10 | 알림 | `V9__notifications` | 돌아올 이유 | **완료** ([#41](https://github.com/irerin07/12books/pull/41)) |
+
+**번호 순서대로 하지 않았다.** Phase 10(알림)이 6.5~9보다 먼저 들어갔고, 그 사이에 아래
+"정식 공개 전에 해야 하는 것"의 L1·L2가 여럿 끝났다(요청 제한 [#42](https://github.com/irerin07/12books/pull/42),
+신고·운영자 처리 [#43](https://github.com/irerin07/12books/pull/43),
+비밀번호 재설정 [#47](https://github.com/irerin07/12books/pull/47),
+회원탈퇴 [#49](https://github.com/irerin07/12books/pull/49)). 그래서 **"아직 안 된 가장 앞 Phase"가 곧
+다음 할 일은 아니다** — 공개가 가까우면 L 목록이 먼저다.
+
+> 이 표는 Phase만 센다. L1·L2·L3의 진행은 아래 "정식 공개 전에 해야 하는 것"의 체크박스가
+> 진실이다. 둘을 합쳐서 보려고 여기에 옮겨 적지 않는다 — 같은 사실을 두 곳에 두면 갈라진다.
 
 ---
 
@@ -209,7 +220,8 @@
 - [x] `ReadingController` — `POST /readings`, `PATCH /readings/{id}`, `DELETE /readings/{id}`
 - [x] `GET /users/{handle}/library?year=&status=`
 - [x] `PUT /me/goals/{year}` — 가입 시 행을 미리 만들지 않는다
-  - [ ] 미설정 연도를 **기본 12권**으로 답하는 것은 조회의 몫이라 Phase 8(프로필 통계)에 있다
+  > 미설정 연도를 **기본 12권**으로 답하는 것은 조회의 몫이라 Phase 8(프로필 통계)에 있다.
+> 여기서 할 일이 아니라 자리를 가리키는 줄이라 체크박스를 두지 않는다.
 - [x] 수정·삭제 소유자 검증 (남의 것 → 403)
 
 **완료 기준**
