@@ -234,6 +234,36 @@ class BlockVisibilityTest extends AbstractIntegrationTest {
 				.andExpect(jsonPath("$.count").value(expected));
 	}
 
+	/**
+	 * 차단된 사이에서도 팔로우는 걸 수 있다.
+	 *
+	 * <p>팔로우는 "이 사람 글을 받아 보겠다"는 신청이고, 차단은 그 신청을 거절하는 것이 아니라
+	 * <b>내용 자체를 안 보내는 것</b>이다. 걸어도 글은 여전히 안 보인다.
+	 *
+	 * <p>막으면 앞뒤가 안 맞는다 — 차단은 상대가 건 팔로우를 남기므로, 같은 관계가 유지는
+	 * 되는데 새로 만들 수는 없는 상태가 된다. 상대가 실수로 언팔하면 차단이 풀릴 때까지
+	 * 돌아올 수 없다.
+	 */
+	@Test
+	@DisplayName("차단당한 쪽이 언팔했다 다시 팔로우할 수 있다 — 그래도 글은 안 보인다")
+	void allowsFollowingAcrossABlock() throws Exception {
+		block(mine, "them");
+
+		// 상대가 스스로 언팔한다. 차단은 상대의 팔로우를 끊지 않았으므로 걸려 있던 상태다.
+		mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+						.delete("/api/v1/users/{handle}/follow", "irene").header("Authorization", theirs))
+				.andExpect(status().isNoContent());
+
+		// 다시 건다. 여기서 404가 나면 한 번 끊긴 관계는 영영 못 돌아온다.
+		follow(theirs, "irene");
+
+		// 관계는 생겼지만 내용은 그대로 가려진다.
+		mockMvc.perform(get("/api/v1/feed/following").header("Authorization", theirs))
+				.andExpect(jsonPath("$.items.length()").value(0));
+		mockMvc.perform(get("/api/v1/posts/{id}", myPostId).header("Authorization", theirs))
+				.andExpect(status().isNotFound());
+	}
+
 	private void block(String who, String handle) throws Exception {
 		mockMvc.perform(post("/api/v1/users/{handle}/block", handle).header("Authorization", who))
 				.andExpect(status().isNoContent());
