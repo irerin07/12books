@@ -20,6 +20,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -272,5 +273,47 @@ class WithdrawalTest extends AbstractIntegrationTest {
 		// 거절됐으니 숫자도 그대로여야 한다.
 		mockMvc.perform(get("/api/v1/posts/{id}", othersPost).header("Authorization", otherBearer))
 				.andExpect(jsonPath("$.commentCount").value(0));
+	}
+
+	/**
+	 * 프로필 수정도 쓰기다.
+	 *
+	 * <p>글·댓글은 막으면서 프로필만 열어 두면, 탈퇴한 행의 이름·소개·사진을 남은 access
+	 * 토큰으로 계속 바꿀 수 있다. 지금은 그 프로필이 남에게 보이지 않지만, <b>보이지 않는 것과
+	 * 바꿀 수 있는 것은 다른 문제다</b> — 보관 기간이 끝나 파기하거나 되살리는 작업이 생기면
+	 * 그때 꺼내는 값이 탈퇴 시점의 값이 아니게 된다.
+	 *
+	 * <p><b>거절은 404다.</b> 사용자에게 탈퇴는 삭제이고, 행이 남아 있다는 것은 우리 쪽 사정이다.
+	 * 401로 답하면 "계정은 있는데 권한이 없다"가 되어 <b>지워지지 않았음을 알려주는 꼴</b>이
+	 * 된다. 하드 삭제였다면 {@code findById}가 비어 404가 났을 것이므로, 탈퇴도 같은 답을 준다.
+	 *
+	 * <p>그래서 없는 사용자와 <b>구별되지 않아야</b> 한다. 상태 코드만 같고 코드·메시지가
+	 * 다르면 그 차이가 그대로 신호가 된다.
+	 */
+	@Test
+	@DisplayName("탈퇴한 뒤에는 남은 토큰으로 프로필을 고칠 수 없고, 없는 사용자와 구별되지 않는다")
+	void refusesProfileUpdateAfterWithdrawal() throws Exception {
+		withdraw("123456789");
+
+		mockMvc.perform(patch("/api/v1/me").header("Authorization", bearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"displayName": "탈퇴하고도 고친다"}"""))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("U003"));
+
+		// 애초에 존재한 적 없는 계정이 받는 답과 같아야 한다. 다르면 그 차이가 신호다.
+		String ghost = "Bearer " + jwtProvider.createAccessToken(999_999L, "ghost");
+		mockMvc.perform(patch("/api/v1/me").header("Authorization", ghost)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"displayName": "없는 사람"}"""))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("U003"));
+
+		// 거절됐으니 남은 행의 값도 그대로여야 한다.
+		assertThat(jdbcTemplate.queryForObject(
+				"select display_name from users where handle = 'irene'", String.class))
+				.isEqualTo("아이린");
 	}
 }
