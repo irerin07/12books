@@ -99,6 +99,8 @@ public interface ReadingRepository extends JpaRepository<Reading, Long> {
 	Optional<Reading> findShelvedByUserIdAndBookIdForUpdate(@Param("userId") Long userId,
 			@Param("bookId") Long bookId);
 
+	// allow-no-block-filter: 사람이 아니라 책이 나오는 목록이다. 서재 주인에 대한 차단은
+	// LibraryController의 blockGuard가 404로 막는다
 	/**
 	 * 서재 한 페이지. 주어진 필터는 전부 AND로 묶이고, 주지 않은 것은 조건에서 빠진다.
 	 *

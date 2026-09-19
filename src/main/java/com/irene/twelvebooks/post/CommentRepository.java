@@ -28,11 +28,14 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 			  and c.deletedAt is null
 			  and c.hiddenAt is null
 			  and exists (select 1 from User u where u.id = c.authorId and u.deletedAt is null)
+			  and not exists (select 1 from Block bl
+				where (bl.blockerId = :viewerId and bl.blockedId = c.authorId)
+				   or (bl.blockerId = c.authorId and bl.blockedId = :viewerId))
 			  and (:cursor is null or c.id < :cursor)
 			order by c.id desc
 			""")
-	List<Comment> findPostPage(@Param("postId") Long postId, @Param("cursor") Long cursor,
-			Pageable pageable);
+	List<Comment> findPostPage(@Param("postId") Long postId, @Param("viewerId") Long viewerId,
+			@Param("cursor") Long cursor, Pageable pageable);
 
 	/** 살아 있는 댓글 하나. 지운 댓글은 없는 것과 같이 답한다. */
 	@Query("select c from Comment c where c.id = :commentId and c.deletedAt is null and c.hiddenAt is null and exists (select 1 from User u where u.id = c.authorId and u.deletedAt is null)")

@@ -1,6 +1,7 @@
 package com.irene.twelvebooks.report;
 
 import com.irene.twelvebooks.auth.AuthUser;
+import com.irene.twelvebooks.block.BlockGuard;
 import com.irene.twelvebooks.common.ratelimit.RateLimit;
 import com.irene.twelvebooks.report.dto.ReportCreateRequest;
 import jakarta.validation.Valid;
@@ -26,8 +27,11 @@ public class ReportController {
 
 	private final ReportService reportService;
 
-	public ReportController(ReportService reportService) {
+	private final BlockGuard blockGuard;
+
+	public ReportController(ReportService reportService, BlockGuard blockGuard) {
 		this.reportService = reportService;
+		this.blockGuard = blockGuard;
 	}
 
 	@RateLimit(name = "report", limit = 30, windowSeconds = 60, scope = RateLimit.Scope.USER)
@@ -50,6 +54,9 @@ public class ReportController {
 	@PostMapping("/users/{handle}/reports")
 	public ResponseEntity<Void> reportUser(@AuthUser Long userId, @PathVariable String handle,
 			@Valid @RequestBody ReportCreateRequest request) {
+		// 차단된 사이에서는 상대가 없는 사람이다. 신고할 대상도 없다 —
+		// 이미 안 보이는 사람을 신고하게 두면 그 사람이 존재한다는 것만 알려 준다.
+		blockGuard.requireVisible(userId, handle);
 		reportService.reportUser(userId, handle, request);
 		return ResponseEntity.noContent().build();
 	}

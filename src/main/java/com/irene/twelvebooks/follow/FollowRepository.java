@@ -8,6 +8,8 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
+// allow-no-block-filter: 관계 목록이다. 내가 차단해도 상대가 나를 언팔한 것은 아니므로
+// 관계는 그대로 보인다. 가리는 것은 그 사람의 내용(글·댓글·프로필)이지 관계가 아니다
 public interface FollowRepository extends JpaRepository<Follow, Long> {
 
 	/**
@@ -31,6 +33,16 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
 	 * <p><b>탈퇴한 사람은 쿼리에서 뺀다.</b> 받아 온 뒤에 거르면 스무 개를 청구했는데 열여덟
 	 * 개가 오는 페이지가 되고, 같은 handle로 새 계정이 가입하면 목록에는 옛 사람이 보이는데
 	 * 링크는 새 사람으로 가서 엉뚱한 사람을 팔로우하게 된다.
+	 *
+	 * <p><b>차단은 여기서 거르지 않는다.</b> 내가 누군가를 차단해도 <b>그 사람이 나를 언팔한
+	 * 것은 아니다</b> — 관계는 그대로 있고, 목록은 관계를 보여 주는 자리다. 지우면 "차단했더니
+	 * 내 팔로워가 줄었다"가 되는데, 차단은 내 의사이지 상대의 관계를 끊을 근거가 아니다.
+	 *
+	 * <p>그래서 팔로워 수도 <b>모두에게 같은 값</b>이다. 보는 사람마다 다른 수를 주면
+	 * "A의 팔로워 수"가 A의 속성이 아니라 (A, 보는 사람)의 함수가 된다.
+	 *
+	 * <p>차단한 사람의 <b>글·댓글·프로필</b>은 여전히 보이지 않는다 — 목록에서 이름을 눌러도
+	 * {@code BlockGuard}가 404로 막는다. 가리는 것은 그 사람의 <b>내용</b>이지 관계가 아니다.
 	 */
 	@Query("""
 			select f from Follow f

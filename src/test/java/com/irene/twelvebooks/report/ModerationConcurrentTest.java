@@ -106,7 +106,7 @@ class ModerationConcurrentTest extends AbstractIntegrationTest {
 			// 운영자 처리는 어떤 이유로도 실패하면 안 된다. 교착이 여기서 드러난다.
 			assertThat(failures.get("숨김")).as("%d번째 라운드의 숨김 처리", round).isNull();
 
-			long visible = commentRepository.findPostPage(postId, null,
+			long visible = commentRepository.findPostPage(postId, null, null,
 					org.springframework.data.domain.PageRequest.ofSize(10)).size();
 			// 셋 중 하나가 사라졌으니 답은 2다. "조회 결과와 같다"만 보면 둘 다 함께
 			// 틀렸을 때 통과한다.

@@ -16,9 +16,28 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 	 *
 	 * <p>읽은 알림도 함께 준다. 읽었다고 사라지면 "방금 뭐였지"를 다시 볼 수 없다.
 	 */
+	/**
+	 * 차단한 사람이 만든 알림은 빼고 센다.
+	 *
+	 * <p><b>목록과 안 읽은 수가 같은 기준이어야 한다.</b> 목록에서만 빼면 배지에 1이 떠 있는데
+	 * 열면 비어 있고, 사용자는 읽을 수 없는 알림을 영영 들고 다닌다.
+	 *
+	 * <p>행은 지우지 않는다. 차단을 풀면 돌아온다 — 알림은 "이런 일이 있었다"는 기록이고
+	 * 차단이 그 일을 없던 것으로 만들지는 않는다.
+	 *
+	 * <p>받는 사람이 곧 보는 사람이라 방향을 둘 다 볼 필요가 있다 — 내가 차단했든 상대가
+	 * 나를 차단했든 그 사람은 보이지 않는다.
+	 */
+	String NOT_BLOCKED = """
+			  and not exists (select 1 from Block bl
+				where (bl.blockerId = n.recipientId and bl.blockedId = n.actorId)
+				   or (bl.blockerId = n.actorId and bl.blockedId = n.recipientId))
+			""";
+
 	@Query("""
 			select n from Notification n
 			where n.recipientId = :recipientId
+			""" + NOT_BLOCKED + """
 			  and (:cursor is null or n.id < :cursor)
 			order by n.id desc
 			""")
@@ -32,7 +51,11 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 	 * 때문에 그 행에 잡는 공유 잠금과 카운터 UPDATE의 배타 잠금이 물려 교착이 난다 —
 	 * Phase 6에서 세 번 겪은 그 함정이다. 실제로 느려진 뒤에 도입한다.
 	 */
-	long countByRecipientIdAndReadAtIsNull(Long recipientId);
+	@Query("""
+			select count(n) from Notification n
+			where n.recipientId = :recipientId and n.readAt is null
+			""" + NOT_BLOCKED)
+	long countUnread(@Param("recipientId") Long recipientId);
 
 	/**
 	 * 하나를 읽음으로 표시한다. <b>받는 사람 조건이 쿼리 안에 있다</b> — 먼저 조회해서 확인하면

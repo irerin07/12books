@@ -34,6 +34,8 @@ public enum ErrorCode {
 			"이 대상에 인정된 신고가 남아 있습니다. 그것부터 처리한 뒤 공개하세요."),
 	SELF_FOLLOW_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "F001", "자기 자신은 팔로우할 수 없습니다."),
 	ALREADY_FOLLOWING(HttpStatus.CONFLICT, "F002", "이미 팔로우하고 있습니다."),
+	SELF_BLOCK_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "B001", "자기 자신은 차단할 수 없습니다."),
+	ALREADY_BLOCKED(HttpStatus.CONFLICT, "B002", "이미 차단한 사용자입니다."),
 	FORBIDDEN(HttpStatus.FORBIDDEN, "A004", "권한이 없습니다."),
 	EXTERNAL_API_ERROR(HttpStatus.BAD_GATEWAY, "E001", "외부 서비스를 이용할 수 없습니다."),
 	TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "C003",

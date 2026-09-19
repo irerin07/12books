@@ -11,6 +11,7 @@ import java.util.List;
 
 public interface ReportRepository extends JpaRepository<Report, Long> {
 
+	// allow-no-block-filter: 운영자 목록이다. 운영자의 차단이 신고 처리를 가리면 안 된다
 	/**
 	 * 운영자가 보는 한 페이지. 상태로 좁히고 최신순이다.
 	 *

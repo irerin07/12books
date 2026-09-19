@@ -85,7 +85,7 @@ class WithdrawalModerationOverlapTest extends AbstractIntegrationTest {
 		reportAdminService.handle(admin.getId(), reportId, ReportStatus.REJECTED, true);
 
 		// 보이는 댓글은 0개다. 숫자도 0이어야 한다.
-		assertThat(commentRepository.findPostPage(postId, null,
+		assertThat(commentRepository.findPostPage(postId, null, null,
 				org.springframework.data.domain.PageRequest.ofSize(10))).isEmpty();
 		assertThat(postReadRepository.findDetail(null, postId).orElseThrow().commentCount()).isZero();
 	}

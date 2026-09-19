@@ -1,6 +1,7 @@
 package com.irene.twelvebooks.user;
 
 import com.irene.twelvebooks.auth.AuthUser;
+import com.irene.twelvebooks.block.BlockGuard;
 import com.irene.twelvebooks.follow.FollowService;
 import com.irene.twelvebooks.user.dto.ProfileResponse;
 import com.irene.twelvebooks.user.dto.UpdateProfileRequest;
@@ -22,13 +23,17 @@ public class UserController {
 	private final UserService userService;
 	private final FollowService followService;
 
-	public UserController(UserService userService, FollowService followService) {
+	private final BlockGuard blockGuard;
+
+	public UserController(UserService userService, FollowService followService, BlockGuard blockGuard) {
 		this.userService = userService;
 		this.followService = followService;
+		this.blockGuard = blockGuard;
 	}
 
 	@GetMapping("/users/{handle}")
 	public ProfileResponse profile(@AuthUser Long viewerId, @PathVariable String handle) {
+		blockGuard.requireVisible(viewerId, handle);
 		return withRelation(userService.getByHandle(handle), viewerId);
 	}
 
