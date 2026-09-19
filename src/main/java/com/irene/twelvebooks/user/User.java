@@ -114,10 +114,14 @@ public class User extends BaseTimeEntity {
 	 * 프로필 수정. null인 필드는 "보내지 않았다"는 뜻이므로 건드리지 않는다.
 	 * handle과 email은 여기서 바꿀 수 없다 — 식별자와 자격증명은 프로필 수정의 대상이 아니다.
 	 *
-	 * <p>동시 수정은 <strong>last-write-wins</strong>다. dirty checking이 전체 UPDATE를 날리므로
-	 * 두 기기가 각각 다른 필드를 동시에 고치면 나중 쓰기가 먼저 것을 되돌린다. 같은 사용자의
-	 * 드문 상황이고 프로필은 갱신 유실을 감수할 수 있다고 보아 방어하지 않는다.
-	 * 자세한 판단과 도입 순서는 plan.md "의도적으로 하지 않는 것"에 있다.
+	 * <p>동시 수정은 <b>같은 필드에 대해서만</b> last-write-wins다. 이 엔티티는
+	 * {@code @DynamicUpdate}라 바뀐 컬럼만 실리므로, 두 기기가 <b>각각 다른 필드</b>를 고치면
+	 * 둘 다 남는다 — 이름만 바꾼 UPDATE가 소개를 건드리지 않는다. 같은 필드를 동시에 고쳤을
+	 * 때만 나중 쓰기가 이긴다.
+	 *
+	 * <p>그것까지 막으려면 {@code @Version} + 409가 필요한데 넣지 않았다. 같은 사용자의 드문
+	 * 상황이고, 진도 자동 저장처럼 충돌 오류를 돌려줄 수 없는 자리도 아니다.
+	 * 판단과 도입 조건은 plan.md "의도적으로 하지 않는 것"에 있다.
 	 */
 	public void updateProfile(String displayName, String bio, String avatarUrl) {
 		if (displayName != null) {

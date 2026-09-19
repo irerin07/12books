@@ -139,8 +139,8 @@ public class PostService {
 	 * 홈. <b>내 글과 내가 팔로우하는 사람의 글을 뺀</b> 최신순이다 — 아직 팔로우하지 않은
 	 * 사람들을 만나는 자리.
 	 *
-	 * <p>팔로잉을 빼므로 {@link #timeline}과 서로 겹치지 않는다. 화면은 둘을 원하는 비율로
-	 * 이어 붙이면 되고, 같은 글이 두 번 나올 일이 없다.
+	 * <p>팔로잉을 빼므로 {@link #timeline}과 겹치지 않는다 — <b>같은 팔로우 상태 기준</b>이다.
+	 * 두 요청 사이에 팔로우가 바뀌면 이어 붙였을 때 같은 글이 두 번 나올 수 있다.
 	 */
 	@Transactional(readOnly = true)
 	public CursorPage<PostResponse> home(Long viewerId, List<Long> followeeIds, Long cursor, int size) {
