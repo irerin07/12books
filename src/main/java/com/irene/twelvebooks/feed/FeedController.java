@@ -30,9 +30,10 @@ public class FeedController {
 	/**
 	 * 홈. 아직 팔로우하지 않은 사람들의 글이다 — 내 글과 팔로잉 글은 빠진다.
 	 *
-	 * <p>팔로잉을 빼므로 {@code /feed/following}과 <b>서로 겹치지 않는다.</b> 화면이 둘을
-	 * 원하는 비율로 이어 붙여도 같은 글이 두 번 나오지 않는다. 왜 본인 글을 빼는지는
-	 * {@code plan.md} Phase 5에 있다.
+	 * <p>팔로잉을 빼므로 {@code /feed/following}과 겹치지 않는다 — <b>같은 팔로우 상태를
+	 * 기준으로</b> 그렇다. 각 요청은 독립적으로 조회하며, <b>두 요청 사이의 공통 스냅샷은
+	 * 제공하지 않는다.</b> 그사이 팔로우 관계가 바뀌면 두 응답을 합친 결과에 중복이나 누락이
+	 * 생길 수 있다. 왜 본인 글을 빼는지는 {@code plan.md} Phase 5에 있다.
 	 */
 	@GetMapping
 	public CursorPage<PostResponse> home(@AuthUser Long userId,

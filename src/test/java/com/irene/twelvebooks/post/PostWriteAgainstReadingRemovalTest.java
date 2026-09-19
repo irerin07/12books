@@ -38,8 +38,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 서재에서 빠졌다"는 상황 자체는 그대로 남는다. 그때 글쓰기를 막지 않고 연결만 비우는지를
  * 여기서 지킨다.
  *
- * <p>실제로는 행 잠금이 삭제를 커밋까지 기다리게 하므로 이 순서는 잠금을 잡기 <b>전</b>에만
- * 성립한다. 스레드로 재현하면 불안정하므로 조회 직후 삭제가 커밋된 상태를 만든다.
+ * <p>이 순서는 잠금을 잡기 <b>전</b>에만 성립한다. 잠근 뒤에는 같은 행의 서재 제외가 글쓰기
+ * 커밋을 기다리기 때문이다 — 다만 <b>그쪽은 이 테스트가 지키지 않는다.</b> 스레드로 재현하면
+ * 불안정하므로, 여기서는 조회 직후 서재 제외가 커밋된 상태를 만든다.
  */
 class PostWriteAgainstReadingRemovalTest extends AbstractIntegrationTest {
 
@@ -81,7 +82,7 @@ class PostWriteAgainstReadingRemovalTest extends AbstractIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("연결한 서재 기록이 저장 직전에 사라져도 글은 써지고, 연결만 비어 있다")
+	@DisplayName("연결한 서재 기록이 저장 직전에 서재에서 빠져도 글은 써지고, 연결만 비어 있다")
 	void writesPostWhenReadingVanishesMidway() throws Exception {
 		Long readingId = readingRepository.saveAndFlush(
 				Reading.of(myId, bookId, ReadingStatus.READING, LocalDateTime.now())).getId();
