@@ -48,9 +48,10 @@ public class PostService {
 	 * 감상평을 쓴다. 서재에 없는 책이면 {@code READING}으로 만들어 연결한다 —
 	 * "책 담기를 잊어도 글은 써진다"(spec.md §1.4)가 코드로 지켜지는 지점.
 	 *
-	 * <p>연결과 저장은 한 트랜잭션이고, 연결한 기록은 커밋까지 잠가 둔다. 그 사이에 같은 기록이
-	 * 서재에서 빠지면 아직 저장되지 않은 글이 사라진 id로 insert되어 외래 키에 걸린다 —
-	 * {@code on delete set null}은 이미 저장된 글만 지킨다. {@link ReadingLinker#linkForWrite} 참고.
+	 * <p>연결과 저장은 한 트랜잭션이고, 연결한 기록은 커밋까지 잠가 둔다. 같은 기록에 대한
+	 * 서재 제외·수정이 이 트랜잭션을 기다린다는 뜻이다 — <b>작업 순서를 정하는 것이지 외래 키
+	 * 위반을 막는 것이 아니다.</b> 서재에서 빼기는 행을 지우지 않는다.
+	 * {@link ReadingLinker#linkForWrite} 참고.
 	 *
 	 * <p>{@link ReadingLinker}의 insert는 독립 트랜잭션이라 여기에 트랜잭션이 있어도
 	 * 유니크 제약 위반 뒤 재조회가 살아 있다 — 실패가 안쪽 트랜잭션과 함께 끝나기 때문이다.
@@ -140,7 +141,8 @@ public class PostService {
 	 * 사람들을 만나는 자리.
 	 *
 	 * <p>팔로잉을 빼므로 {@link #timeline}과 겹치지 않는다 — <b>같은 팔로우 상태 기준</b>이다.
-	 * 두 요청 사이에 팔로우가 바뀌면 이어 붙였을 때 같은 글이 두 번 나올 수 있다.
+	 * 각 요청은 독립적으로 조회하며 두 요청 사이의 공통 스냅샷은 제공하지 않는다. 그사이 팔로우
+	 * 관계가 바뀌면 두 응답을 합친 결과에 중복이나 누락이 생길 수 있다.
 	 */
 	@Transactional(readOnly = true)
 	public CursorPage<PostResponse> home(Long viewerId, List<Long> followeeIds, Long cursor, int size) {
