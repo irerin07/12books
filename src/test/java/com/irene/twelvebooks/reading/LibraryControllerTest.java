@@ -200,6 +200,60 @@ class LibraryControllerTest extends AbstractIntegrationTest {
 				.andExpect(jsonPath("$.finishedCount").value(1));
 	}
 
+	/**
+	 * 달성률의 분자는 <b>완독한 책 종수</b>다 — "올해 몇 권 읽었나"가 질문이므로 같은 책을
+	 * 두 번 읽어도 한 권이다(plan.md: "그 해에 다 읽은 책 수"). 대신 <b>완독 회차 수</b>를
+	 * 따로 준다. 두 번 읽은 것도 사실이고, 한 숫자에 뭉개면 둘 다 잃는다.
+	 */
+	@Test
+	@DisplayName("같은 책을 두 번 완독하면 책 수는 하나, 회차 수는 둘이다")
+	void countsDistinctBooksAndSessionsSeparately() throws Exception {
+		Long me = userRepository.findByHandle("irene").orElseThrow().getId();
+		Long bookId = bookRepository.save(Book.withIsbn13("9788960777004", "두 번 읽은 책",
+				"저자", "출판사", null, null)).getId();
+
+		// 같은 책의 두 회차. 먼저 것은 서재에서 빠져 있다 — 꽂힌 행은 (사람, 책)당 하나다.
+		Reading first = Reading.of(me, bookId, ReadingStatus.FINISHED, LocalDateTime.of(2026, 2, 1, 9, 0));
+		first.removeFromBookshelf();
+		readingRepository.save(first);
+		readingRepository.save(Reading.of(me, bookId, ReadingStatus.FINISHED,
+				LocalDateTime.of(2026, 8, 1, 9, 0)));
+
+		mockMvc.perform(put("/api/v1/me/goals/2026").header("Authorization", bearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"targetCount":20}"""))
+				.andExpect(status().isOk())
+				// setUp의 한 권 + 두 번 읽은 책 한 권 = 두 권
+				.andExpect(jsonPath("$.finishedCount").value(2))
+				// 회차로는 셋이다
+				.andExpect(jsonPath("$.finishedSessionCount").value(3));
+	}
+
+	/**
+	 * 서재에서 뺀 완독도 센다. 서재는 <b>지금 무엇을 꽂아 두었나</b>이고 실적은
+	 * <b>그 해에 무엇을 다 읽었나</b>라 기준이 다르다 — 다 읽고 책장에서 내렸다고 읽지
+	 * 않은 것이 되지는 않는다.
+	 */
+	@Test
+	@DisplayName("서재에서 뺀 완독도 그 해 실적에 남는다")
+	void countsFinishedEvenAfterUnshelving() throws Exception {
+		Long me = userRepository.findByHandle("irene").orElseThrow().getId();
+		Long bookId = bookRepository.save(Book.withIsbn13("9788960777005", "빼 둔 책",
+				"저자", "출판사", null, null)).getId();
+		Reading shelvedOut = Reading.of(me, bookId, ReadingStatus.FINISHED,
+				LocalDateTime.of(2026, 5, 1, 9, 0));
+		shelvedOut.removeFromBookshelf();
+		readingRepository.save(shelvedOut);
+
+		mockMvc.perform(put("/api/v1/me/goals/2026").header("Authorization", bearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"targetCount":20}"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.finishedCount").value(2));
+	}
+
 	@Test
 	@DisplayName("같은 해에 다시 세우면 덮어쓴다 — 행이 늘지 않는다")
 	void replacesGoalForTheSameYear() throws Exception {

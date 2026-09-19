@@ -17,6 +17,8 @@ public enum ErrorCode {
 	BOOK_SIGNATURE_MISMATCH(HttpStatus.BAD_REQUEST, "B002", "검색 결과를 그대로 등록해 주세요."),
 	READING_NOT_FOUND(HttpStatus.NOT_FOUND, "R001", "서재에서 찾을 수 없습니다."),
 	READING_ALREADY_EXISTS(HttpStatus.CONFLICT, "R002", "이미 서재에 있는 책입니다."),
+	REREAD_CHOICE_REQUIRED(HttpStatus.CONFLICT, "R004",
+			"완독한 기록입니다. 잘못 기록한 것을 고치려면 reread=false, 다시 읽기 시작이면 reread=true로 보내세요."),
 	PREVIOUS_READING_EXISTS(HttpStatus.CONFLICT, "R003",
 			"전에 읽던 기록이 있습니다. 이어서 읽을지 새로 시작할지 선택해 주세요."),
 	POST_NOT_FOUND(HttpStatus.NOT_FOUND, "P001", "감상평을 찾을 수 없습니다."),

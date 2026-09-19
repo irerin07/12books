@@ -155,16 +155,39 @@ class LibraryJourneyE2ETest extends AbstractIntegrationTest {
 				.andExpect(jsonPath("$.targetCount").value(12))
 				.andExpect(jsonPath("$.finishedCount").value(1));
 
-		// 9. 다시 읽기 시작하면 완독일이 비워진다 — 재독은 새 행을 만들지 않는다
+		// 9. 완독을 되돌리려면 정정인지 재독인지 밝혀야 한다. 그냥 보내면 고르라고 되돌아온다.
 		mockMvc.perform(patch("/api/v1/readings/" + readingId).header("Authorization", bearer)
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
 								{"status":"READING"}"""))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.finishedAt").doesNotHaveJsonPath())
-				.andExpect(jsonPath("$.startedAt").isNotEmpty());
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("R004"));
 
-		assertThat(readingRepository.count()).isEqualTo(1);
+		// 10. 다시 읽기 시작 — 새 회차가 0쪽부터 생기고 지난 완독은 그대로 남는다
+		String reread = mockMvc.perform(patch("/api/v1/readings/" + readingId).header("Authorization", bearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"status":"READING","reread":true}"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.currentPage").value(0))
+				.andExpect(jsonPath("$.finishedAt").doesNotHaveJsonPath())
+				.andExpect(jsonPath("$.startedAt").isNotEmpty())
+				.andReturn().getResponse().getContentAsString();
+		long freshId = com.jayway.jsonpath.JsonPath.parse(reread).read("$.id", Long.class);
+
+		assertThat(freshId).isNotEqualTo(readingId);
+		assertThat(readingRepository.count()).isEqualTo(2);
+		assertThat(readingRepository.findById(readingId).orElseThrow().getFinishedAt()).isNotNull();
+
+		// 11. 그래서 올해 읽은 책은 여전히 한 권이다 — 같은 책을 다시 편 것이지 새 책이 아니다.
+		mockMvc.perform(put("/api/v1/me/goals/" + java.time.Year.now().getValue())
+						.header("Authorization", bearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"targetCount":12}"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.finishedCount").value(1))
+				.andExpect(jsonPath("$.finishedSessionCount").value(1));
 	}
 
 	@TestConfiguration
