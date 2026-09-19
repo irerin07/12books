@@ -84,7 +84,7 @@ public class ReportAdminService {
 	 * 그 전에 급하면 그 사람의 글을 개별로 내릴 수 있다.
 	 */
 	@Transactional
-	public void handle(Long adminId, Long reportId, ReportStatus decision) {
+	public void handle(Long adminId, Long reportId, ReportStatus decision, Boolean restore) {
 		requireAdmin(adminId);
 		Report report = reportRepository.findById(reportId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.REPORT_NOT_FOUND));
@@ -96,7 +96,7 @@ public class ReportAdminService {
 			hide(report);
 		}
 		else {
-			restore(report);
+			restore(report, restore);
 		}
 		report.handle(decision, adminId, LocalDateTime.now(clock));
 	}
@@ -112,34 +112,59 @@ public class ReportAdminService {
 	}
 
 	/**
-	 * 기각한다 — 다만 <b>다른 신고가 아직 인정돼 있으면 대상은 그대로 둔다.</b>
+	 * 기각한다 — 대상을 다시 공개할지는 <b>요청이 밝힌다.</b>
 	 *
-	 * <p>기각은 그 신고에 대한 판단이지 대상 전체를 열라는 뜻이 아니다. 욕설과 스포일러로
-	 * 각각 신고된 글에서 스포일러 쪽만 기각했다고 글이 돌아오면, 인정된 욕설 신고가 그대로
-	 * 남아 있는데도 공개된다. 마지막 하나까지 기각됐을 때 비로소 열린다.
+	 * <p>"이 신고의 주장은 타당하지 않다"와 "이 글을 다시 공개한다"는 다른 판단이다. 신고가
+	 * 여럿 달린 글에서 하나를 기각하는 것은 흔한 일이고, 그때마다 글이 열리면 운영자가
+	 * 의도하지 않은 공개가 된다. 그렇다고 판단만 저장하고 공개를 따로 묻는 식이면 "기각했는데
+	 * 글이 그대로네"를 뒤늦게 발견한다. 그래서 한 요청으로 받되 서버가 짐작하지 않는다.
 	 *
-	 * <p><b>그 판단을 여기서 하지 않는다.</b> 먼저 묻고 없으면 여는 식이면, 같은 대상의 인정된
-	 * 신고 둘을 동시에 기각할 때 서로 상대의 아직 커밋되지 않은 인정 상태를 보고 둘 다
-	 * 포기한다 — 인정된 신고는 없는데 대상은 숨겨진 채 남는다. 콘텐츠 행을 잠가도 막히지
-	 * 않는다. 잠그러 가기 전에 이미 포기하기 때문이다. 그래서 조건을 UPDATE 안에 둔다.
+	 * <p><b>다른 인정된 신고가 남아 있으면 거절한다.</b> 조용히 넘기면 운영자는 눌렀는데 아무
+	 * 일도 일어나지 않은 화면을 본다. 모르는 사실을 알려 주고 그것부터 처리하게 한다.
 	 *
-	 * <p>반대로 "마지막 판단이 대상 전체에 적용된다"는 정책도 가능하지만, 그러려면 개별 신고
-	 * 기각과 콘텐츠 복구를 가르는 API와 화면이 따로 있어야 한다. 지금은 없다.
+	 * <p>사람 신고는 내린 콘텐츠가 없어 고를 것이 없다. 묻지 않고 판단만 남긴다.
 	 */
-	private void restore(Report report) {
+	private void restore(Report report, Boolean restore) {
+		if (report.getTargetType() == ReportTarget.USER) {
+			return;
+		}
+		if (restore == null) {
+			throw new BusinessException(ErrorCode.RESTORE_CHOICE_REQUIRED);
+		}
+		if (!restore) {
+			return;
+		}
+
+		// 대상을 먼저 잠근다. 아래 조회가 reports를 잠그므로 순서를 posts → reports로
+		// 고정해야 교착이 없다. 잠금을 쥔 채로 읽어야 다른 운영자가 방금 인정한 신고를 본다.
+		lockTarget(report);
+		if (!reportRepository.lockOtherActionedIds(report.getTargetType(), report.getTargetId(),
+				report.getId()).isEmpty()) {
+			throw new BusinessException(ErrorCode.OTHER_ACTIONED_REPORTS_REMAIN);
+		}
+		unhideTarget(report);
+	}
+
+	private void lockTarget(Report report) {
 		switch (report.getTargetType()) {
-			case POST -> {
-				// 대상을 먼저 잠근다. UPDATE의 조건이 reports를 읽으므로 이 경로는 두
-				// 테이블을 만지고, 순서를 posts → reports로 고정해야 교착이 없다.
-				postRepository.lockForModeration(report.getTargetId());
-				postRepository.unhideIfLastActionedReport(report.getTargetId(), report.getId());
-			}
-			case COMMENT -> {
-				commentRepository.lockForModeration(report.getTargetId());
-				commentRepository.unhideIfLastActionedReport(report.getTargetId(), report.getId());
-			}
+			case POST -> postRepository.lockForModeration(report.getTargetId());
+			case COMMENT -> commentRepository.lockForModeration(report.getTargetId());
 			case USER -> {
-				// 사람 신고는 애초에 내리지 않았으니 되돌릴 것도 없다.
+			}
+		}
+	}
+
+	/**
+	 * 조건을 UPDATE 안에 그대로 둔다. 위에서 이미 확인했지만, 그 확인과 이 쓰기 사이를
+	 * 한 번 더 좁히는 값이 싸다 — 판정이 문장 밖에 있으면 언제든 다시 벌어진다.
+	 */
+	private void unhideTarget(Report report) {
+		switch (report.getTargetType()) {
+			case POST -> postRepository.unhideIfLastActionedReport(
+					report.getTargetId(), report.getId());
+			case COMMENT -> commentRepository.unhideIfLastActionedReport(
+					report.getTargetId(), report.getId());
+			case USER -> {
 			}
 		}
 	}
