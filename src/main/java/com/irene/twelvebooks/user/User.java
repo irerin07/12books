@@ -38,7 +38,12 @@ public class User extends BaseTimeEntity {
 	@Column(nullable = false, unique = true, length = 255)
 	private String email;
 
-	@Column(name = "password_hash", nullable = false, length = 255)
+	/**
+	 * 탈퇴하면 <b>비운다</b>(V15). 탈퇴 계정은 로그인도 재발급도 막혀 있어 이 값으로 할 수
+	 * 있는 일이 없는데, 보관 기간 내내 원형으로 남으면 유출 시 다른 사이트로 넘어간다.
+	 * 그래서 {@code null}을 허용한다 — "자격증명이 없다"는 뜻이다.
+	 */
+	@Column(name = "password_hash", length = 255)
 	private String passwordHash;
 
 	@Column(nullable = false, unique = true, length = 20)

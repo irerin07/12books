@@ -154,9 +154,11 @@ public class AuthService {
 				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
 		User user = userRepository.findById(userId)
 				// 탈퇴한 계정의 세션을 여기서 끊는다. 탈퇴와 겹쳐 들어온 로그인은 무효화가
-				// 끝난 뒤에 세션을 만들어 그 그물에 걸리지 않고, 탈퇴는 비밀번호를 바꾸지
-				// 않으므로 아래 지문 검사도 통과한다 — access가 잠깐 남는 것과 달리
-				// refresh가 이어지는 한 끝나지 않는다.
+				// 끝난 뒤에 세션을 만들어 그 그물에 걸리지 않는다 — access가 잠깐 남는 것과
+				// 달리 refresh가 이어지는 한 끝나지 않는다.
+				//
+				// 아래 지문 검사에 맡길 수도 없다. 탈퇴가 해시를 비우므로(V15) 지문을 만들
+				// 재료가 없다 — 이 걸러내기가 없으면 그 자리에서 NPE다.
 				.filter(candidate -> !candidate.isWithdrawn())
 				.orElseThrow(() -> new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN));
 
