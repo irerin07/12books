@@ -15,7 +15,7 @@
 
 | 단계 | 내용 | 마이그레이션 | 이 시점의 제품 | 상태 |
 |---|---|---|---|---|
-| H | 개발 하네스 | — | (궤도) | 진행 중 ([#1](https://github.com/irerin07/12books/pull/1)) — 시크릿 1건 남음 |
+| H | 개발 하네스 | — | (궤도) | **완료** ([#1](https://github.com/irerin07/12books/pull/1)) |
 | 0 | 인프라·설정·공통·테스트 하네스 | — | (뼈대) | **완료** ([#3](https://github.com/irerin07/12books/pull/3)) |
 | 1 | 사용자 · JWT 인증 | `V1__users` | 계정 | **완료** ([#6](https://github.com/irerin07/12books/pull/6)) |
 | 2 | 카카오 책 검색 · 등록 | `V2__books` | 책 찾기 | **완료** ([#9](https://github.com/irerin07/12books/pull/9)) |
@@ -62,8 +62,11 @@
 - [x] auto-merge · squash 전용 · 머지 후 브랜치 삭제 설정
 - [x] ruleset 적용 (`gh api repos/irerin07/12books/rulesets -X POST --input .github/ruleset-main.json`)
       — `main-protection` active
-- [ ] `ANTHROPIC_API_KEY` 시크릿 등록
-      — **아직 없다.** 등록 전까지 `@claude` 워크플로는 계속 `skipping`이다
+- [x] `ANTHROPIC_API_KEY` 시크릿 — **등록하지 않기로 했다.** 빠뜨린 것이 아니다.
+      이 키를 쓰는 곳은 `.github/workflows/claude.yml`(`@claude` 멘션 대응) 하나뿐이고,
+      그건 자리에 없을 때의 보조 수단이다. 평소 경로는 로컬 세션의 `/review-fix`이고
+      별도 API 사용료가 붙는다. 그래서 워크플로는 계속 `skipping`인 채로 둔다 —
+      쓰기로 마음이 바뀌면 `gh secret set ANTHROPIC_API_KEY` 한 번이면 살아난다.
 - [x] 사소한 PR 하나로 승인 → 자동머지 전 구간 리허설 ([#2](https://github.com/irerin07/12books/pull/2))
 
 ---
