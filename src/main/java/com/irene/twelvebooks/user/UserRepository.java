@@ -43,9 +43,18 @@ public interface UserRepository extends JpaRepository<User, Long> {
 	@Query("select u from User u where u.activeHandle = :handle")
 	Optional<User> findByHandle(@Param("handle") String handle);
 
-	/** 아직 탈퇴하지 않은 계정만 전환한다. */
+	/**
+	 * 아직 탈퇴하지 않은 계정만 전환한다.
+	 *
+	 * <p><b>같은 UPDATE에서 비밀번호 해시를 비운다.</b> 따로 하면 전환에 성공하고 비우기에
+	 * 실패하는 창이 생긴다 — 탈퇴한 계정의 자격증명이 남는 쪽이 더 나쁜 결말이다.
+	 * 지우는 것은 자격증명뿐이고 id·handle·displayName은 그대로다(V15).
+	 */
 	@Transactional
 	@Modifying
-	@Query("update User u set u.deletedAt = :now where u.id = :userId and u.deletedAt is null")
+	@Query("""
+			update User u set u.deletedAt = :now, u.passwordHash = null
+			where u.id = :userId and u.deletedAt is null
+			""")
 	int withdraw(@Param("userId") Long userId, @Param("now") LocalDateTime now);
 }

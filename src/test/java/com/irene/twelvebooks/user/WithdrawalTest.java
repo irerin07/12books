@@ -316,4 +316,50 @@ class WithdrawalTest extends AbstractIntegrationTest {
 				"select display_name from users where handle = 'irene'", String.class))
 				.isEqualTo("아이린");
 	}
+
+	/**
+	 * 탈퇴하면 비밀번호 해시를 비운다.
+	 *
+	 * <p>탈퇴 계정은 로그인할 수 없으므로 <b>그 해시로 할 수 있는 일이 아무것도 없다.</b>
+	 * 그런데 보관 기간(1~3년) 내내 원형 그대로 앉아 있으면 위험만 진다 — 유출되면 같은
+	 * 비밀번호를 쓰는 다른 사이트로 넘어간다.
+	 *
+	 * <p>행은 남긴다. 지우는 것은 <b>쓸 일이 없어진 자격증명</b>뿐이고, 콘텐츠를 잇는 id와
+	 * 운영 기록에 필요한 handle·displayName은 그대로다.
+	 *
+	 * <p>비우는 시점이 상태 전환과 <b>같은 UPDATE</b>인 것도 의도다. 따로 하면 전환에
+	 * 성공하고 비우기에 실패하는 창이 생긴다.
+	 */
+	@Test
+	@DisplayName("탈퇴하면 비밀번호 해시가 남지 않는다")
+	void clearsPasswordHashOnWithdrawal() throws Exception {
+		assertThat(jdbcTemplate.queryForObject(
+				"select password_hash from users where handle = 'irene'", String.class))
+				.isNotBlank();
+
+		assertThat(withdraw("123456789").getResponse().getStatus()).isEqualTo(204);
+
+		assertThat(jdbcTemplate.queryForObject(
+				"select password_hash from users where handle = 'irene'", String.class))
+				.as("쓸 일이 없어진 자격증명은 남기지 않는다")
+				.isNull();
+
+		// 행과 식별자는 그대로다 — 지우는 것은 자격증명뿐이다.
+		assertThat(jdbcTemplate.queryForObject(
+				"select display_name from users where handle = 'irene'", String.class))
+				.isEqualTo("아이린");
+	}
+
+	@Test
+	@DisplayName("해시가 비어도 로그인은 500이 아니라 평소와 같은 401이다")
+	void loginStaysSafeWithoutHash() throws Exception {
+		withdraw("123456789");
+
+		mockMvc.perform(post("/api/v1/auth/login")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"email": "me@example.com", "password": "123456789"}"""))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("A002"));
+	}
 }
