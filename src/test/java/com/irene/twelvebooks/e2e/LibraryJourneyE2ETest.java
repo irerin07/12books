@@ -161,7 +161,7 @@ class LibraryJourneyE2ETest extends AbstractIntegrationTest {
 						.content("""
 								{"status":"READING"}"""))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.finishedAt").doesNotExist())
+				.andExpect(jsonPath("$.finishedAt").doesNotHaveJsonPath())
 				.andExpect(jsonPath("$.startedAt").isNotEmpty());
 
 		assertThat(readingRepository.count()).isEqualTo(1);

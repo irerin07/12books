@@ -1,11 +1,19 @@
 package com.irene.twelvebooks.common.support;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.util.List;
 import java.util.function.Function;
 
 /**
  * 커서 페이징 응답. PK가 auto-increment이므로 {@code id desc}가 곧 최신순이고, 커서는 마지막 항목의 id다.
+ *
+ * <p>{@code @JsonInclude(NON_NULL)}인 이유는 마지막 페이지의 {@code nextCursor} 때문이다. 다른
+ * 응답 DTO와 같은 규약을 따라 <b>키째 뺀다</b> — 같은 필드가 어떤 목록에서는 {@code null}로 오고
+ * 어떤 목록에서는 없으면 클라이언트가 둘 다 다뤄야 한다. 다음 페이지가 있는지는
+ * {@code hasNext}가 답하므로 {@code nextCursor}의 부재로 판단할 일도 없다.
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record CursorPage<T>(List<T> items, Long nextCursor, boolean hasNext) {
 
 	/**

@@ -79,7 +79,7 @@ class AuthJourneyE2ETest extends AbstractIntegrationTest {
 		mockMvc.perform(get("/api/v1/users/irene").header("Authorization", "Bearer " + accessToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.bio").value("열두 권을 읽는 중"))
-				.andExpect(jsonPath("$.email").doesNotExist());
+				.andExpect(jsonPath("$.email").doesNotHaveJsonPath());
 
 		// 6. refresh 쿠키로 재발급 — 새 access와 새 쿠키
 		var reissued = mockMvc.perform(post("/api/v1/auth/reissue").cookie(refresh))

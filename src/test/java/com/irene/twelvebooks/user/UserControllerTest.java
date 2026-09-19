@@ -51,8 +51,8 @@ class UserControllerTest extends AbstractIntegrationTest {
 	@DisplayName("프로필 응답에 email과 비밀번호 해시는 실리지 않는다")
 	void neverExposesCredentials() throws Exception {
 		mockMvc.perform(get("/api/v1/users/irene").header("Authorization", bearer()))
-				.andExpect(jsonPath("$.email").doesNotExist())
-				.andExpect(jsonPath("$.passwordHash").doesNotExist());
+				.andExpect(jsonPath("$.email").doesNotHaveJsonPath())
+				.andExpect(jsonPath("$.passwordHash").doesNotHaveJsonPath());
 	}
 
 	@Test

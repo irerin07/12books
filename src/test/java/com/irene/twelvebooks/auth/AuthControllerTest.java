@@ -65,8 +65,8 @@ class AuthControllerTest extends AbstractIntegrationTest {
 								{"email":"irene@example.com","password":"password123","handle":"irene","displayName":"아이린"}"""))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.handle").value("irene"))
-				.andExpect(jsonPath("$.password").doesNotExist())
-				.andExpect(jsonPath("$.passwordHash").doesNotExist());
+				.andExpect(jsonPath("$.password").doesNotHaveJsonPath())
+				.andExpect(jsonPath("$.passwordHash").doesNotHaveJsonPath());
 
 		assertThat(userRepository.findByEmail("irene@example.com"))
 				.get()

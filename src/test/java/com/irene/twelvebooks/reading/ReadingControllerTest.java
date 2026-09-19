@@ -74,7 +74,7 @@ class ReadingControllerTest extends AbstractIntegrationTest {
 				.andExpect(jsonPath("$.bookId").value(bookId))
 				.andExpect(jsonPath("$.status").value("WANT_TO_READ"))
 				.andExpect(jsonPath("$.currentPage").value(0))
-				.andExpect(jsonPath("$.startedAt").doesNotExist());
+				.andExpect(jsonPath("$.startedAt").doesNotHaveJsonPath());
 	}
 
 	@Test
@@ -166,7 +166,7 @@ class ReadingControllerTest extends AbstractIntegrationTest {
 						.content("""
 								{"status":"READING"}"""))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.finishedAt").doesNotExist())
+				.andExpect(jsonPath("$.finishedAt").doesNotHaveJsonPath())
 				.andExpect(jsonPath("$.startedAt").isNotEmpty());
 	}
 

@@ -104,7 +104,7 @@ class PostWriteAgainstReadingRemovalTest extends AbstractIntegrationTest {
 								{"bookId":%d,"content":"47~92쪽까지 읽었다"}""".formatted(bookId)))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.content").value("47~92쪽까지 읽었다"))
-				.andExpect(jsonPath("$.readingId").doesNotExist());
+				.andExpect(jsonPath("$.readingId").doesNotHaveJsonPath());
 
 		assertThat(postRepository.count()).isEqualTo(1);
 		assertThat(postRepository.findAll().get(0).getReadingId()).isNull();
