@@ -549,7 +549,8 @@
 
 **차단** · Backend — *이 목록에서 가장 큰 작업*
 
-- [ ] `V10__blocks.sql` — `uk` + 자기 차단 금지 CHECK
+- [ ] 차단 테이블 — `uk` + 자기 차단 금지 CHECK. **버전 번호는 그때 비어 있는 다음 것을 쓴다**
+      (계획을 적을 당시 `V10`이었으나 신고가 가져갔다. 지금 최신은 `V14`다)
 - [ ] 일곱 쿼리에 조건 추가: `findHomePage` · `findTimelinePage` · `findBookPage` ·
       `findAuthorPage` · `findPostPage` · `findFollowerPage` · `findFolloweePage`
 - [ ] **규약 테스트** — 목록 쿼리가 차단 조건을 빠뜨리면 빌드가 빨개진다.
