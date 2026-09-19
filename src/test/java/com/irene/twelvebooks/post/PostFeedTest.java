@@ -89,7 +89,7 @@ class PostFeedTest extends AbstractIntegrationTest {
 				.andExpect(jsonPath("$.items[0].author.handle").value("irene"))
 				.andExpect(jsonPath("$.items[0].book.title").value("코드 컴플리트"))
 				.andExpect(jsonPath("$.hasNext").value(false))
-				.andExpect(jsonPath("$.nextCursor").doesNotExist());
+				.andExpect(jsonPath("$.nextCursor").doesNotHaveJsonPath());
 	}
 
 	/** 홈은 <b>보는 사람 본인의 글을 뺀</b> 전체다. 내 글은 {@code /users/{handle}/posts}에 있다. */
