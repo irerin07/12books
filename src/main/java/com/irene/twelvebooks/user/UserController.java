@@ -65,8 +65,8 @@ public class UserController {
 	 */
 	private ProfileResponse withRelation(User user, Long viewerId) {
 		return ProfileResponse.of(user,
-				followService.followerCount(user.getId(), viewerId),
-				followService.followingCount(user.getId(), viewerId),
+				followService.followerCount(user.getId()),
+				followService.followingCount(user.getId()),
 				followService.isFollowing(viewerId, user.getId()));
 	}
 }

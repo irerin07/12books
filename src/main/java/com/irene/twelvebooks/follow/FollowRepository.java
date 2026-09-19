@@ -8,6 +8,8 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
+// allow-no-block-filter: 관계 목록이다. 내가 차단해도 상대가 나를 언팔한 것은 아니므로
+// 관계는 그대로 보인다. 가리는 것은 그 사람의 내용(글·댓글·프로필)이지 관계가 아니다
 public interface FollowRepository extends JpaRepository<Follow, Long> {
 
 	/**
@@ -32,20 +34,24 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
 	 * 개가 오는 페이지가 되고, 같은 handle로 새 계정이 가입하면 목록에는 옛 사람이 보이는데
 	 * 링크는 새 사람으로 가서 엉뚱한 사람을 팔로우하게 된다.
 	 *
-	 * <p><b>차단도 같은 자리에서 양방향으로 뺀다.</b> 기준은 목록 주인이 아니라 <b>보는
-	 * 사람</b>이다 — 남의 팔로워 목록을 볼 때도 내가 차단한 사람은 거기 없어야 한다.
+	 * <p><b>차단은 여기서 거르지 않는다.</b> 내가 누군가를 차단해도 <b>그 사람이 나를 언팔한
+	 * 것은 아니다</b> — 관계는 그대로 있고, 목록은 관계를 보여 주는 자리다. 지우면 "차단했더니
+	 * 내 팔로워가 줄었다"가 되는데, 차단은 내 의사이지 상대의 관계를 끊을 근거가 아니다.
+	 *
+	 * <p>그래서 팔로워 수도 <b>모두에게 같은 값</b>이다. 보는 사람마다 다른 수를 주면
+	 * "A의 팔로워 수"가 A의 속성이 아니라 (A, 보는 사람)의 함수가 된다.
+	 *
+	 * <p>차단한 사람의 <b>글·댓글·프로필</b>은 여전히 보이지 않는다 — 목록에서 이름을 눌러도
+	 * {@code BlockGuard}가 404로 막는다. 가리는 것은 그 사람의 <b>내용</b>이지 관계가 아니다.
 	 */
 	@Query("""
 			select f from Follow f
 			where f.followeeId = :followeeId
 			  and exists (select 1 from User u where u.id = f.followerId and u.deletedAt is null)
-			  and not exists (select 1 from Block bl
-				where (bl.blockerId = :viewerId and bl.blockedId = f.followerId)
-				   or (bl.blockerId = f.followerId and bl.blockedId = :viewerId))
 			  and (:cursor is null or f.id < :cursor)
 			order by f.id desc
 			""")
-	List<Follow> findFollowerPage(@Param("followeeId") Long followeeId, @Param("viewerId") Long viewerId,
+	List<Follow> findFollowerPage(@Param("followeeId") Long followeeId,
 			@Param("cursor") Long cursor, Pageable pageable);
 
 	/** 내가 팔로우하는 사람 한 페이지. 역시 최근에 팔로우한 순서이고, 탈퇴한 사람은 빠진다. */
@@ -53,13 +59,10 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
 			select f from Follow f
 			where f.followerId = :followerId
 			  and exists (select 1 from User u where u.id = f.followeeId and u.deletedAt is null)
-			  and not exists (select 1 from Block bl
-				where (bl.blockerId = :viewerId and bl.blockedId = f.followeeId)
-				   or (bl.blockerId = f.followeeId and bl.blockedId = :viewerId))
 			  and (:cursor is null or f.id < :cursor)
 			order by f.id desc
 			""")
-	List<Follow> findFolloweePage(@Param("followerId") Long followerId, @Param("viewerId") Long viewerId,
+	List<Follow> findFolloweePage(@Param("followerId") Long followerId,
 			@Param("cursor") Long cursor, Pageable pageable);
 
 	/**
@@ -72,21 +75,15 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
 			select count(f) from Follow f
 			where f.followeeId = :followeeId
 			  and exists (select 1 from User u where u.id = f.followerId and u.deletedAt is null)
-			  and not exists (select 1 from Block bl
-				where (bl.blockerId = :viewerId and bl.blockedId = f.followerId)
-				   or (bl.blockerId = f.followerId and bl.blockedId = :viewerId))
 			""")
-	long countFollowers(@Param("followeeId") Long followeeId, @Param("viewerId") Long viewerId);
+	long countFollowers(@Param("followeeId") Long followeeId);
 
 	@Query("""
 			select count(f) from Follow f
 			where f.followerId = :followerId
 			  and exists (select 1 from User u where u.id = f.followeeId and u.deletedAt is null)
-			  and not exists (select 1 from Block bl
-				where (bl.blockerId = :viewerId and bl.blockedId = f.followeeId)
-				   or (bl.blockerId = f.followeeId and bl.blockedId = :viewerId))
 			""")
-	long countFollowings(@Param("followerId") Long followerId, @Param("viewerId") Long viewerId);
+	long countFollowings(@Param("followerId") Long followerId);
 
 	/**
 	 * 내가 이 사람을 팔로우 중인지. 프로필이 팔로우 버튼을 <b>처음 그릴 때</b> 필요하다.

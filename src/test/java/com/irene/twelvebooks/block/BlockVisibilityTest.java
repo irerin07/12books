@@ -138,8 +138,8 @@ class BlockVisibilityTest extends AbstractIntegrationTest {
 		// 책별 목록 — 둘 다 같은 책에 썼다. 내 글 하나만 남아야 한다.
 		mockMvc.perform(get("/api/v1/books/{id}/posts", bookId).header("Authorization", viewer))
 				.andExpect(jsonPath("$.items.length()").value(1));
-		// 상대의 프로필과 그 아래 목록은 통째로 없는 사람이 된다. 목록 안의 사람만 거르고
-		// 프로필을 열어 두면 "글은 안 보이는데 팔로워 수는 보이는" 반쪽이 된다.
+		// 상대의 프로필과 그 아래 목록은 통째로 없는 사람이 된다. 관계 목록 자체는 차단을
+		// 거르지 않지만(언팔한 것이 아니므로), 차단한 사람의 프로필은 애초에 열리지 않는다.
 		mockMvc.perform(get("/api/v1/users/{handle}", theirHandle).header("Authorization", viewer))
 				.andExpect(status().isNotFound());
 		mockMvc.perform(get("/api/v1/users/{handle}/posts", theirHandle).header("Authorization", viewer))
@@ -151,29 +151,39 @@ class BlockVisibilityTest extends AbstractIntegrationTest {
 	}
 
 	/**
-	 * 제3자의 목록에서도 빠진다. 여기가 "보는 사람 기준"이 실제로 필요한 자리다 — 목록 주인이
-	 * 아니라 <b>내가</b> 차단한 사람이 거기 있으면 안 된다.
+	 * <b>차단해도 관계 목록은 그대로다.</b> 내가 누군가를 차단해도 그 사람이 나를 언팔한 것은
+	 * 아니다 — 관계는 남아 있고, 목록은 관계를 보여 주는 자리다.
+	 *
+	 * <p>지우면 "차단했더니 내 팔로워가 줄었다"가 된다. 차단은 내 의사이지 상대의 관계를 끊을
+	 * 근거가 아니다. 그래서 팔로워 수도 <b>모두에게 같은 값</b>이다 — 보는 사람마다 다른 수를
+	 * 주면 "A의 팔로워 수"가 A의 속성이 아니라 (A, 보는 사람)의 함수가 된다.
+	 *
+	 * <p>가리는 것은 그 사람의 <b>내용</b>(글·댓글·프로필)이지 관계가 아니다. 목록에서 이름을
+	 * 눌러도 프로필은 404다.
 	 */
 	@Test
-	@DisplayName("남의 팔로워 목록에서도 내가 차단한 사람은 빠진다")
-	void hidesBlockedFromThirdPartyLists() throws Exception {
+	@DisplayName("차단해도 관계 목록과 팔로워 수는 그대로다 — 언팔한 것이 아니다")
+	void keepsRelationListsIntact() throws Exception {
 		User third = userRepository.save(User.create("third@example.com", "hash", "third", "제삼자"));
-		String thirdBearer = "Bearer " + jwtProvider.createAccessToken(third.getId(), third.getHandle());
 		follow(mine, "third");
 		follow(theirs, "third");
 
-		// 차단 전에는 둘 다 보인다.
-		mockMvc.perform(get("/api/v1/users/{handle}/followers", "third").header("Authorization", mine))
-				.andExpect(jsonPath("$.items.length()").value(2));
-
 		block(mine, "them");
 
+		// 제3자의 팔로워 목록에 차단한 사람이 그대로 있다.
 		mockMvc.perform(get("/api/v1/users/{handle}/followers", "third").header("Authorization", mine))
-				.andExpect(jsonPath("$.items.length()").value(1))
-				.andExpect(jsonPath("$.items[0].handle").value("irene"));
-		// 제3자 본인에게는 둘 다 그대로 보인다 — 남의 차단은 내 화면과 무관하다.
-		mockMvc.perform(get("/api/v1/users/{handle}/followers", "third").header("Authorization", thirdBearer))
 				.andExpect(jsonPath("$.items.length()").value(2));
+		mockMvc.perform(get("/api/v1/users/{handle}", "third").header("Authorization", mine))
+				.andExpect(jsonPath("$.followerCount").value(2));
+
+		// 내 팔로워 목록에도 그대로 있다. 상대가 건 팔로우는 차단으로 끊기지 않는다.
+		mockMvc.perform(get("/api/v1/users/{handle}/followers", "irene").header("Authorization", mine))
+				.andExpect(jsonPath("$.items.length()").value(1))
+				.andExpect(jsonPath("$.items[0].handle").value("them"));
+
+		// 그래도 그 사람의 프로필로는 들어갈 수 없다 — 관계는 보이고 내용은 가려진다.
+		mockMvc.perform(get("/api/v1/users/{handle}", "them").header("Authorization", mine))
+				.andExpect(status().isNotFound());
 	}
 
 	/**
