@@ -134,17 +134,40 @@ public interface ReadingRepository extends JpaRepository<Reading, Long> {
 			Pageable pageable);
 
 	/**
-	 * 그 해에 다 읽은 책 수. 달성률의 분자이고, 서재 조회의 연도 필터와 무관하게
-	 * <b>완독 기준으로만</b> 센다. 여기도 범위로 물어 인덱스를 막지 않는다.
+	 * 그 해에 다 읽은 <b>책 종수</b>. 달성률의 분자이고, 서재 조회의 연도 필터와 무관하게
+	 * <b>완독 기준으로만</b> 센다(plan.md). 여기도 범위로 물어 인덱스를 막지 않는다.
+	 *
+	 * <p>{@code distinct r.bookId}인 이유는 질문이 "올해 몇 권 읽었나"이기 때문이다. 같은 책을
+	 * 두 번 읽으면 회차는 둘이지만 책은 한 권이다. 두 번 읽었다는 사실은
+	 * {@link #countFinishedSessionsBetween}이 따로 답한다.
+	 *
+	 * <p><b>서재 포함 여부를 보지 않는다.</b> 서재는 "지금 무엇을 꽂아 두었나"이고 실적은
+	 * "그 해에 무엇을 다 읽었나"라 기준이 다르다 — 다 읽고 책장에서 내렸다고 읽지 않은 것이
+	 * 되지는 않는다. 예전에는 {@code in_bookshelf = true} 조건이 있어 뺀 책이 실적에서
+	 * 빠졌는데, 그 조건에는 근거가 없었다.
 	 */
 	@Query("""
-			select count(r) from Reading r
+			select count(distinct r.bookId) from Reading r
 			where r.userId = :userId
-			  and r.inBookshelf = true
 			  and r.status = com.irene.twelvebooks.reading.ReadingStatus.FINISHED
 			  and r.finishedAt >= :from and r.finishedAt < :to
 			""")
 	long countFinishedBetween(@Param("userId") Long userId,
+			@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+	/**
+	 * 그 해의 <b>완독 회차 수</b>. 같은 책을 두 번 읽으면 둘이다.
+	 *
+	 * <p>달성률에는 쓰지 않는다 — 얇은 책을 반복해 숫자를 올릴 수 있어서다. 대신 함께
+	 * 보여 준다. 한 숫자로 뭉개면 "몇 권 읽었나"와 "몇 번 읽었나" 둘 다 잃는다.
+	 */
+	@Query("""
+			select count(r) from Reading r
+			where r.userId = :userId
+			  and r.status = com.irene.twelvebooks.reading.ReadingStatus.FINISHED
+			  and r.finishedAt >= :from and r.finishedAt < :to
+			""")
+	long countFinishedSessionsBetween(@Param("userId") Long userId,
 			@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
 
 	/**

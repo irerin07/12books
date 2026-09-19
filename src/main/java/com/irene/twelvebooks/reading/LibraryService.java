@@ -78,8 +78,10 @@ public class LibraryService {
 	@Transactional
 	public GoalResponse setGoal(Long userId, int year, int targetCount) {
 		readingGoalRepository.upsert(userId, year, targetCount);
-		long finished = readingRepository.countFinishedBetween(userId,
-				LocalDateTime.of(year, 1, 1, 0, 0), LocalDateTime.of(year + 1, 1, 1, 0, 0));
-		return new GoalResponse(year, targetCount, finished);
+		LocalDateTime from = LocalDateTime.of(year, 1, 1, 0, 0);
+		LocalDateTime to = LocalDateTime.of(year + 1, 1, 1, 0, 0);
+		return new GoalResponse(year, targetCount,
+				readingRepository.countFinishedBetween(userId, from, to),
+				readingRepository.countFinishedSessionsBetween(userId, from, to));
 	}
 }

@@ -15,5 +15,12 @@ public record ReadingUpdateRequest(
 		ReadingStatus status,
 		@Min(0) Integer currentPage,
 		@Min(1) Integer pageCount,
-		@Min(1) @Max(5) Integer rating) {
+		@Min(1) @Max(5) Integer rating,
+
+		/*
+		 * 완독에서 나올 때만 본다. 정정(false)과 재독 시작(true)은 다른 일이라 서버가
+		 * 짐작하지 않는다 — 짐작하면 반대쪽 사용자의 기록이 조용히 망가진다. 담기의
+		 * resume과 같은 모양이고, 보내지 않으면 409로 되묻는다.
+		 */
+		Boolean reread) {
 }

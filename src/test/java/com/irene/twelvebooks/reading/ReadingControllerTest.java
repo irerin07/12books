@@ -150,7 +150,7 @@ class ReadingControllerTest extends AbstractIntegrationTest {
 	}
 
 	@Test
-	@DisplayName("완독으로 바꾸면 완독일이 채워지고, 되돌리면 비워진다")
+	@DisplayName("완독으로 바꾸면 완독일이 채워지고, 정정을 고르면 비워진다")
 	void finishAndReopen() throws Exception {
 		Long id = com.jayway.jsonpath.JsonPath.parse(addBook()).read("$.id", Long.class);
 
@@ -161,10 +161,12 @@ class ReadingControllerTest extends AbstractIntegrationTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.finishedAt").isNotEmpty());
 
+		// 완독에서 나오는 요청은 정정인지 재독인지 밝혀야 한다. 되돌리기는 reread=false다 —
+		// 회차를 나누는 규칙은 ReadingSessionTest가 지킨다.
 		mockMvc.perform(patch("/api/v1/readings/" + id).header("Authorization", bearer)
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("""
-								{"status":"READING"}"""))
+								{"status":"READING","reread":false}"""))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.finishedAt").doesNotHaveJsonPath())
 				.andExpect(jsonPath("$.startedAt").isNotEmpty());

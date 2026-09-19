@@ -141,6 +141,16 @@ public class ReadingService {
 	@Transactional
 	public Reading update(Long userId, Long readingId, ReadingUpdateRequest request) {
 		Reading reading = mine(userId, readingId);
+		if (leavingFinished(reading, request)) {
+			if (request.reread() == null) {
+				// 서버가 짐작하지 않는다. 정정으로 처리하면 재독하는 사람의 완독일이 지워지고,
+				// 재독으로 처리하면 오타를 고치려던 사람의 서재에 빈 회차가 생긴다.
+				throw new BusinessException(ErrorCode.REREAD_CHOICE_REQUIRED);
+			}
+			if (request.reread()) {
+				return startReread(reading, request);
+			}
+		}
 		try {
 			// 상태·총 쪽수·진도를 한 번에 넘긴다. 셋은 서로 얽혀 있어 따로 적용하면
 			// 최종 상태가 멀쩡한 요청도 중간 상태에 걸리거나, 보낸 값이 조용히 덮인다.
@@ -157,6 +167,34 @@ public class ReadingService {
 			throw new BusinessException(ErrorCode.INVALID_INPUT);
 		}
 		return reading;
+	}
+
+	/** 완독에서 나오는 요청인가. 완독으로 가거나 상태를 안 보낸 요청은 고를 것이 없다. */
+	private static boolean leavingFinished(Reading reading, ReadingUpdateRequest request) {
+		return reading.getStatus() == ReadingStatus.FINISHED
+				&& request.status() != null
+				&& request.status() != ReadingStatus.FINISHED;
+	}
+
+	/**
+	 * 재독을 새 회차로 시작한다. 지난 완독은 완독인 채로 남는다 — 그것이 회차를 나누는 이유다.
+	 *
+	 * <p>지난 회차를 <b>먼저 서재에서 내린다.</b> 꽂힌 행은 (사람, 책)당 하나라는 제약이 있어
+	 * 순서를 바꾸면 유니크 위반이 난다. 서재에 같은 책이 두 줄로 보이면 진도를 어디에 적을지
+	 * 알 수 없으니, 그 제약이 지키려는 것이 곧 이 순서다.
+	 *
+	 * <p><b>총 쪽수는 물려받는다.</b> 그건 회차의 진도가 아니라 책의 속성이라 다시 읽는다고
+	 * 달라지지 않는다. 진도와 별점은 물려받지 않는다 — 새로 읽기 시작한 것이다.
+	 */
+	private Reading startReread(Reading previous, ReadingUpdateRequest request) {
+		readingRepository.unshelve(previous.getId());
+		Reading fresh = Reading.of(previous.getUserId(), previous.getBookId(), request.status(), now());
+		fresh.applyProgress(request.pageCount() == null ? previous.getPageCount() : request.pageCount(),
+				request.currentPage());
+		if (request.rating() != null) {
+			fresh.updateRating(request.rating());
+		}
+		return readingRepository.saveAndFlush(fresh);
 	}
 
 	/**

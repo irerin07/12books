@@ -61,9 +61,9 @@ class ReadingConcurrentUpdateTest extends AbstractIntegrationTest {
 		ExecutorService pool = Executors.newFixedThreadPool(2);
 		try {
 			pool.submit(() -> attempt(start, failures, userId, readingId,
-					new ReadingUpdateRequest(ReadingStatus.FINISHED, null, null, null)));
+					new ReadingUpdateRequest(ReadingStatus.FINISHED, null, null, null, null)));
 			pool.submit(() -> attempt(start, failures, userId, readingId,
-					new ReadingUpdateRequest(null, 150, null, null)));
+					new ReadingUpdateRequest(null, 150, null, null, null)));
 
 			start.countDown();
 			pool.shutdown();
