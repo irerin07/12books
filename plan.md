@@ -362,12 +362,14 @@ refresh 쿠키로 reissue해 새 access와 **새 refresh 쿠키**를 받음 → 
 - `PUT /me/goals/{year}`
 
 **기술 상세**
-- `uk(user_id, book_id)` — 한 사람이 같은 책을 두 번 담을 수 없다. 재독은 상태를 되돌려 재사용.
+- ~~`uk(user_id, book_id)`~~ — Phase 3 당시의 설계다. `V8__reading_sessions.sql`이 이 제약을
+  **없앴다.** 지금은 `uk(user_id, shelved_book_id)`로 **서재에 꽂힌 행만** 유일하고, 지난 회차는
+  여러 행으로 쌓인다. 재독을 상태 되돌리기로 처리하면 지난 기록을 덮어쓰기 때문이다(spec.md §4.3).
 - **상태 전이는 엔티티 메서드에 캡슐화**한다 (`reading.changeStatus(...)`, `reading.updateProgress(...)`).
   서비스가 필드를 직접 세팅하면 규칙이 흩어진다.
   - → `READING`: `startedAt`이 비어 있으면 지금으로 채운다
   - → `FINISHED`: `finishedAt` 기록, `pageCount`를 알면 `currentPage`를 거기에 맞춘다
-  - `FINISHED` → 다른 상태: `finishedAt`을 비운다 (재독 시작)
+  - `FINISHED` → 다른 상태: `finishedAt`을 비운다
 - `currentPage`는 **감소도 허용**한다(되돌아가 읽기). 0 이상, `pageCount`가 있으면 그 이하.
 - 연간 목표 미설정 시 조회 계층에서 **기본 12권**으로 간주한다. 가입 시 행을 미리 만들지 않는다.
 - 수정·삭제는 소유자 검증 필수 (`reading.userId != authUserId` → 403).
