@@ -92,7 +92,7 @@ class ModerationConcurrentTest extends AbstractIntegrationTest {
 
 			Map<String, Throwable> failures = collide(new LinkedHashMap<>(Map.of(
 					"삭제", () -> commentService.remove(commenterId, target),
-					"숨김", () -> reportAdminService.handle(adminId, reportId, ReportStatus.ACTIONED))));
+					"숨김", () -> reportAdminService.handle(adminId, reportId, ReportStatus.ACTIONED, null))));
 
 			// 삭제가 <b>이미 없는 댓글</b>을 만나는 것만 정상이다. 예외 종류를 안 보고 넘기면
 			// 교착도, 권한·신고 조회 실패도 함께 묻힌다 — 테스트가 아무것도 지키지 않게 된다.
@@ -163,13 +163,18 @@ class ModerationConcurrentTest extends AbstractIntegrationTest {
 	 * <b>이전에</b> 별도 SELECT로 하면, 두 요청이 서로 상대의 아직 커밋되지 않은 인정 상태를
 	 * 보고 <b>둘 다</b> 복구를 건너뛴다. 결과는 인정된 신고가 하나도 없는데 글은 숨겨진 채다.
 	 *
-	 * <p>콘텐츠 행의 잠금만으로는 막히지 않는다 — 잠그러 가기 전에 이미 포기하기 때문이다.
-	 * 판단이 UPDATE 안으로 들어가야 뒤에 온 쪽이 앞선 커밋을 보고 다시 판정한다.
+	 * <p>이제 기각과 공개가 한 요청에서 갈리므로(`restore`), 각자에게는 "다른 인정된 신고가
+	 * 남아 있다"가 사실이다. <b>둘 다 거절되는 것이 정답이고</b>, 하나만 통과하면 그쪽이
+	 * 상대의 아직 커밋되지 않은 기각을 본 것이 된다.
 	 *
-	 * <p>순서는 상관없다. 어느 쪽이 마지막이든 <b>마지막 하나가 기각되는 순간</b> 열려야 한다.
+	 * <p>그러려면 남은 인정 신고를 <b>잠금 읽기</b>로 봐야 한다. 평범한 조회는 트랜잭션이
+	 * 시작할 때의 스냅숏을 보므로 방금 남이 인정한 것을 놓친다. 그리고 대상을 먼저 잠근 뒤에
+	 * 읽어야 한다 — 순서가 {@code reports → posts}로 뒤집히면 교착이다.
+	 *
+	 * <p>동시에 못 여는 것이지 못 여는 것이 아니다. 순서대로 처리하면 열린다.
 	 */
 	@Test
-	@DisplayName("인정된 신고 둘을 동시에 기각하면 글이 다시 보인다")
+	@DisplayName("인정된 신고 둘을 동시에 공개하려 하면 둘 다 거절되고, 순서대로면 열린다")
 	void concurrentRejectionsRestoreContent() throws Exception {
 		for (int round = 0; round < ROUNDS; round++) {
 			Long postId = postRepository.save(
@@ -181,22 +186,35 @@ class ModerationConcurrentTest extends AbstractIntegrationTest {
 			Long second = reportPost(adminId, postId, ReportReason.SPOILER);
 
 			// 둘 다 인정해서 글을 내린다.
-			reportAdminService.handle(adminId, first, ReportStatus.ACTIONED);
-			reportAdminService.handle(adminId, second, ReportStatus.ACTIONED);
+			reportAdminService.handle(adminId, first, ReportStatus.ACTIONED, null);
+			reportAdminService.handle(adminId, second, ReportStatus.ACTIONED, null);
 			assertThat(hiddenAt(postId)).as("%d번째 라운드: 내려져 있어야 한다", round).isNotNull();
 
 			Map<String, Throwable> failures = collide(new LinkedHashMap<>(Map.of(
-					"첫 기각", () -> reportAdminService.handle(adminId, first, ReportStatus.REJECTED),
-					"둘째 기각", () -> reportAdminService.handle(adminId, second, ReportStatus.REJECTED))));
+					"첫 공개", () -> reportAdminService.handle(adminId, first, ReportStatus.REJECTED, true),
+					"둘째 공개", () -> reportAdminService.handle(adminId, second, ReportStatus.REJECTED, true))));
 
-			// 교착이나 예외로 한쪽이 죽으면 그것대로 문제다. 조용히 넘기면 아래 단언이
-			// "처리되지 않아서" 통과하는 경우와 구별되지 않는다.
-			assertThat(failures).as("%d번째 라운드의 기각 처리", round).isEmpty();
+			// 둘 다 거절되는 것이 정답이다. 각자에게는 "다른 인정된 신고가 남아 있다"가
+			// 사실이기 때문이다. 하나만 통과하면 그쪽이 상대의 미커밋 기각을 본 것이 된다.
+			assertThat(failures).as("%d번째 라운드", round).hasSize(2);
+			for (Map.Entry<String, Throwable> failure : failures.entrySet()) {
+				// 교착(CannotAcquireLockException)이 여기서 드러난다. 예외 종류를 안 보고
+				// 넘기면 잠금 순서가 틀어져도 테스트가 통과한다.
+				assertThat(failure.getValue()).as("%d번째 라운드의 %s", round, failure.getKey())
+						.isInstanceOf(BusinessException.class);
+				assertThat(((BusinessException) failure.getValue()).getErrorCode())
+						.isEqualTo(ErrorCode.OTHER_ACTIONED_REPORTS_REMAIN);
+			}
 
-			assertThat(actionedCount(postId)).as("%d번째 라운드의 남은 인정 신고", round).isZero();
-			assertThat(hiddenAt(postId))
-					.as("%d번째 라운드: 인정된 신고가 없는데 숨겨져 있다", round)
-					.isNull();
+			// 아무것도 바뀌지 않았다 — 인정된 신고도, 숨김도 그대로다.
+			assertThat(actionedCount(postId)).as("%d번째 라운드의 남은 인정 신고", round).isEqualTo(2);
+			assertThat(hiddenAt(postId)).as("%d번째 라운드: 숨김이 유지돼야 한다", round).isNotNull();
+
+			// 순서대로 처리하면 열린다. 동시에 못 여는 것이지 못 여는 것이 아니다.
+			reportAdminService.handle(adminId, first, ReportStatus.REJECTED, false);
+			reportAdminService.handle(adminId, second, ReportStatus.REJECTED, true);
+			assertThat(actionedCount(postId)).as("%d번째 라운드: 순차 처리 뒤", round).isZero();
+			assertThat(hiddenAt(postId)).as("%d번째 라운드: 순차 처리 뒤에는 열린다", round).isNull();
 		}
 	}
 

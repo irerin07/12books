@@ -16,6 +16,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -45,6 +46,9 @@ class AdminReportTest extends AbstractIntegrationTest {
 
 	@Autowired
 	JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	ReportRepository reportRepository;
 
 	private String adminBearer;
 	private String bearer;
@@ -96,6 +100,15 @@ class AdminReportTest extends AbstractIntegrationTest {
 						{"status": "%s"}""".formatted(decision)));
 	}
 
+	/** 기각하면서 대상을 다시 공개할지 함께 밝힌다. */
+	private ResultActions reject(Long reportId, boolean restore) throws Exception {
+		return mockMvc.perform(patch("/api/v1/admin/reports/{id}", reportId)
+				.header("Authorization", adminBearer)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{"status": "REJECTED", "restore": %s}""".formatted(restore)));
+	}
+
 	@Test
 	@DisplayName("운영자가 아니면 신고 목록에 닿지 못한다")
 	void keepsAdminPathsClosed() throws Exception {
@@ -130,7 +143,8 @@ class AdminReportTest extends AbstractIntegrationTest {
 		assertPostVisible(false);
 
 		// 기각은 "보고 문제없다"는 판단이다. 되돌릴 수 없으면 운영자가 DB를 직접 만지게 된다.
-		handle(reportId, "REJECTED").andExpect(status().isNoContent());
+		// 다만 되돌릴지는 요청이 밝힌다 — 판단과 공개는 다른 결정이다.
+		reject(reportId, true).andExpect(status().isNoContent());
 		assertPostVisible(true);
 	}
 
@@ -196,7 +210,8 @@ class AdminReportTest extends AbstractIntegrationTest {
 
 		handle(postReport, "ACTIONED").andExpect(status().isNoContent());
 		handle(commentReport, "ACTIONED").andExpect(status().isNoContent());
-		handle(postReport, "REJECTED").andExpect(status().isNoContent());
+		// 글을 다시 연다. 댓글 신고는 대상이 달라서 이 판정에 끼지 않는다.
+		reject(postReport, true).andExpect(status().isNoContent());
 
 		mockMvc.perform(get("/api/v1/posts/{id}/comments", postId).header("Authorization", bearer))
 				.andExpect(jsonPath("$.items.length()").value(1));
@@ -254,12 +269,87 @@ class AdminReportTest extends AbstractIntegrationTest {
 		assertPostVisible(false);
 
 		// "스포일러는 아니다"는 판단이지, 욕설 신고를 뒤집는 것이 아니다.
-		handle(spoiler, "REJECTED").andExpect(status().isNoContent());
+		reject(spoiler, false).andExpect(status().isNoContent());
 		assertPostVisible(false);
 
-		// 마지막 하나까지 기각되면 열린다.
-		handle(abuse, "REJECTED").andExpect(status().isNoContent());
+		// 마지막 하나까지 기각되면 열 수 있다.
+		reject(abuse, true).andExpect(status().isNoContent());
 		assertPostVisible(true);
+	}
+
+	/**
+	 * 기각과 공개는 <b>다른 판단</b>이다.
+	 *
+	 * <p>"이 신고의 주장은 타당하지 않다"와 "이 글을 다시 공개한다"는 같은 말이 아니다.
+	 * 신고가 여럿 달린 글에서 하나를 기각하는 것은 흔한 일이고, 그때마다 글이 열리면
+	 * 운영자가 의도하지 않은 공개가 된다. 그래서 서버가 짐작하지 않고 요청이 밝히게 한다.
+	 *
+	 * <p>고르기 전에는 <b>아무것도 바뀌지 않는다.</b> 판단만 저장되고 공개는 따로 묻는
+	 * 식이면 "기각했는데 글이 그대로네"를 운영자가 뒤늦게 발견한다.
+	 */
+	@Test
+	@DisplayName("기각하면서 공개 여부를 밝히지 않으면 고르라고 되돌려보낸다")
+	void requiresRestoreChoiceOnRejection() throws Exception {
+		Long reportId = reportPost();
+		handle(reportId, "ACTIONED").andExpect(status().isNoContent());
+
+		handle(reportId, "REJECTED")
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("S004"));
+
+		// 판단도 저장되지 않는다.
+		assertPostVisible(false);
+		assertThat(reportRepository.findById(reportId).orElseThrow().getStatus())
+				.isEqualTo(ReportStatus.ACTIONED);
+	}
+
+	@Test
+	@DisplayName("공개하지 않기를 고르면 판단만 남고 글은 내려 둔 채다")
+	void recordsRejectionWithoutRestoring() throws Exception {
+		Long reportId = reportPost();
+		handle(reportId, "ACTIONED").andExpect(status().isNoContent());
+
+		reject(reportId, false).andExpect(status().isNoContent());
+
+		assertThat(reportRepository.findById(reportId).orElseThrow().getStatus())
+				.isEqualTo(ReportStatus.REJECTED);
+		assertPostVisible(false);
+	}
+
+	/**
+	 * 다른 인정된 신고가 남아 있으면 <b>거절한다.</b> 조용히 넘기면 운영자는 눌렀는데
+	 * 아무 일도 일어나지 않은 화면을 본다. 모르는 사실을 알려 주고 그것부터 처리하게 한다.
+	 */
+	@Test
+	@DisplayName("다른 인정된 신고가 남아 있으면 공개 요청을 거절하고 알려준다")
+	void refusesRestoreWhileAnotherReportStands() throws Exception {
+		Long abuse = reportPost();
+		Long spoiler = reportPostAs(adminBearer);
+		handle(abuse, "ACTIONED").andExpect(status().isNoContent());
+		handle(spoiler, "ACTIONED").andExpect(status().isNoContent());
+
+		reject(spoiler, true)
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("S005"));
+
+		// 아무것도 바뀌지 않는다 — 판단도, 공개 여부도.
+		assertPostVisible(false);
+		assertThat(reportRepository.findById(spoiler).orElseThrow().getStatus())
+				.isEqualTo(ReportStatus.ACTIONED);
+	}
+
+	/** 사람 신고는 내린 콘텐츠가 없다. 고를 것이 없으므로 묻지 않는다. */
+	@Test
+	@DisplayName("사람 신고를 기각할 때는 공개 여부를 묻지 않는다")
+	void asksNothingForUserReports() throws Exception {
+		mockMvc.perform(post("/api/v1/users/{handle}/reports", "author")
+						.header("Authorization", bearer)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{"reason": "ABUSE"}"""))
+				.andExpect(status().isNoContent());
+
+		handle(latestReportId(), "REJECTED").andExpect(status().isNoContent());
 	}
 
 	private Long reportPostAs(String reporterBearer) throws Exception {

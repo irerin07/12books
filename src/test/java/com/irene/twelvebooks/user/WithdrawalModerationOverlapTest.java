@@ -77,12 +77,12 @@ class WithdrawalModerationOverlapTest extends AbstractIntegrationTest {
 		assertThat(userRepository.withdraw(me.getId(), LocalDateTime.now())).isEqualTo(1);
 
 		// 2. 탈퇴 후 운영자가 댓글을 숨긴다.
-		reportAdminService.handle(admin.getId(), reportId, ReportStatus.ACTIONED);
+		reportAdminService.handle(admin.getId(), reportId, ReportStatus.ACTIONED, null);
 		assertThat(postReadRepository.findDetail(null, postId).orElseThrow().commentCount()).isZero();
 
 		// 복구해도 탈퇴자의 댓글은 공개되지 않는다.
 
-		reportAdminService.handle(admin.getId(), reportId, ReportStatus.REJECTED);
+		reportAdminService.handle(admin.getId(), reportId, ReportStatus.REJECTED, true);
 
 		// 보이는 댓글은 0개다. 숫자도 0이어야 한다.
 		assertThat(commentRepository.findPostPage(postId, null,

@@ -40,7 +40,7 @@ public class AdminReportController {
 	@PatchMapping("/{id}")
 	public ResponseEntity<Void> handle(@AuthUser Long userId, @PathVariable Long id,
 			@Valid @RequestBody ReportHandleRequest request) {
-		reportAdminService.handle(userId, id, request.status());
+		reportAdminService.handle(userId, id, request.status(), request.restore());
 		return ResponseEntity.noContent().build();
 	}
 }
