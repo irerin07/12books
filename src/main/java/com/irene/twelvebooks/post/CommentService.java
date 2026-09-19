@@ -89,13 +89,13 @@ public class CommentService {
 	 * 크기만큼 늘어난다 — 감상평 목록과 같은 방식이다.
 	 */
 	@Transactional(readOnly = true)
-	public CursorPage<CommentResponse> byPost(Long postId, Long cursor, int size) {
+	public CursorPage<CommentResponse> byPost(Long postId, Long viewerId, Long cursor, int size) {
 		if (!postRepository.existsLive(postId)) {
 			// 빈 목록으로 답하면 "댓글이 없는 글"과 "없는 글"이 구분되지 않는다.
 			throw new BusinessException(ErrorCode.POST_NOT_FOUND);
 		}
 		CursorPage<Comment> page = CursorPage.of(
-				commentRepository.findPostPage(postId, cursor, PageRequest.ofSize(size + 1)),
+				commentRepository.findPostPage(postId, viewerId, cursor, PageRequest.ofSize(size + 1)),
 				size, Comment::getId);
 
 		Map<Long, User> authors = userRepository.findAllById(

@@ -31,15 +31,21 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
 	 * <p><b>탈퇴한 사람은 쿼리에서 뺀다.</b> 받아 온 뒤에 거르면 스무 개를 청구했는데 열여덟
 	 * 개가 오는 페이지가 되고, 같은 handle로 새 계정이 가입하면 목록에는 옛 사람이 보이는데
 	 * 링크는 새 사람으로 가서 엉뚱한 사람을 팔로우하게 된다.
+	 *
+	 * <p><b>차단도 같은 자리에서 양방향으로 뺀다.</b> 기준은 목록 주인이 아니라 <b>보는
+	 * 사람</b>이다 — 남의 팔로워 목록을 볼 때도 내가 차단한 사람은 거기 없어야 한다.
 	 */
 	@Query("""
 			select f from Follow f
 			where f.followeeId = :followeeId
 			  and exists (select 1 from User u where u.id = f.followerId and u.deletedAt is null)
+			  and not exists (select 1 from Block bl
+				where (bl.blockerId = :viewerId and bl.blockedId = f.followerId)
+				   or (bl.blockerId = f.followerId and bl.blockedId = :viewerId))
 			  and (:cursor is null or f.id < :cursor)
 			order by f.id desc
 			""")
-	List<Follow> findFollowerPage(@Param("followeeId") Long followeeId,
+	List<Follow> findFollowerPage(@Param("followeeId") Long followeeId, @Param("viewerId") Long viewerId,
 			@Param("cursor") Long cursor, Pageable pageable);
 
 	/** 내가 팔로우하는 사람 한 페이지. 역시 최근에 팔로우한 순서이고, 탈퇴한 사람은 빠진다. */
@@ -47,10 +53,13 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
 			select f from Follow f
 			where f.followerId = :followerId
 			  and exists (select 1 from User u where u.id = f.followeeId and u.deletedAt is null)
+			  and not exists (select 1 from Block bl
+				where (bl.blockerId = :viewerId and bl.blockedId = f.followeeId)
+				   or (bl.blockerId = f.followeeId and bl.blockedId = :viewerId))
 			  and (:cursor is null or f.id < :cursor)
 			order by f.id desc
 			""")
-	List<Follow> findFolloweePage(@Param("followerId") Long followerId,
+	List<Follow> findFolloweePage(@Param("followerId") Long followerId, @Param("viewerId") Long viewerId,
 			@Param("cursor") Long cursor, Pageable pageable);
 
 	/**
@@ -63,15 +72,21 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
 			select count(f) from Follow f
 			where f.followeeId = :followeeId
 			  and exists (select 1 from User u where u.id = f.followerId and u.deletedAt is null)
+			  and not exists (select 1 from Block bl
+				where (bl.blockerId = :viewerId and bl.blockedId = f.followerId)
+				   or (bl.blockerId = f.followerId and bl.blockedId = :viewerId))
 			""")
-	long countFollowers(@Param("followeeId") Long followeeId);
+	long countFollowers(@Param("followeeId") Long followeeId, @Param("viewerId") Long viewerId);
 
 	@Query("""
 			select count(f) from Follow f
 			where f.followerId = :followerId
 			  and exists (select 1 from User u where u.id = f.followeeId and u.deletedAt is null)
+			  and not exists (select 1 from Block bl
+				where (bl.blockerId = :viewerId and bl.blockedId = f.followeeId)
+				   or (bl.blockerId = f.followeeId and bl.blockedId = :viewerId))
 			""")
-	long countFollowings(@Param("followerId") Long followerId);
+	long countFollowings(@Param("followerId") Long followerId, @Param("viewerId") Long viewerId);
 
 	/**
 	 * 내가 이 사람을 팔로우 중인지. 프로필이 팔로우 버튼을 <b>처음 그릴 때</b> 필요하다.

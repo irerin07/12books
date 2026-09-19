@@ -41,11 +41,12 @@ public class CommentController {
 				.body(commentService.write(userId, postId, request));
 	}
 
+	/** 차단한 사람의 댓글은 빠진다. 기준은 글쓴이가 아니라 <b>보는 사람</b>이다. */
 	@GetMapping("/posts/{postId}/comments")
-	public CursorPage<CommentResponse> byPost(@PathVariable Long postId,
+	public CursorPage<CommentResponse> byPost(@AuthUser Long viewerId, @PathVariable Long postId,
 			@RequestParam(required = false) Long cursor,
 			@RequestParam(defaultValue = "20") int size) {
-		return commentService.byPost(postId, cursor, PageSize.clamp(size));
+		return commentService.byPost(postId, viewerId, cursor, PageSize.clamp(size));
 	}
 
 	@DeleteMapping("/comments/{id}")

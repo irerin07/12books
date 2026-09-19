@@ -95,26 +95,30 @@ public class FollowService {
 		return followRepository.existsByFollowerIdAndFolloweeId(viewerId, targetId);
 	}
 
+	/**
+	 * 팔로워·팔로잉 수. <b>보는 사람</b>이 필요하다 — 목록에서 차단한 사람을 빼므로 수도 같은
+	 * 기준이어야 한다. 목록에서만 빼면 "팔로워 1명"을 눌렀을 때 빈 화면이 된다.
+	 */
 	@Transactional(readOnly = true)
-	public long followerCount(Long userId) {
-		return followRepository.countFollowers(userId);
+	public long followerCount(Long userId, Long viewerId) {
+		return followRepository.countFollowers(userId, viewerId);
 	}
 
 	@Transactional(readOnly = true)
-	public long followingCount(Long userId) {
-		return followRepository.countFollowings(userId);
+	public long followingCount(Long userId, Long viewerId) {
+		return followRepository.countFollowings(userId, viewerId);
 	}
 
 	@Transactional(readOnly = true)
 	public CursorPage<FollowItemResponse> followers(String handle, Long viewerId, Long cursor, int size) {
-		return page(followRepository.findFollowerPage(idOf(handle), cursor, PageRequest.ofSize(size + 1)),
-				size, Follow::getFollowerId, viewerId);
+		return page(followRepository.findFollowerPage(idOf(handle), viewerId, cursor,
+				PageRequest.ofSize(size + 1)), size, Follow::getFollowerId, viewerId);
 	}
 
 	@Transactional(readOnly = true)
 	public CursorPage<FollowItemResponse> followings(String handle, Long viewerId, Long cursor, int size) {
-		return page(followRepository.findFolloweePage(idOf(handle), cursor, PageRequest.ofSize(size + 1)),
-				size, Follow::getFolloweeId, viewerId);
+		return page(followRepository.findFolloweePage(idOf(handle), viewerId, cursor,
+				PageRequest.ofSize(size + 1)), size, Follow::getFolloweeId, viewerId);
 	}
 
 	/**

@@ -1,6 +1,7 @@
 package com.irene.twelvebooks.post;
 
 import com.irene.twelvebooks.auth.AuthUser;
+import com.irene.twelvebooks.block.BlockGuard;
 import com.irene.twelvebooks.common.support.PageSize;
 import com.irene.twelvebooks.common.ratelimit.RateLimit;
 import com.irene.twelvebooks.common.support.CursorPage;
@@ -29,8 +30,11 @@ public class PostController {
 
 	private final PostService postService;
 
-	public PostController(PostService postService) {
+	private final BlockGuard blockGuard;
+
+	public PostController(PostService postService, BlockGuard blockGuard) {
 		this.postService = postService;
+		this.blockGuard = blockGuard;
 	}
 
 	@RateLimit(name = "post-write", limit = 30, windowSeconds = 60, scope = RateLimit.Scope.USER)
@@ -58,6 +62,7 @@ public class PostController {
 	public CursorPage<PostResponse> byAuthor(@AuthUser Long userId, @PathVariable String handle,
 			@RequestParam(required = false) Long cursor,
 			@RequestParam(defaultValue = "20") int size) {
+		blockGuard.requireVisible(userId, handle);
 		return postService.byAuthor(userId, handle, cursor, PageSize.clamp(size));
 	}
 

@@ -1,6 +1,7 @@
 package com.irene.twelvebooks.reading;
 
 import com.irene.twelvebooks.auth.AuthUser;
+import com.irene.twelvebooks.block.BlockGuard;
 import com.irene.twelvebooks.common.support.CursorPage;
 import com.irene.twelvebooks.common.support.PageSize;
 import com.irene.twelvebooks.reading.dto.GoalRequest;
@@ -23,18 +24,23 @@ public class LibraryController {
 
 	private final LibraryService libraryService;
 
-	public LibraryController(LibraryService libraryService) {
+	private final BlockGuard blockGuard;
+
+	public LibraryController(LibraryService libraryService, BlockGuard blockGuard) {
 		this.libraryService = libraryService;
+		this.blockGuard = blockGuard;
 	}
 
 	@GetMapping("/users/{handle}/library")
 	public CursorPage<LibraryItemResponse> library(@PathVariable String handle,
+			@AuthUser Long viewerId,
 			@RequestParam(required = false) ReadingStatus status,
 			@RequestParam(required = false) @Min(2000) @Max(2100) Integer year,
 			@RequestParam(required = false) @Min(2000) @Max(2100) Integer startedYear,
 			@RequestParam(required = false) @Min(2000) @Max(2100) Integer finishedYear,
 			@RequestParam(required = false) Long cursor,
 			@RequestParam(defaultValue = "20") int size) {
+		blockGuard.requireVisible(viewerId, handle);
 		LibraryFilter filter = new LibraryFilter(status, year, startedYear, finishedYear);
 		return libraryService.library(handle, filter, cursor, PageSize.clamp(size));
 	}

@@ -1,6 +1,7 @@
 package com.irene.twelvebooks.follow;
 
 import com.irene.twelvebooks.auth.AuthUser;
+import com.irene.twelvebooks.block.BlockGuard;
 import com.irene.twelvebooks.common.ratelimit.RateLimit;
 import com.irene.twelvebooks.common.support.CursorPage;
 import com.irene.twelvebooks.common.support.PageSize;
@@ -24,13 +25,17 @@ public class FollowController {
 
 	private final FollowService followService;
 
-	public FollowController(FollowService followService) {
+	private final BlockGuard blockGuard;
+
+	public FollowController(FollowService followService, BlockGuard blockGuard) {
 		this.followService = followService;
+		this.blockGuard = blockGuard;
 	}
 
 	@RateLimit(name = "follow", limit = 60, windowSeconds = 60, scope = RateLimit.Scope.USER)
 	@PostMapping("/follow")
 	public ResponseEntity<Void> follow(@AuthUser Long userId, @PathVariable String handle) {
+		blockGuard.requireVisible(userId, handle);
 		followService.follow(userId, handle);
 		return ResponseEntity.noContent().build();
 	}
@@ -49,6 +54,7 @@ public class FollowController {
 	public CursorPage<FollowItemResponse> followers(@AuthUser Long viewerId, @PathVariable String handle,
 			@RequestParam(required = false) Long cursor,
 			@RequestParam(defaultValue = "20") int size) {
+		blockGuard.requireVisible(viewerId, handle);
 		return followService.followers(handle, viewerId, cursor, PageSize.clamp(size));
 	}
 
@@ -56,6 +62,7 @@ public class FollowController {
 	public CursorPage<FollowItemResponse> followings(@AuthUser Long viewerId, @PathVariable String handle,
 			@RequestParam(required = false) Long cursor,
 			@RequestParam(defaultValue = "20") int size) {
+		blockGuard.requireVisible(viewerId, handle);
 		return followService.followings(handle, viewerId, cursor, PageSize.clamp(size));
 	}
 }
