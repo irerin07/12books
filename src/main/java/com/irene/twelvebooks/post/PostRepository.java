@@ -124,9 +124,52 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 	@Query("update Post p set p.hiddenAt = :now where p.id = :postId and p.hiddenAt is null")
 	int hide(@Param("postId") Long postId, @Param("now") LocalDateTime now);
 
+	/**
+	 * 운영 처리 전에 대상 행을 <b>먼저</b> 배타로 잡는다.
+	 *
+	 * <p>복구 판단이 {@code reports}를 읽으므로 이 경로는 두 테이블을 만진다. 순서를
+	 * {@code posts → reports}로 고정하지 않으면, 동시 기각 둘이 각자 상대의 신고 행에 공유
+	 * 잠금을 쥔 채 자기 신고 행에 배타 잠금을 올리려 해 <b>교착</b>에 빠진다.
+	 *
+	 * <p>{@code findByIdForUpdate와 달리 이 조회}는 숨김·삭제 여부를 가리지 않는다 — 되돌릴 대상은 정의상 숨겨진 것이고,
+	 * 조건을 달면 잠글 행을 못 찾아 순서 고정이 깨진다. id만 읽는 것도 의도다. 엔티티를
+	 * 읽으면 영속성 컨텍스트에 올라가 뒤이은 UPDATE와 상태가 엇갈린다.
+	 */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select p.id from Post p where p.id = :postId")
+	Optional<Long> lockForModeration(@Param("postId") Long postId);
+
+	/**
+	 * 이 신고를 빼고 인정된 신고가 없을 때만 다시 올린다.
+	 *
+	 * <p><b>판단이 UPDATE 안에 있는 것이 요점이다.</b> 앞서 SELECT로 "다른 인정된 신고가
+	 * 있는가"를 묻고 없으면 이 문장을 부르는 식이면, 같은 글의 인정된 신고 둘을 동시에
+	 * 기각할 때 <b>서로 상대의 아직 커밋되지 않은 인정 상태를 보고 둘 다 포기한다</b> —
+	 * 인정된 신고는 없는데 글은 숨겨진 채 남는다.
+	 *
+	 * <p>UPDATE의 읽기는 스냅숏이 아니라 <b>최신 커밋</b>을 본다. 게다가 조건이 맞지 않아
+	 * 한 행도 바뀌지 않아도 검사한 행의 잠금은 커밋까지 남으므로(REPEATABLE READ), 뒤에 온
+	 * 쪽은 앞선 기각이 커밋된 뒤에 다시 판정한다. 그래서 <b>마지막 하나가 기각되는 순간</b>
+	 * 열린다.
+	 *
+	 * <p>자기 자신을 빼는 이유는 {@code existsOther…}와 같다 — 지금 처리 중인 신고는 아직
+	 * 옛 상태를 들고 있어, 빼지 않으면 자기가 자기를 막는다.
+	 *
+	 * @return 바뀐 행 수. 0이면 아직 인정된 신고가 남아 있거나 이미 올라와 있다는 뜻이다.
+	 */
 	@Modifying
-	@Query("update Post p set p.hiddenAt = null where p.id = :postId and p.hiddenAt is not null")
-	int unhide(@Param("postId") Long postId);
+	@Query("""
+			update Post p set p.hiddenAt = null
+			where p.id = :postId and p.hiddenAt is not null
+			  and not exists (
+				select 1 from Report r
+				where r.targetType = com.irene.twelvebooks.report.ReportTarget.POST
+				  and r.targetId = :postId
+				  and r.status = com.irene.twelvebooks.report.ReportStatus.ACTIONED
+				  and r.id <> :exceptReportId)
+			""")
+	int unhideIfLastActionedReport(@Param("postId") Long postId,
+			@Param("exceptReportId") Long exceptReportId);
 
 	/**
 	 * 운영자 목록에 곁들일 글의 id와 본문. <b>지운 글도 숨긴 글도 나온다.</b>

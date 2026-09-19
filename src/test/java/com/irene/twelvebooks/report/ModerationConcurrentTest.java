@@ -155,4 +155,64 @@ class ModerationConcurrentTest extends AbstractIntegrationTest {
 		}
 		return failures;
 	}
+
+	/**
+	 * 인정된 신고 둘을 <b>동시에</b> 기각해도 글이 돌아온다.
+	 *
+	 * <p>복구는 "다른 인정된 신고가 남아 있는가"를 보고 정한다. 그 판단을 콘텐츠 UPDATE
+	 * <b>이전에</b> 별도 SELECT로 하면, 두 요청이 서로 상대의 아직 커밋되지 않은 인정 상태를
+	 * 보고 <b>둘 다</b> 복구를 건너뛴다. 결과는 인정된 신고가 하나도 없는데 글은 숨겨진 채다.
+	 *
+	 * <p>콘텐츠 행의 잠금만으로는 막히지 않는다 — 잠그러 가기 전에 이미 포기하기 때문이다.
+	 * 판단이 UPDATE 안으로 들어가야 뒤에 온 쪽이 앞선 커밋을 보고 다시 판정한다.
+	 *
+	 * <p>순서는 상관없다. 어느 쪽이 마지막이든 <b>마지막 하나가 기각되는 순간</b> 열려야 한다.
+	 */
+	@Test
+	@DisplayName("인정된 신고 둘을 동시에 기각하면 글이 다시 보인다")
+	void concurrentRejectionsRestoreContent() throws Exception {
+		for (int round = 0; round < ROUNDS; round++) {
+			Long postId = postRepository.save(
+					Post.write(authorId, bookId, null, "이름 짓기 장.", null, null, false)).getId();
+
+			// 서로 다른 사람이 각각 신고한다 — 유니크 제약이 같은 사람의 중복 신고를 막고,
+			// 자기 글은 신고할 수 없으므로 둘 다 작성자가 아니어야 한다.
+			Long first = reportPost(commenterId, postId, ReportReason.ABUSE);
+			Long second = reportPost(adminId, postId, ReportReason.SPOILER);
+
+			// 둘 다 인정해서 글을 내린다.
+			reportAdminService.handle(adminId, first, ReportStatus.ACTIONED);
+			reportAdminService.handle(adminId, second, ReportStatus.ACTIONED);
+			assertThat(hiddenAt(postId)).as("%d번째 라운드: 내려져 있어야 한다", round).isNotNull();
+
+			Map<String, Throwable> failures = collide(new LinkedHashMap<>(Map.of(
+					"첫 기각", () -> reportAdminService.handle(adminId, first, ReportStatus.REJECTED),
+					"둘째 기각", () -> reportAdminService.handle(adminId, second, ReportStatus.REJECTED))));
+
+			// 교착이나 예외로 한쪽이 죽으면 그것대로 문제다. 조용히 넘기면 아래 단언이
+			// "처리되지 않아서" 통과하는 경우와 구별되지 않는다.
+			assertThat(failures).as("%d번째 라운드의 기각 처리", round).isEmpty();
+
+			assertThat(actionedCount(postId)).as("%d번째 라운드의 남은 인정 신고", round).isZero();
+			assertThat(hiddenAt(postId))
+					.as("%d번째 라운드: 인정된 신고가 없는데 숨겨져 있다", round)
+					.isNull();
+		}
+	}
+
+	private Long reportPost(Long reporterId, Long postId, ReportReason reason) {
+		reportService.reportPost(reporterId, postId, new ReportCreateRequest(reason, null));
+		return jdbcTemplate.queryForObject("select max(id) from reports", Long.class);
+	}
+
+	private Object hiddenAt(Long postId) {
+		return jdbcTemplate.queryForObject(
+				"select hidden_at from posts where id = ?", Object.class, postId);
+	}
+
+	private Integer actionedCount(Long postId) {
+		return jdbcTemplate.queryForObject(
+				"select count(*) from reports where target_type = 'POST' and target_id = ?"
+						+ " and status = 'ACTIONED'", Integer.class, postId);
+	}
 }

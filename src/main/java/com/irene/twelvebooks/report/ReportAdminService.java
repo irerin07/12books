@@ -118,18 +118,28 @@ public class ReportAdminService {
 	 * 각각 신고된 글에서 스포일러 쪽만 기각했다고 글이 돌아오면, 인정된 욕설 신고가 그대로
 	 * 남아 있는데도 공개된다. 마지막 하나까지 기각됐을 때 비로소 열린다.
 	 *
+	 * <p><b>그 판단을 여기서 하지 않는다.</b> 먼저 묻고 없으면 여는 식이면, 같은 대상의 인정된
+	 * 신고 둘을 동시에 기각할 때 서로 상대의 아직 커밋되지 않은 인정 상태를 보고 둘 다
+	 * 포기한다 — 인정된 신고는 없는데 대상은 숨겨진 채 남는다. 콘텐츠 행을 잠가도 막히지
+	 * 않는다. 잠그러 가기 전에 이미 포기하기 때문이다. 그래서 조건을 UPDATE 안에 둔다.
+	 *
 	 * <p>반대로 "마지막 판단이 대상 전체에 적용된다"는 정책도 가능하지만, 그러려면 개별 신고
 	 * 기각과 콘텐츠 복구를 가르는 API와 화면이 따로 있어야 한다. 지금은 없다.
 	 */
 	private void restore(Report report) {
-		if (reportRepository.existsOtherWithStatus(report.getTargetType(), report.getTargetId(),
-				ReportStatus.ACTIONED, report.getId())) {
-			return;
-		}
 		switch (report.getTargetType()) {
-			case POST -> postRepository.unhide(report.getTargetId());
-			case COMMENT -> commentRepository.unhide(report.getTargetId());
+			case POST -> {
+				// 대상을 먼저 잠근다. UPDATE의 조건이 reports를 읽으므로 이 경로는 두
+				// 테이블을 만지고, 순서를 posts → reports로 고정해야 교착이 없다.
+				postRepository.lockForModeration(report.getTargetId());
+				postRepository.unhideIfLastActionedReport(report.getTargetId(), report.getId());
+			}
+			case COMMENT -> {
+				commentRepository.lockForModeration(report.getTargetId());
+				commentRepository.unhideIfLastActionedReport(report.getTargetId(), report.getId());
+			}
 			case USER -> {
+				// 사람 신고는 애초에 내리지 않았으니 되돌릴 것도 없다.
 			}
 		}
 	}

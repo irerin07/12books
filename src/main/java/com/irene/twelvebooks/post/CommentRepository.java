@@ -1,7 +1,9 @@
 package com.irene.twelvebooks.post;
 
 import org.springframework.data.domain.Pageable;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -46,9 +48,42 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 	@Query("update Comment c set c.hiddenAt = :now where c.id = :commentId and c.hiddenAt is null and c.deletedAt is null")
 	int hide(@Param("commentId") Long commentId, @Param("now") LocalDateTime now);
 
+	/**
+	 * 운영 처리 전에 대상 행을 <b>먼저</b> 배타로 잡는다.
+	 *
+	 * <p>복구 판단이 {@code reports}를 읽으므로 이 경로는 두 테이블을 만진다. 순서를
+	 * {@code comments → reports}로 고정하지 않으면, 동시 기각 둘이 각자 상대의 신고 행에 공유
+	 * 잠금을 쥔 채 자기 신고 행에 배타 잠금을 올리려 해 <b>교착</b>에 빠진다.
+	 *
+	 * <p>{@code 이 조회}는 숨김·삭제 여부를 가리지 않는다 — 되돌릴 대상은 정의상 숨겨진 것이고,
+	 * 조건을 달면 잠글 행을 못 찾아 순서 고정이 깨진다. id만 읽는 것도 의도다. 엔티티를
+	 * 읽으면 영속성 컨텍스트에 올라가 뒤이은 UPDATE와 상태가 엇갈린다.
+	 */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select c.id from Comment c where c.id = :commentId")
+	Optional<Long> lockForModeration(@Param("commentId") Long commentId);
+
+	/**
+	 * 이 신고를 빼고 인정된 신고가 없을 때만 다시 올린다.
+	 *
+	 * <p>판단이 UPDATE 안에 있는 이유는 {@code PostRepository}의 같은 이름 메서드에 적었다 —
+	 * 밖에서 먼저 물으면 동시 기각 둘이 서로를 보고 둘 다 포기한다.
+	 *
+	 * @return 바뀐 행 수. 0이면 아직 인정된 신고가 남아 있거나, 이미 올라왔거나, 지워졌다.
+	 */
 	@Modifying
-	@Query("update Comment c set c.hiddenAt = null where c.id = :commentId and c.hiddenAt is not null and c.deletedAt is null")
-	int unhide(@Param("commentId") Long commentId);
+	@Query("""
+			update Comment c set c.hiddenAt = null
+			where c.id = :commentId and c.hiddenAt is not null and c.deletedAt is null
+			  and not exists (
+				select 1 from Report r
+				where r.targetType = com.irene.twelvebooks.report.ReportTarget.COMMENT
+				  and r.targetId = :commentId
+				  and r.status = com.irene.twelvebooks.report.ReportStatus.ACTIONED
+				  and r.id <> :exceptReportId)
+			""")
+	int unhideIfLastActionedReport(@Param("commentId") Long commentId,
+			@Param("exceptReportId") Long exceptReportId);
 
 	/** 운영자 목록에 곁들일 댓글. 지운 것도 숨긴 것도 나온다 — 판단하려면 봐야 한다. */
 	@Query("""
